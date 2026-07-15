@@ -1,4 +1,5 @@
-export { FilterRule, NumericRange, filterByCriteria } from "./collections";
+export type { FilterRule, NumericRange } from "./collections";
+export { filterByCriteria } from "./collections";
 export { filterCarrierPerformance, filterInventory, filterReturns, filterShipments, filterTickets } from "./search";
 export type {
 	CarrierPerformanceFilters,

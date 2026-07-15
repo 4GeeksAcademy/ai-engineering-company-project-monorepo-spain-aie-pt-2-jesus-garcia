@@ -18,6 +18,12 @@
 - Memory bank creado en `/memory-bank/` con projectbrief, techContext, progress
 - `.agents/rules/talent-tracker-patterns.md` — regla de desarrollo (alwaysApply sobre `uis/talent-pipeline-tracker/**/*.{ts,tsx}`)
 - `.agents/skills/validate-commit/SKILL.md` — skill para validación pre-commit
+- `uis/website/` — app Next.js unificada (pública + backoffice)
+  - `/` → Landing (hero, stats, timeline, CTA migrados de MILESTONE_1)
+  - `/application` → Formulario multi-paso con validación TypeScript
+  - `/backoffice` → Welcome screen con sidebar colapsable
+  - `/backoffice/business-logic` → Lógica MILESTONE_2 importada desde `src/`
+  - `tsconfig.json` con `@repo/*` apuntando a `../../src/` (sin copiar código)
 
 ## Siguientes pasos
 
@@ -26,3 +32,5 @@
 - [ ] Añadir paginación en `CandidateList`
 - [ ] Implementar `ConfirmDialog` para eliminación
 - [ ] Pruebas end-to-end del flujo completo
+- [ ] Añadir autenticación al backoffice
+- [ ] Conectar formulario de aplicación con API real

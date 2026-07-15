@@ -1,8 +1,6 @@
-## Hito 4 — AI Engineering Tech · Infraestructura de desarrollo
+## Hito 4 — AI Engineering Tech · Infraestructura de desarrollo + Frontend
 
-El equipo de Tecnología ha identificado que el crecimiento del monorepo y la incorporación de agentes de IA requieren una base sólida: normas de desarrollo claras, un banco de memoria del proyecto y habilidades reutilizables para tareas recurrentes. Sin esta infraestructura, cada sesión de desarrollo arranca desde cero y los agentes trabajan sin contexto compartido.
-
-Tu trabajo es construir la capa de *developer experience* y *agent infrastructure* que permita al equipo —humano y artificial— operar de forma consistente, documentada y verificable.
+El equipo de Tecnología necesita una base sólida de desarrollo y una presencia web moderna. Por un lado, el monorepo requiere normas claras, un banco de memoria del proyecto y habilidades reutilizables para agentes IA. Por otro, la empresa necesita un sitio web público que refleje su identidad corporativa y un backoffice interno que consuma la lógica de negocio existente.
 
 ### Estructura de archivos
 
@@ -13,24 +11,45 @@ Tu trabajo es construir la capa de *developer experience* y *agent infrastructur
 │   ├── projectbrief.md          # Resumen de TrackFlow, departamentos, hitos y estructura
 │   ├── techContext.md           # Stack, comandos, configuraciones del monorepo
 │   └── progress.md              # Estado actual y próximos pasos
-└── .agents/
-    ├── rules/
-    │   └── talent-tracker-patterns.md   # Regla alwaysApply para Talent Tracker TS/TSX
-    └── skills/
-        └── validate-commit/
-            └── SKILL.md                 # Skill de validación pre-commit
+├── .agents/
+│   ├── rules/
+│   │   └── talent-tracker-patterns.md   # Regla alwaysApply para Talent Tracker TS/TSX
+│   └── skills/
+│       └── validate-commit/
+│           └── SKILL.md                 # Skill de validación pre-commit
+└── uis/website/                 # App Next.js unificada (pública + backoffice)
+    ├── app/
+    │   ├── layout.tsx           # Root layout (Space Grotesk, bg-slate-950)
+    │   ├── (public)/
+    │   │   ├── layout.tsx       # Layout público (Header + Footer)
+    │   │   ├── page.tsx         # / → Landing (hero, stats, timeline, CTA)
+    │   │   └── application/
+    │   │       └── page.tsx     # /application → Formulario multi-paso
+    │   ├── backoffice/
+    │   │   ├── layout.tsx       # Layout con sidebar colapsable
+    │   │   ├── page.tsx         # /backoffice → Welcome screen
+    │   │   └── business-logic/
+    │   │       └── page.tsx     # /backoffice/business-logic → Lógica MILESTONE_2
+    │   └── loading.tsx
+    ├── components/
+    │   ├── Header.tsx, Footer.tsx, SkipLink.tsx
+    │   ├── HeroSection.tsx, StatsSection.tsx, TimelineSection.tsx, CTASection.tsx
+    │   ├── application/ApplicationForm.tsx
+    │   └── backoffice/Sidebar.tsx, WelcomeCards.tsx
+    └── tsconfig.json           # @repo/* → ../../src/ (importa sin copiar)
 ```
 
 ### Entregables
 
 | Elemento | Descripción |
 |---|---|
-| **AGENTS.md** | Define qué archivos leer al inicio de cada sesión, flujo obligatorio pre-commit (typecheck → lint → build → git diff → update memory-bank → commit), y lista de directorios/archivos protegidos que requieren confirmación antes de modificar |
-| **memory-bank/projectbrief.md** | Briefing completo: qué es TrackFlow, departamentos y sus necesidades, hitos del proyecto, estructura del monorepo |
-| **memory-bank/techContext.md** | Stack tecnológico con versiones (TypeScript 6, Next.js 16, React 19, Tailwind v4), comandos, configuración tsconfig, convenciones de código |
-| **memory-bank/progress.md** | Estado de cada hito, últimas decisiones arquitectónicas, próximos pasos priorizados |
-| **Regla de desarrollo** | `talent-tracker-patterns.md` con alcance `alwaysApply` sobre `uis/talent-pipeline-tracker/**/*.{ts,tsx}`. Codifica: patrones del API client, estructura de hooks, sincronización de filtros con URL, manejo de 3 estados en listados, uso de `<dialog>` nativo, paleta Tailwind, prohibición de fallos silenciosos |
-| **Skill de agente** | `validate-commit/SKILL.md` con objetivo único, inputs documentados (`changed_paths`, `commit_message`, `update_progress`, `skip_checks`) y 5 criterios de aceptación verificables mediante comandos concretos |
+| **AGENTS.md** | Define qué archivos leer al inicio de cada sesión, flujo obligatorio pre-commit (typecheck → lint → build → git diff → update memory-bank → commit), y lista de directorios/archivos protegidos |
+| **memory-bank/** | `projectbrief.md`, `techContext.md`, `progress.md` con contenido específico de TrackFlow |
+| **Regla de desarrollo** | `talent-tracker-patterns.md` — alwaysApply sobre `uis/talent-pipeline-tracker/**/*.{ts,tsx}` |
+| **Skill de agente** | `validate-commit/SKILL.md` — validación pre-commit con inputs y acceptance criteria |
+| **Web pública (`uis/website/`)** | App Next.js con landing page (hero, stats, timeline, CTA) y formulario de aplicación multi-paso, migrados de MILESTONE_1 con componentes React reutilizables y TypeScript |
+| **Backoffice interno** | Rutas `/backoffice` y `/backoffice/business-logic` con layout propio (sidebar colapsable), welcome screen con cards de departamentos, e integración de lógica MILESTONE_2 importada desde `src/` sin copiar |
+| **Integración MILESTONE_2** | `tsconfig.json` con path alias `@repo/*` → `../../src/*`. La página business-logic muestra filtros (`filterShipments`, `filterInventory`), agregaciones (`countByCategory`, `sumBy`, `averageBy`, `maxBy`, `minBy`) y datos visibles en tabla |
 
 ### Reglas técnicas
 
@@ -39,6 +58,9 @@ Tu trabajo es construir la capa de *developer experience* y *agent infrastructur
 - La regla de desarrollo debe reflejar fielmente el código existente (no ser genérica).
 - La skill debe tener acceptance criteria ejecutables, no subjetivos.
 - Los directorios `agents/`, `infra/`, `workflows/`, `mcps/`, `data/`, `internal/` y archivos de configuración raíz deben listarse como protegidos.
+- La identidad visual de MILESTONE_1 debe preservarse en la web pública (gradientes, paleta naranja/cyan, Space Grotesk).
+- El código de negocio MILESTONE_2 debe importarse desde su ubicación original — no copiarse.
+- El sidebar del backoffice debe ser colapsable (transición suave).
 
 ### Criterios de aceptación
 
@@ -47,3 +69,7 @@ Tu trabajo es construir la capa de *developer experience* y *agent infrastructur
 3. `.agents/rules/` contiene al menos una regla con `description`, `globs`, `alwaysApply` y contenido documentado.
 4. `.agents/skills/` contiene al menos una skill con `objective`, `inputs` documentados y `acceptance_criteria` verificables.
 5. El contenido de reglas y skills está alineado con los datos, procesos y restricciones de `CONTEXT.md` y los hitos existentes.
+6. `npm run dev` en `uis/website/` arranca la app con rutas `/`, `/application`, `/backoffice`, `/backoffice/business-logic`.
+7. La landing page replica la identidad visual de MILESTONE_1 con componentes React.
+8. El backoffice importa desde `src/` (path alias `@repo/`) y muestra resultados de filtros y agregaciones en pantalla.
+9. `npm run build` y `npm run lint` pasan sin errores.
