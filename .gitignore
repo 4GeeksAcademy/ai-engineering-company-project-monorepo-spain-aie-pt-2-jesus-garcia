@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .env
+uis/talent-pipeline-tracker/node_modules/
+uis/talent-pipeline-tracker/.next/
+uis/talent-pipeline-tracker/tsconfig.tsbuildinfo
