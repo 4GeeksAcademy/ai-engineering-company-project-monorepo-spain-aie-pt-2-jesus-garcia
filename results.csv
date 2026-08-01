@@ -1,0 +1,16 @@
+metrica,valor
+total_registros,100
+registros_validos,92
+registros_invalidos,8
+estado_abierto,33
+estado_cerrado,26
+estado_descartado,33
+satisfaccion_media_cerrados,7.52
+invalido_invalid_category,1
+invalido_invalid_department,1
+invalido_invalid_email,1
+invalido_invalid_satisfaction_score,1
+invalido_invalid_status,1
+invalido_missing_email,1
+invalido_missing_first_name,1
+invalido_missing_phone,1
