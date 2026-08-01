@@ -11,6 +11,12 @@ class TestAnalyzeEndpoint:
         assert data["valid"] == 5
         assert data["invalid"] == 0
         assert data["by_status"] == {"abierto": 2, "cerrado": 2, "descartado": 1}
+        assert data["by_category"] == {
+            "seguimiento": 1,
+            "devolución": 1,
+            "consulta_general": 1,
+            "incidencia": 2,
+        }
         assert data["avg_satisfaction_cerrados"] == 8.5
         assert data["invalid_reasons"] == {}
 
@@ -41,6 +47,7 @@ class TestAnalyzeEndpoint:
         assert data["total"] == 2
         assert data["valid"] == 1
         assert data["invalid"] == 1
+        assert data["by_category"]["devolución"] == 1
         assert data["invalid_reasons"] == {"invalid_email": 1}
 
 
@@ -64,6 +71,8 @@ class TestExportEndpoint:
         assert "total_registros,5" in body
         assert "registros_validos,5" in body
         assert "satisfaccion_media_cerrados,8.5" in body
+        assert "categoria_incidencia,2" in body
+        assert "categoria_seguimiento,1" in body
 
     def test_state_is_reset_between_tests(self, client):
         response = client.get("/api/incidents/results/export")

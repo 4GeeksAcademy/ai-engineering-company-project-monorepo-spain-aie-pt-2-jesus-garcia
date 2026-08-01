@@ -37,6 +37,13 @@
   - Último análisis guardado en memoria (se pierde al reiniciar el proceso)
   - Tests: `pytest` (8 casos en `tests/test_incidents.py`)
   - Ejecución: `uvicorn app.main:app --port 8000` desde `services/api`
+  - Respuesta incluye `by_status`, `by_category`, `avg_satisfaction_cerrados` e `invalid_reasons`
+- `uis/backoffice/` — App Next.js 16 independiente para el backoffice de operaciones
+  - `/` → Página de análisis de incidentes con drag & drop de CSV, métricas generales, desglose por estado y categoría, satisfacción media, avisos de registros inválidos y descarga del último CSV
+  - Menú lateral colapsable (Sidebar) con acceso a la página desde el menú de la aplicación
+  - `next.config.ts` con rewrite: `/api/incidents/*` → `BACKEND_URL` (`http://localhost:8000` en `.env.local`)
+  - `lib/api.ts` (analyzeCsv, fetchExportCsv) y `lib/types.ts` (tipos y etiquetas de razón inválida)
+  - Ejecución: `npm run dev` (puerto 3000) desde `uis/backoffice`
 
 ## Siguientes pasos
 

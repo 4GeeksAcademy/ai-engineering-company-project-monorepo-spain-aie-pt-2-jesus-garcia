@@ -6,5 +6,6 @@ class AnalysisResponse(BaseModel):
     valid: int
     invalid: int
     by_status: dict[str, int]
+    by_category: dict[str, int]
     avg_satisfaction_cerrados: float | None
     invalid_reasons: dict[str, int]

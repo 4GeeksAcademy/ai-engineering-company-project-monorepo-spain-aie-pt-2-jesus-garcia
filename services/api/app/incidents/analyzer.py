@@ -82,6 +82,7 @@ def analyze_file(
         "valid": 0,
         "invalid": 0,
         "by_status": {status: 0 for status in ALLOWED_STATUSES},
+        "by_category": {category: 0 for category in ALLOWED_CATEGORIES},
         "satisfaction_scores": [],
         "invalid_reasons": {},
         "invalid_rows": [],
@@ -112,6 +113,9 @@ def analyze_file(
             status = str(record.get("status", "")).strip()
             stats["by_status"][status] += 1
 
+            category = str(record.get("category", "")).strip()
+            stats["by_category"][category] += 1
+
             satisfaction = str(record.get("satisfaction_score", "")).strip()
             if status == "cerrado" and satisfaction:
                 stats["satisfaction_scores"].append(float(satisfaction))
@@ -133,6 +137,8 @@ def metrics_to_csv_rows(stats: dict) -> list[dict]:
         {"metrica": "estado_descartado", "valor": stats["by_status"]["descartado"]},
         {"metrica": "satisfaccion_media_cerrados", "valor": avg if avg is not None else ""},
     ]
+    for category, count in sorted(stats["by_category"].items()):
+        rows.append({"metrica": f"categoria_{category}", "valor": count})
     for reason, count in sorted(stats["invalid_reasons"].items()):
         rows.append({"metrica": f"invalido_{reason}", "valor": count})
     return rows
