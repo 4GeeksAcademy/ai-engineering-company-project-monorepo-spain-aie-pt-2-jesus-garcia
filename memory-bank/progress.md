@@ -29,6 +29,14 @@
   - Valida campos obligatorios, formato de email, estados, categorías y puntuaciones
   - Calcula totales válidos/inválidos, totalización por estado y satisfacción media de casos cerrados
   - Ofrece exportación opcional a `results.csv` y `results_invalid.csv`
+- `services/api/` — Backend FastAPI para el análisis de incidentes (Experiencia del cliente)
+  - `POST /api/incidents/analyze` — acepta CSV como `multipart/form-data`, devuelve resumen JSON
+  - `GET /api/incidents/results/export` — devuelve el último análisis como CSV descargable (métricas resumen)
+  - Lógica compartida en `app/incidents/analyzer.py` reutilizada por `analyze.py` (single source of truth)
+  - Errores mapeados: 400 (vacío/formato incorrecto), 404 (sin análisis previo), 422 (falta campo `file`)
+  - Último análisis guardado en memoria (se pierde al reiniciar el proceso)
+  - Tests: `pytest` (8 casos en `tests/test_incidents.py`)
+  - Ejecución: `uvicorn app.main:app --port 8000` desde `services/api`
 
 ## Siguientes pasos
 
