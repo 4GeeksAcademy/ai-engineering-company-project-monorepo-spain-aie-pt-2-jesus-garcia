@@ -24,6 +24,11 @@
   - `/backoffice` → Welcome screen con sidebar colapsable
   - `/backoffice/business-logic` → Lógica MILESTONE_2 importada desde `src/`
   - `tsconfig.json` con `@repo/*` apuntando a `../../src/` (sin copiar código)
+- `analyze.py` — script de análisis CSV para el departamento de Experiencia del cliente
+  - Lee `COMPANY.csv` con pandas usando procesamiento por chunks (`chunksize=10_000`)
+  - Valida campos obligatorios, formato de email, estados, categorías y puntuaciones
+  - Calcula totales válidos/inválidos, totalización por estado y satisfacción media de casos cerrados
+  - Ofrece exportación opcional a `results.csv` y `results_invalid.csv`
 
 ## Siguientes pasos
 

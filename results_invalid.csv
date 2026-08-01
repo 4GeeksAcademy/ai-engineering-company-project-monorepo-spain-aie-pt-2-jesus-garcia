@@ -1,0 +1,9 @@
+customer_id,first_name,last_name,email,phone,department,status,category,satisfaction_score,created_at,errors
+CUST-1005,Pedro,Fernández,,+34 600 895667,Experiencia del cliente,abierto,incidencia,,2025-03-29,missing_email
+CUST-1012,Elena,Díaz,elena.diaz@empresa.es,,Experiencia del cliente,descartado,devolución,,2025-05-17,missing_phone
+CUST-1023,Alejandro,Gil,alejandro.gil@outlook.com,+34 614 407757,Experiencia del cliente,en proceso,devolución,9,2025-03-09,invalid_status
+CUST-1034,Beatriz,Iglesias,beatriz.iglesias@hotmail.com,+34 600 174441,Experiencia del cliente,descartado,reclamación,,2025-02-28,invalid_category
+CUST-1045,Alberto,Cruz,alberto.cruz@empresa.es,+34 691 610311,Experiencia del cliente,abierto,devolución,15,2025-03-17,invalid_satisfaction_score
+CUST-1056,Valentina,Guerrero,no-email,+34 667 108203,Experiencia del cliente,descartado,consulta_general,,2025-06-19,invalid_email
+CUST-1067,,Cabrera,hector.cabrera@empresa.es,+34 619 348237,Experiencia del cliente,abierto,devolución,,2025-04-16,missing_first_name
+CUST-1078,Eric,Crespo,eric.crespo@trackflow.com,+34 639 799287,Ventas,cerrado,consulta_general,6,2025-02-19,invalid_department
