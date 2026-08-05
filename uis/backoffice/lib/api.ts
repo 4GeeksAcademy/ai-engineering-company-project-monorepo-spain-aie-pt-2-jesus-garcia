@@ -50,11 +50,13 @@ export async function fetchSuppliers(params?: {
   country?: string;
   category?: string;
   status?: string;
+  search?: string;
 }): Promise<Supplier[]> {
   const searchParams = new URLSearchParams();
   if (params?.country) searchParams.set("country", params.country);
   if (params?.category) searchParams.set("category", params.category);
   if (params?.status) searchParams.set("status", params.status);
+  if (params?.search) searchParams.set("search", params.search);
 
   const query = searchParams.toString();
   const url = `/api/suppliers${query ? `?${query}` : ""}`;

@@ -17,6 +17,7 @@ def list_suppliers(
     country: str | None = Query(None, description="Filtrar por país: USA o Spain"),
     category: str | None = Query(None, description="Filtrar por categoría"),
     status: str | None = Query(None, description="Filtrar por estado: active o suspended"),
+    search: str | None = Query(None, description="Buscar por nombre"),
 ) -> list[Supplier]:
     db = get_db()
     table = db.table("suppliers")
@@ -28,6 +29,8 @@ def list_suppliers(
         if category and category not in doc.get("categories", []):
             continue
         if status and doc.get("status") != status:
+            continue
+        if search and search.lower() not in doc.get("name", "").lower():
             continue
 
         results.append(Supplier(id=str(doc.doc_id), **doc))

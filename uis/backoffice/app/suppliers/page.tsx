@@ -2,13 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { fetchSuppliers, ApiRequestError } from "@/lib/api";
-import type { Supplier } from "@/lib/types";
+import { fetchSuppliers, createSupplier, updateSupplier, ApiRequestError } from "@/lib/api";
+import type { Supplier, SupplierCreate, SupplierUpdate } from "@/lib/types";
 import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_STATUSES,
   COUNTRY_FLAGS,
 } from "@/lib/types";
+import { SupplierForm } from "@/components/suppliers/SupplierForm";
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -18,6 +28,11 @@ export default function SuppliersPage() {
   const [countryFilter, setCountryFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [searchInput, setSearchInput] = useState<string>("");
+  const debouncedSearch = useDebounce(searchInput, 300);
+
+  const [showForm, setShowForm] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +44,7 @@ export default function SuppliersPage() {
           country: countryFilter || undefined,
           status: statusFilter || undefined,
           category: categoryFilter || undefined,
+          search: debouncedSearch || undefined,
         });
         if (!cancelled) setSuppliers(data);
       } catch (err) {
@@ -45,23 +61,79 @@ export default function SuppliersPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, [countryFilter, statusFilter, categoryFilter]);
+  }, [countryFilter, statusFilter, categoryFilter, debouncedSearch]);
+
+  function handleCreateNew() {
+    setEditingSupplier(null);
+    setShowForm(true);
+  }
+
+  function handleEdit(supplier: Supplier) {
+    setEditingSupplier(supplier);
+    setShowForm(true);
+  }
+
+  async function handleSubmit(data: SupplierCreate | SupplierUpdate) {
+    if (editingSupplier) {
+      await updateSupplier(editingSupplier.id, data as SupplierUpdate);
+    } else {
+      await createSupplier(data as SupplierCreate);
+    }
+    const fresh = await fetchSuppliers({
+      country: countryFilter || undefined,
+      status: statusFilter || undefined,
+      category: categoryFilter || undefined,
+      search: debouncedSearch || undefined,
+    });
+    setSuppliers(fresh);
+  }
 
   return (
     <div className="flex min-h-screen">
       <Sidebar />
       <main className="flex-1 overflow-auto p-6 lg:p-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white">
-            Directorio de proveedores
-          </h1>
-          <p className="mt-2 text-slate-400">
-            Gestión centralizada de carriers, suministros y servicios para
-            operaciones en USA y España.
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">
+              Directorio de proveedores
+            </h1>
+            <p className="mt-2 text-slate-400">
+              Gestión centralizada de carriers, suministros y servicios para
+              operaciones en USA y España.
+            </p>
+          </div>
+          <button
+            onClick={handleCreateNew}
+            className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
+          >
+            + Nuevo proveedor
+          </button>
         </div>
 
         <div className="mb-6 flex flex-wrap gap-4">
+          <div className="relative">
+            <svg
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+              />
+            </svg>
+            <input
+              type="text"
+              placeholder="Buscar por nombre..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="rounded-lg border border-white/10 bg-slate-800 py-2 pl-10 pr-4 text-sm text-slate-200 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+            />
+          </div>
+
           <select
             value={countryFilter}
             onChange={(e) => setCountryFilter(e.target.value)}
@@ -128,6 +200,9 @@ export default function SuppliersPage() {
                   <th className="px-4 py-3 font-medium text-slate-300">
                     Estado
                   </th>
+                  <th className="px-4 py-3 font-medium text-slate-300">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -179,12 +254,23 @@ export default function SuppliersPage() {
                         {SUPPLIER_STATUSES[supplier.status] ?? supplier.status}
                       </span>
                     </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleEdit(supplier)}
+                        className="rounded p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                        title="Editar"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {suppliers.length === 0 && (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-4 py-12 text-center text-slate-500"
                     >
                       No se encontraron proveedores
@@ -202,6 +288,14 @@ export default function SuppliersPage() {
           </p>
         )}
       </main>
+
+      {showForm && (
+        <SupplierForm
+          supplier={editingSupplier}
+          onSubmit={handleSubmit}
+          onClose={() => setShowForm(false)}
+        />
+      )}
     </div>
   );
 }
