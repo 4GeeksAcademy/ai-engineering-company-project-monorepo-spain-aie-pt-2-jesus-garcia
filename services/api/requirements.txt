@@ -5,3 +5,4 @@ pandas
 pydantic
 httpx
 pytest
+tinydb
