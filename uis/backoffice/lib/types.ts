@@ -45,3 +45,59 @@ export const INVALID_REASON_LABELS: Record<string, string> = {
 export function describeReason(key: string): string {
   return INVALID_REASON_LABELS[key] ?? key.replace(/_/g, " ");
 }
+
+export interface Supplier {
+  id: string;
+  name: string;
+  country: string;
+  categories: string[];
+  rate_per_shipment: number;
+  currency: string;
+  updated_at: string;
+  status: string;
+  service_zone: string | null;
+  contact_email: string | null;
+  notes: string | null;
+}
+
+export interface SupplierCreate {
+  name: string;
+  country: string;
+  categories: string[];
+  rate_per_shipment: number;
+  status?: string;
+  service_zone?: string | null;
+  contact_email?: string | null;
+  notes?: string | null;
+}
+
+export interface SupplierUpdate {
+  name?: string;
+  categories?: string[];
+  rate_per_shipment?: number;
+  status?: string;
+  service_zone?: string | null;
+  contact_email?: string | null;
+  notes?: string | null;
+}
+
+export const SUPPLIER_CATEGORIES: Record<string, string> = {
+  carrier_last_mile: "Transporte última milla",
+  carrier_international: "Transporte internacional",
+  warehouse_supplies: "Suministros de almacén",
+  packaging_materials: "Material de embalaje",
+  reverse_logistics: "Logística inversa",
+  fleet_maintenance: "Mantenimiento de flota",
+  it_and_wms_software: "Software IT/WMS",
+  cleaning_and_facilities: "Limpieza e instalaciones",
+};
+
+export const SUPPLIER_STATUSES: Record<string, string> = {
+  active: "Activo",
+  suspended: "Suspendido",
+};
+
+export const COUNTRY_FLAGS: Record<string, string> = {
+  USA: "🇺🇸",
+  Spain: "🇪🇸",
+};
