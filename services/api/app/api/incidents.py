@@ -1,9 +1,10 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from ..incidents import service
 from ..incidents.exceptions import EmptyFileError, InvalidFormatError, NoAnalysisError
 from ..incidents.schemas import AnalysisResponse
+from ..core.dependencies import require_manager
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
     response_model=AnalysisResponse,
     summary="Analiza un CSV de incidentes y devuelve el resumen en JSON",
 )
-async def analyze_incidents(file: UploadFile = File(...)) -> AnalysisResponse:
+async def analyze_incidents(file: UploadFile = File(...), _=Depends(require_manager)) -> AnalysisResponse:
     if file is None or file.filename is None or file.filename == "":
         raise HTTPException(status_code=400, detail="Falta el archivo CSV en el campo 'file'.")
 
@@ -28,7 +29,7 @@ async def analyze_incidents(file: UploadFile = File(...)) -> AnalysisResponse:
     "/results/export",
     summary="Devuelve el último análisis en formato CSV descargable",
 )
-async def export_results() -> Response:
+async def export_results(_=Depends(require_manager)) -> Response:
     try:
         csv_text = service.export_last_analysis_csv()
     except NoAnalysisError as exc:

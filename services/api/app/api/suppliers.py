@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_db
 from models import Supplier, SupplierCreate, SupplierUpdate
+from app.core.dependencies import require_manager
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -18,6 +19,7 @@ def list_suppliers(
     category: str | None = Query(None, description="Filtrar por categoría"),
     status: str | None = Query(None, description="Filtrar por estado: active o suspended"),
     search: str | None = Query(None, description="Buscar por nombre"),
+    _=Depends(require_manager),
 ) -> list[Supplier]:
     db = get_db()
     table = db.table("suppliers")
@@ -44,7 +46,7 @@ def list_suppliers(
     response_model=Supplier,
     summary="Obtener un proveedor por ID",
 )
-def get_supplier(supplier_id: str) -> Supplier:
+def get_supplier(supplier_id: str, _=Depends(require_manager)) -> Supplier:
     db = get_db()
     table = db.table("suppliers")
 
@@ -64,7 +66,7 @@ def get_supplier(supplier_id: str) -> Supplier:
     status_code=201,
     summary="Crear un nuevo proveedor",
 )
-def create_supplier(payload: SupplierCreate) -> Supplier:
+def create_supplier(payload: SupplierCreate, _=Depends(require_manager)) -> Supplier:
     db = get_db()
     table = db.table("suppliers")
 
@@ -93,7 +95,7 @@ def create_supplier(payload: SupplierCreate) -> Supplier:
     response_model=Supplier,
     summary="Actualizar un proveedor existente",
 )
-def update_supplier(supplier_id: str, payload: SupplierUpdate) -> Supplier:
+def update_supplier(supplier_id: str, payload: SupplierUpdate, _=Depends(require_manager)) -> Supplier:
     db = get_db()
     table = db.table("suppliers")
 
@@ -129,7 +131,7 @@ def update_supplier(supplier_id: str, payload: SupplierUpdate) -> Supplier:
     status_code=204,
     summary="Eliminar un proveedor",
 )
-def delete_supplier(supplier_id: str) -> None:
+def delete_supplier(supplier_id: str, _=Depends(require_manager)) -> None:
     db = get_db()
     table = db.table("suppliers")
 

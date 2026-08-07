@@ -71,6 +71,12 @@ class TokenResponse(BaseModel):
     user: User
 
 
+class AuthMeResponse(BaseModel):
+    email: str
+    role: UserRole
+    profile: Profile
+
+
 VALID_CATEGORIES = [
     "carrier_last_mile",
     "carrier_international",

@@ -46,14 +46,20 @@
   - Ejecución: `npm run dev` (puerto 3000) desde `uis/backoffice`
 - `services/api/` — Sistema de autenticación (User + Profile) con TinyDB
   - `POST /api/auth/login` — Login con JWT (bcrypt passwords)
+  - `GET /api/auth/me` — Devuelve email + role + Profile del usuario autenticado
   - `POST /api/users` — Registro público, crea User + Profile
   - `GET /api/users` — Listar usuarios (admin)
   - `GET/PUT/DELETE /api/users/{id}` — CRUD protegido (admin o propio usuario)
   - `GET/PUT /api/profiles/me` — Perfil del usuario autenticado (solo dueño)
   - Modelos Pydantic con `UserRole` enum (admin, manager, user) en `models.py`
   - `app/core/security.py` — bcrypt hashing + JWT creation/validation
-  - `app/core/dependencies.py` — `get_current_user` via Bearer token
+  - `app/core/dependencies.py` — `get_current_user` + `require_role()` (con `require_manager` y `require_admin`)
+  - `ACCESS_TOKEN_EXPIRE_MINUTES` configurable via `.env`
   - Seed script: `seed_users.py` (crea admin@trackflow.com / admin123)
+- `services/api/` — Endpoints protegidos con auth:
+  - `suppliers.py` — Todos los endpoints requieren role admin/manager (401 sin token, 403 si role user)
+  - `incidents.py` — Todos los endpoints requieren role admin/manager (401 sin token, 403 si role user)
+  - Tests actualizados con fixture `auth_headers` que genera token admin + seed automático
 
 ## Siguientes pasos
 

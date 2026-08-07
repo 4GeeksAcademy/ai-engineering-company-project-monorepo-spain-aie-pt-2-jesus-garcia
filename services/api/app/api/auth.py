@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from database import get_db
 from models import (
     User, UserCreate, UserUpdate, LoginRequest, TokenResponse,
-    Profile, ProfileUpdate, UserRole,
+    AuthMeResponse, Profile, ProfileUpdate, UserRole,
 )
 from app.core.security import hash_password, verify_password, create_token
 from app.core.dependencies import get_current_user
@@ -39,6 +39,30 @@ def login(payload: LoginRequest):
 
     db.close()
     raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@router.get("/auth/me", response_model=AuthMeResponse)
+def auth_me(current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    profiles_table = db.table("profiles")
+    profile = None
+    for p in profiles_table.all():
+        if p.get("user_id") == current_user["id"]:
+            profile = Profile(
+                id=str(p.doc_id),
+                user_id=p["user_id"],
+                name=p.get("name"),
+                phone=p.get("phone"),
+                address=p.get("address"),
+            )
+            break
+    db.close()
+
+    return AuthMeResponse(
+        email=current_user["email"],
+        role=UserRole(current_user["role"]),
+        profile=profile or Profile(id="", user_id=current_user["id"]),
+    )
 
 
 @router.post("/users", response_model=User, status_code=201)
