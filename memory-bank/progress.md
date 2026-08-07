@@ -44,6 +44,16 @@
   - `next.config.ts` con rewrite: `/api/incidents/*` → `BACKEND_URL` (`http://localhost:8000` en `.env.local`)
   - `lib/api.ts` (analyzeCsv, fetchExportCsv) y `lib/types.ts` (tipos y etiquetas de razón inválida)
   - Ejecución: `npm run dev` (puerto 3000) desde `uis/backoffice`
+- `services/api/` — Sistema de autenticación (User + Profile) con TinyDB
+  - `POST /api/auth/login` — Login con JWT (bcrypt passwords)
+  - `POST /api/users` — Registro público, crea User + Profile
+  - `GET /api/users` — Listar usuarios (admin)
+  - `GET/PUT/DELETE /api/users/{id}` — CRUD protegido (admin o propio usuario)
+  - `GET/PUT /api/profiles/me` — Perfil del usuario autenticado (solo dueño)
+  - Modelos Pydantic con `UserRole` enum (admin, manager, user) en `models.py`
+  - `app/core/security.py` — bcrypt hashing + JWT creation/validation
+  - `app/core/dependencies.py` — `get_current_user` via Bearer token
+  - Seed script: `seed_users.py` (crea admin@trackflow.com / admin123)
 
 ## Siguientes pasos
 
@@ -52,5 +62,5 @@
 - [ ] Añadir paginación en `CandidateList`
 - [ ] Implementar `ConfirmDialog` para eliminación
 - [ ] Pruebas end-to-end del flujo completo
-- [ ] Añadir autenticación al backoffice
+- [ ] Conectar autenticación al backoffice (login UI + token storage)
 - [ ] Conectar formulario de aplicación con API real
