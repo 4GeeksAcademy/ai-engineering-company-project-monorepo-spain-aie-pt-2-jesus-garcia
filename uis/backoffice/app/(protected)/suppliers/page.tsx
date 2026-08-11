@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sidebar } from "@/components/Sidebar";
 import { fetchSuppliers, createSupplier, updateSupplier, deleteSupplier, ApiRequestError } from "@/lib/api";
 import type { Supplier, SupplierCreate, SupplierUpdate } from "@/lib/types";
 import {
@@ -123,10 +122,8 @@ export default function SuppliersPage() {
   }
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 overflow-auto p-6 lg:p-10">
-        <div className="mb-8 flex items-start justify-between">
+    <>
+      <div className="mb-8 flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white">
               Directorio de proveedores
@@ -353,7 +350,6 @@ export default function SuppliersPage() {
             {suppliers.length} proveedor{suppliers.length !== 1 ? "es" : ""}
           </p>
         )}
-      </main>
 
       {showForm && (
         <SupplierForm
@@ -389,6 +385,6 @@ export default function SuppliersPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

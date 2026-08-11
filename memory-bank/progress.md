@@ -61,6 +61,21 @@
   - `incidents.py` — Todos los endpoints requieren role admin/manager (401 sin token, 403 si role user)
   - Tests actualizados con fixture `auth_headers` que genera token admin + seed automático
 
+## Auth — Login & Register (uis/backoffice)
+
+- `/login` — formulario email + contraseña en `uis/backoffice`. Llama a `POST /api/auth/login`, almacena token en localStorage, redirige a `/`. Muestra error "Credenciales inválidas" en 401.
+- `/register` — formulario email + contraseña + confirmar. Llama a `POST /api/users`, luego `POST /api/auth/login`, almacena token y redirige a `/`. Muestra errores de validación a nivel de campo (422/409).
+- Layout minimalista centrado (sin Sidebar) con logo TrackFlow + fondo degradado.
+- `AuthProvider` en `uis/backoffice/contexts/AuthContext.tsx` — envuelve toda la app desde el root layout.
+- En mount: lee token de localStorage, lo valida con `GET /api/auth/me`.
+- Rutas protegidas en `(protected)/layout.tsx`: redirige a `/login` si no hay sesión.
+- Sidebar tiene botón "Cerrar sesión" con icono de logout.
+- Loader animado con logo: capa gris se recorta desde abajo hacia arriba revelando el color (clip-path, 800ms + fade 500ms).
+- Rewrites en `next.config.ts` para `/api/auth/*` y `/api/users` hacia el backend.
+- `lib/api.ts` añadido `apiRequest<T>()` genérico con soporte para token Bearer.
+- `uis/website` revertido a estado original (sin auth).
+- Type-check, lint, build — todo OK en ambos proyectos.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
@@ -68,5 +83,4 @@
 - [ ] Añadir paginación en `CandidateList`
 - [ ] Implementar `ConfirmDialog` para eliminación
 - [ ] Pruebas end-to-end del flujo completo
-- [ ] Conectar autenticación al backoffice (login UI + token storage)
 - [ ] Conectar formulario de aplicación con API real

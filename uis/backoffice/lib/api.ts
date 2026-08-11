@@ -2,12 +2,49 @@ import type { AnalysisResponse, Supplier, SupplierCreate, SupplierUpdate } from 
 
 export class ApiRequestError extends Error {
   status: number;
+  detail: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.detail = detail;
   }
+}
+
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit & { token?: string } = {},
+): Promise<T> {
+  const { token, ...fetchOptions } = options;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(fetchOptions.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(path, { ...fetchOptions, headers });
+
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      const body = await res.json();
+      detail = body.detail ?? body;
+    } catch {
+      detail = res.statusText;
+    }
+    throw new ApiRequestError(
+      res.status,
+      typeof detail === "string" ? detail : res.statusText,
+      detail,
+    );
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
 }
 
 export async function analyzeCsv(file: File): Promise<AnalysisResponse> {
