@@ -6,3 +6,5 @@ pydantic
 httpx
 pytest
 tinydb
+passlib[bcrypt]
+python-jose[cryptography]

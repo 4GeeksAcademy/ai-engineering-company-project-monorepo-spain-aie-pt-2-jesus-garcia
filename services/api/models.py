@@ -1,5 +1,81 @@
 from datetime import datetime
+from enum import StrEnum
 from pydantic import BaseModel, Field, field_validator
+
+
+class UserRole(StrEnum):
+    admin = "admin"
+    manager = "manager"
+    user = "user"
+
+
+class Profile(BaseModel):
+    id: str
+    user_id: str
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class User(BaseModel):
+    id: str
+    email: str
+    is_active: bool
+    role: UserRole
+    created_at: str
+
+
+class UserCreate(BaseModel):
+    email: str
+    password: str = Field(min_length=6)
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_valid(cls, v: str) -> str:
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("invalid email format")
+        return v.lower().strip()
+
+
+class UserUpdate(BaseModel):
+    email: str | None = None
+    role: UserRole | None = None
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_valid(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("invalid email format")
+        return v.lower().strip()
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: User
+
+
+class AuthMeResponse(BaseModel):
+    email: str
+    role: UserRole
+    profile: Profile
+
 
 VALID_CATEGORIES = [
     "carrier_last_mile",
