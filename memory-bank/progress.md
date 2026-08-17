@@ -76,6 +76,17 @@
 - `uis/website` revertido a estado original (sin auth).
 - Type-check, lint, build — todo OK en ambos proyectos.
 
+## Auth — Conexión Bearer token con endpoints protegidos (uis/backoffice)
+
+- Tras el merge del backend auth en `main`, `suppliers.py` e `incidents.py` exigen token Bearer (`require_manager`, role ≥ manager).
+- Todos los helpers de `lib/api.ts` ahora aceptan opcional `token?: string | null` y envían `Authorization: Bearer <token>` cuando se proporciona: `analyzeCsv`, `fetchExportCsv`, `fetchSuppliers`, `fetchSupplier`, `createSupplier`, `updateSupplier`, `deleteSupplier` (helper interno `authHeaders`).
+- Los callers pasan el token desde `useAuth()`:
+  - `app/(protected)/suppliers/page.tsx` — todas las llamadas CRUD de proveedores.
+  - `app/(protected)/page.tsx` — `analyzeCsv`.
+  - `components/ExportLink.tsx` — `fetchExportCsv`.
+- Registro crea role `user`, por lo que un usuario recién registrado recibe 403 en suppliers/incidents (diseño intencional; admin/manager acceden).
+- `feature/auth-frontend` rebaseado sobre `origin/main` (incluye merge de auth #7).
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo

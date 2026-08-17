@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Loader } from "@/components/Loader";
 import { ApiRequestError } from "@/lib/api";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface FieldError {
   field: string;
@@ -25,6 +26,7 @@ function parseFieldErrors(detail: unknown): FieldError[] {
 }
 
 export function RegisterForm() {
+  const router = useRouter();
   const { register } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +35,7 @@ export function RegisterForm() {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   function getFieldError(field: string): string | undefined {
     return fieldErrors.find((fe) => fe.field === field)?.message;
@@ -53,6 +56,7 @@ export function RegisterForm() {
 
     try {
       await register(email, password);
+      setSuccess(true);
     } catch (err) {
       setShowLoader(false);
       setLoading(false);
@@ -73,7 +77,14 @@ export function RegisterForm() {
 
   return (
     <>
-      {showLoader && <Loader onComplete={() => setShowLoader(false)} />}
+      {showLoader && (
+        <Loader
+          onComplete={() => {
+            setShowLoader(false);
+            if (success) router.push("/");
+          }}
+        />
+      )}
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div>
           <label htmlFor="reg-email" className="block text-sm text-slate-200">

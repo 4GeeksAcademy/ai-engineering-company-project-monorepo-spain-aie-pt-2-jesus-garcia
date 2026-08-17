@@ -9,8 +9,10 @@ import { BreakdownCard } from "@/components/ui/BreakdownCard";
 import { analyzeCsv, ApiRequestError } from "@/lib/api";
 import type { AnalysisResponse } from "@/lib/types";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function BackofficePage() {
+  const { token } = useAuth();
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +24,7 @@ export default function BackofficePage() {
     setResult(null);
     setFileName(file.name);
     try {
-      const data = await analyzeCsv(file);
+      const data = await analyzeCsv(file, token);
       setResult(data);
     } catch (err) {
       if (err instanceof ApiRequestError) {
@@ -33,7 +35,7 @@ export default function BackofficePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   return (
     <>

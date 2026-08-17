@@ -12,6 +12,10 @@ export class ApiRequestError extends Error {
   }
 }
 
+function authHeaders(token?: string | null): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit & { token?: string } = {},
@@ -47,12 +51,16 @@ export async function apiRequest<T>(
   return res.json() as Promise<T>;
 }
 
-export async function analyzeCsv(file: File): Promise<AnalysisResponse> {
+export async function analyzeCsv(
+  file: File,
+  token?: string | null,
+): Promise<AnalysisResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
   const response = await fetch("/api/incidents/analyze", {
     method: "POST",
+    headers: { ...authHeaders(token) },
     body: formData,
   });
 
@@ -68,8 +76,10 @@ export async function analyzeCsv(file: File): Promise<AnalysisResponse> {
   return response.json() as Promise<AnalysisResponse>;
 }
 
-export async function fetchExportCsv(): Promise<Blob> {
-  const response = await fetch("/api/incidents/results/export");
+export async function fetchExportCsv(token?: string | null): Promise<Blob> {
+  const response = await fetch("/api/incidents/results/export", {
+    headers: { ...authHeaders(token) },
+  });
 
   if (!response.ok) {
     let detail = response.statusText;
@@ -88,7 +98,7 @@ export async function fetchSuppliers(params?: {
   category?: string;
   status?: string;
   search?: string;
-}): Promise<Supplier[]> {
+}, token?: string | null): Promise<Supplier[]> {
   const searchParams = new URLSearchParams();
   if (params?.country) searchParams.set("country", params.country);
   if (params?.category) searchParams.set("category", params.category);
@@ -98,7 +108,7 @@ export async function fetchSuppliers(params?: {
   const query = searchParams.toString();
   const url = `/api/suppliers${query ? `?${query}` : ""}`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: { ...authHeaders(token) } });
 
   if (!response.ok) {
     let detail = response.statusText;
@@ -112,8 +122,13 @@ export async function fetchSuppliers(params?: {
   return response.json() as Promise<Supplier[]>;
 }
 
-export async function fetchSupplier(id: string): Promise<Supplier> {
-  const response = await fetch(`/api/suppliers/${id}`);
+export async function fetchSupplier(
+  id: string,
+  token?: string | null,
+): Promise<Supplier> {
+  const response = await fetch(`/api/suppliers/${id}`, {
+    headers: { ...authHeaders(token) },
+  });
 
   if (!response.ok) {
     let detail = response.statusText;
@@ -127,10 +142,13 @@ export async function fetchSupplier(id: string): Promise<Supplier> {
   return response.json() as Promise<Supplier>;
 }
 
-export async function createSupplier(data: SupplierCreate): Promise<Supplier> {
+export async function createSupplier(
+  data: SupplierCreate,
+  token?: string | null,
+): Promise<Supplier> {
   const response = await fetch("/api/suppliers", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
 
@@ -148,11 +166,12 @@ export async function createSupplier(data: SupplierCreate): Promise<Supplier> {
 
 export async function updateSupplier(
   id: string,
-  data: SupplierUpdate
+  data: SupplierUpdate,
+  token?: string | null,
 ): Promise<Supplier> {
   const response = await fetch(`/api/suppliers/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
 
@@ -168,9 +187,10 @@ export async function updateSupplier(
   return response.json() as Promise<Supplier>;
 }
 
-export async function deleteSupplier(id: string): Promise<void> {
+export async function deleteSupplier(id: string, token?: string | null): Promise<void> {
   const response = await fetch(`/api/suppliers/${id}`, {
     method: "DELETE",
+    headers: { ...authHeaders(token) },
   });
 
   if (!response.ok) {

@@ -5,14 +5,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Loader } from "@/components/Loader";
 import { ApiRequestError } from "@/lib/api";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export function LoginForm() {
+  const router = useRouter();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,6 +25,7 @@ export function LoginForm() {
 
     try {
       await login(email, password);
+      setSuccess(true);
     } catch (err) {
       setShowLoader(false);
       setLoading(false);
@@ -35,7 +39,14 @@ export function LoginForm() {
 
   return (
     <>
-      {showLoader && <Loader onComplete={() => setShowLoader(false)} />}
+      {showLoader && (
+        <Loader
+          onComplete={() => {
+            setShowLoader(false);
+            if (success) router.push("/");
+          }}
+        />
+      )}
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div>
           <label htmlFor="email" className="block text-sm text-slate-200">

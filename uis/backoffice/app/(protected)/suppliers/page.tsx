@@ -9,6 +9,7 @@ import {
   COUNTRY_FLAGS,
 } from "@/lib/types";
 import { SupplierForm } from "@/components/suppliers/SupplierForm";
+import { useAuth } from "@/contexts/AuthContext";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -20,6 +21,7 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function SuppliersPage() {
+  const { token } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export default function SuppliersPage() {
       status: statusFilter || undefined,
       category: categoryFilter || undefined,
       search: debouncedSearch || undefined,
-    });
+    }, token);
     setSuppliers(fresh);
   }
 
@@ -57,7 +59,7 @@ export default function SuppliersPage() {
           status: statusFilter || undefined,
           category: categoryFilter || undefined,
           search: debouncedSearch || undefined,
-        });
+        }, token);
         if (!cancelled) setSuppliers(data);
       } catch (err) {
         if (!cancelled) {
@@ -73,7 +75,7 @@ export default function SuppliersPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, [countryFilter, statusFilter, categoryFilter, debouncedSearch]);
+  }, [countryFilter, statusFilter, categoryFilter, debouncedSearch, token]);
 
   function handleCreateNew() {
     setEditingSupplier(null);
@@ -87,9 +89,9 @@ export default function SuppliersPage() {
 
   async function handleSubmit(data: SupplierCreate | SupplierUpdate) {
     if (editingSupplier) {
-      await updateSupplier(editingSupplier.id, data as SupplierUpdate);
+      await updateSupplier(editingSupplier.id, data as SupplierUpdate, token);
     } else {
-      await createSupplier(data as SupplierCreate);
+      await createSupplier(data as SupplierCreate, token);
     }
     await refresh();
   }
@@ -98,7 +100,7 @@ export default function SuppliersPage() {
     const newStatus = supplier.status === "active" ? "suspended" : "active";
     setActionLoading(supplier.id);
     try {
-      await updateSupplier(supplier.id, { status: newStatus });
+      await updateSupplier(supplier.id, { status: newStatus }, token);
       await refresh();
     } catch {
       setError("Error al cambiar estado");
@@ -111,7 +113,7 @@ export default function SuppliersPage() {
     if (!confirmDelete) return;
     setActionLoading(confirmDelete.id);
     try {
-      await deleteSupplier(confirmDelete.id);
+      await deleteSupplier(confirmDelete.id, token);
       setConfirmDelete(null);
       await refresh();
     } catch {
