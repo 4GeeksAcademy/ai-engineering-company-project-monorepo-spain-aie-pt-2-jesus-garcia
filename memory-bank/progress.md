@@ -105,6 +105,15 @@
 - Env nuevas: `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`, `RESEND_API_KEY`, `RESEND_FROM`, `FRONTEND_URL`. Dep `resend` añadida al venv y a `requirements.txt`.
 - Tests: `pytest` (10 OK) y typecheck raíz OK.
 
+## Auth — Frontend recuperación y cambio de contraseña (uis/backoffice)
+
+- `/forgot-password` + `components/auth/ForgotPasswordForm.tsx` — email; muestra SIEMPRE mensaje genérico tras el envío (ignora errores) para evitar enumeración. API devuelve 202. Link en `/login` ("¿Olvidaste tu contraseña?").
+- `/reset-password` + `components/auth/ResetPasswordForm.tsx` — página server awaiteando `searchParams` (Next 16) pasa `initialToken`; campos nueva + confirmar con validación de coincidencia; envía `{token,new_password}`; token inválido falla al enviar ("el enlace no es válido o ha expirado"); éxito → `router.push("/login")`.
+- `/account/change-password` (bajo layout protegido) + `components/auth/ChangePasswordForm.tsx` — actual + nueva + confirmación; valida coincidencia; envía con Bearer (`useAuth().token`); 400 → "La contraseña actual es incorrecta"; éxito → mensaje y `router.push("/")`.
+- `lib/auth-api.ts` — `forgotPasswordRequest`, `resetPasswordRequest`, `changePasswordRequest` (con token).
+- `components/Sidebar.tsx` — link "Cambiar contraseña" junto a "Cerrar sesión".
+- Rutas nuevas en build: `/forgot-password`, `/reset-password` (ƒ dinámica), `/account/change-password`. Type-check (raíz), lint y build (`uis/backoffice`) — todo OK.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
