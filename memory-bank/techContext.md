@@ -68,6 +68,15 @@ cd uis/website && npm run dev -- -p 3001
 
 `uis/backoffice` y `uis/website` son ambas Next.js y requieren puertos distintos (3000 / 3001). El backend en 8000 no entra en conflicto.
 
+## Variables de entorno del backend
+
+- `SECRET_KEY`: clave para firmar/verificar tokens JWT.
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: validez de los access tokens (por defecto `1440`).
+- `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`: validez del token de restablecimiento (por defecto `30`, rango 15–60).
+- `RESEND_API_KEY`: clave de Resend para envío de emails reales. Si NO está configurada, el flujo de reset queda en modo stub (loguea el enlace) para desarrollo.
+- `RESEND_FROM`: remitente de los emails (por defecto `onboarding@resend.dev`).
+- `FRONTEND_URL`: base del backoffice (por defecto `http://localhost:3000`); se usa para construir el enlace de restablecimiento.
+
 ## Convenciones de código
 
 - TypeScript estricto, sin comentarios en código

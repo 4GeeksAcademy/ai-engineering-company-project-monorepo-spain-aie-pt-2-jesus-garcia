@@ -5,9 +5,14 @@ from database import get_db
 from models import (
     User, UserCreate, UserUpdate, LoginRequest, TokenResponse,
     AuthMeResponse, Profile, ProfileUpdate, UserRole,
+    ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest,
 )
-from app.core.security import hash_password, verify_password, create_token
+from app.core.security import (
+    hash_password, verify_password, create_token,
+    create_password_reset_token, decode_token,
+)
 from app.core.dependencies import get_current_user
+from app.email_service import send_password_reset_email
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -39,6 +44,86 @@ def login(payload: LoginRequest):
 
     db.close()
     raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@router.post("/auth/forgot-password", status_code=202)
+def forgot_password(payload: ForgotPasswordRequest):
+    db = get_db()
+    users_table = db.table("users")
+
+    for doc in users_table.all():
+        if doc.get("email") == payload.email:
+            if doc.get("is_active", True):
+                token = create_password_reset_token(str(doc.doc_id))
+                send_password_reset_email(doc["email"], token)
+            break
+
+    db.close()
+    return {"message": "If the email exists, a reset link has been sent"}
+
+
+@router.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    payload_data = decode_token(payload.token)
+    if payload_data is None or payload_data.get("type") != "password_reset":
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user_id = payload_data.get("sub")
+    iat = payload_data.get("iat")
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    db = get_db()
+    users_table = db.table("users")
+
+    doc = None
+    for d in users_table.all():
+        if str(d.doc_id) == str(user_id):
+            doc = d
+            break
+
+    if doc is None or not doc.get("is_active", True):
+        db.close()
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+    changed_at_raw = doc.get("password_changed_at")
+    if changed_at_raw:
+        changed_at = datetime.fromisoformat(changed_at_raw)
+        if issued_at < changed_at:
+            db.close()
+            raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    users_table.update(
+        {
+            "hashed_password": hash_password(payload.new_password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        doc_ids=[doc.doc_id],
+    )
+    db.close()
+    return {"message": "Password updated successfully"}
+
+
+@router.post("/auth/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if not verify_password(payload.current_password, current_user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    db = get_db()
+    users_table = db.table("users")
+    users_table.update(
+        {
+            "hashed_password": hash_password(payload.new_password),
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+        },
+        doc_ids=[int(current_user["id"])],
+    )
+    db.close()
+    return {"message": "Password updated successfully"}
 
 
 @router.get("/auth/me", response_model=AuthMeResponse)

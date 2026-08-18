@@ -95,6 +95,16 @@
 - `suppliers/page.tsx`: modal de eliminación inline refactorizado a `ConfirmDialog`.
 - Type-check (raíz), lint y build (`uis/backoffice`) — todo OK.
 
+## Auth — Recuperación y cambio de contraseña (services/api)
+
+- `POST /api/auth/forgot-password` — busca por email; respuesta genérica (202) para no filtrar si el email existe; si existe y está activo genera reset-token (`type=password_reset`, duración `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` por defecto 30) y envía enlace construido con `FRONTEND_URL` (por defecto `http://localhost:3000`, backoffice).
+- `POST /api/auth/reset-password` — valida firma + exp + `type=="password_reset"` + token NO anterior a `password_changed_at` del usuario; hashea la nueva y actualiza `hashed_password` + `password_changed_at` (invalida el token y todos los emitidos antes).
+- `POST /api/auth/change-password` — autenticado (`get_current_user`); verifica la contraseña actual, hashea la nueva y actualiza `hashed_password` + `password_changed_at`.
+- Invalidación por estado en servidor: campo `password_changed_at` en el documento del usuario; se rechaza cualquier token-reset con `iat` anterior a ese momento. No se expone en el response `User`.
+- `app/email_service.py` (nuevo) — Resend real si `RESEND_API_KEY` configurada; en desarrollo sin credenciales loguea el enlace (stub) para no romper el flujo.
+- Env nuevas: `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`, `RESEND_API_KEY`, `RESEND_FROM`, `FRONTEND_URL`. Dep `resend` añadida al venv y a `requirements.txt`.
+- Tests: `pytest` (10 OK) y typecheck raíz OK.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
