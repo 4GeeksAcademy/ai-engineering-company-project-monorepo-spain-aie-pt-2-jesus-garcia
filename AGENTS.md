@@ -5,7 +5,7 @@
 Al comenzar cada sesión, leer los siguientes archivos para establecer contexto:
 
 1. `CONTEXT.md` — Briefing completo de la empresa
-2. `MILESTONE_1.md`, `MILESTONE_2.md`, `MILESTONE_3.md` — Especificaciones de los hitos
+2. `MILESTONE_1.md`, `MILESTONE_2.md`, `MILESTONE_3.md`, `MILESTONE_4.md`  — Especificaciones de los hitos
 3. `memory-bank/projectbrief.md` — Resumen del proyecto
 4. `memory-bank/techContext.md` — Stack, comandos y convenciones
 5. `memory-bank/progress.md` — Estado actual y próximos pasos
@@ -14,11 +14,19 @@ Al comenzar cada sesión, leer los siguientes archivos para establecer contexto:
 ## Flujo obligatorio antes de cada commit
 
 1. **Type-check**: `npm run typecheck` (raíz)
-2. **Lint**: Si el cambio afecta a `uis/talent-pipeline-tracker/`, ejecutar `npm run lint` allí
-3. **Build**: Si el cambio afecta a `uis/talent-pipeline-tracker/`, ejecutar `npm run build` allí
+2. **Lint**: Si el cambio afecta a un frontend (`uis/backoffice` o `uis/website`), ejecutar `npm run lint` allí
+3. **Build**: Si el cambio afecta a un frontend (`uis/backoffice` o `uis/website`), ejecutar `npm run build` allí
 4. **Revisar cambios**: `git status` + `git diff` para verificar que solo se incluye lo deseado
 5. **Actualizar memory-bank**: Si el cambio afecta al estado del proyecto, actualizar `memory-bank/progress.md`
 6. **Hacer commit**: Solo cuando el usuario lo solicite explícitamente
+
+## Ejecución local (resumen)
+
+- Backend API (`services/api/`): `source venv/bin/activate && uvicorn app.main:app --port 8000` — usar SIEMPRE `services/api/venv` (el `.venv` raíz no tiene deps de la API). Deps: `pip install -r requirements.txt`.
+- Frontend `uis/backoffice/`: `npm run dev` (puerto 3000), proxya `/api/*` → `BACKEND_URL`.
+- Frontend `uis/website/`: `npm run dev -- -p 3001` (puerto distinto al del backoffice); CORS requiere añadir `http://localhost:3001` en `services/api/app/main.py` si se usa ese puerto.
+
+Ver `memory-bank/techContext.md` para comandos detallados y puertos.
 
 ## Archivos y directorios protegidos
 
