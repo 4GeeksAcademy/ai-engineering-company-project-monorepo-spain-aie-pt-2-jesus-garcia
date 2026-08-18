@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 const navItems = [
   {
@@ -31,7 +32,13 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const { logout, user } = useAuth();
+
+  function handleLogout() {
+    setConfirmLogout(false);
+    logout();
+  }
 
   return (
     <aside
@@ -82,7 +89,7 @@ export function Sidebar() {
           </p>
         )}
         <button
-          onClick={logout}
+          onClick={() => setConfirmLogout(true)}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-slate-400 transition hover:bg-white/5 hover:text-red-400"
           title={collapsed ? "Cerrar sesión" : undefined}
         >
@@ -92,6 +99,16 @@ export function Sidebar() {
           {!collapsed && <span>Cerrar sesión</span>}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Cerrar sesión"
+        message="¿Seguro que quieres cerrar la sesión?"
+        confirmLabel="Cerrar sesión"
+        danger
+        onConfirm={handleLogout}
+        onCancel={() => setConfirmLogout(false)}
+      />
     </aside>
   );
 }

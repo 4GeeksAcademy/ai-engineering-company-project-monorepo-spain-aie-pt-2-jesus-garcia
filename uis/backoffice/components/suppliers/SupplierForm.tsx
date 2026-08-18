@@ -6,6 +6,7 @@ import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_STATUSES,
 } from "@/lib/types";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface SupplierFormProps {
   supplier?: Supplier | null;
@@ -26,6 +27,9 @@ export function SupplierForm({ supplier, onSubmit, onClose }: SupplierFormProps)
   const [notes, setNotes] = useState(supplier?.notes ?? "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pendingSubmit, setPendingSubmit] = useState<
+    SupplierCreate | SupplierUpdate | null
+  >(null);
 
   function toggleCategory(cat: string) {
     setCategories((prev) =>
@@ -49,18 +53,24 @@ export function SupplierForm({ supplier, onSubmit, onClose }: SupplierFormProps)
     e.preventDefault();
     if (!validate()) return;
 
+    setPendingSubmit({
+      name: name.trim(),
+      country,
+      categories,
+      rate_per_shipment: parseFloat(ratePerShipment),
+      status,
+      service_zone: serviceZone.trim() || null,
+      contact_email: contactEmail.trim() || null,
+      notes: notes.trim() || null,
+    });
+  }
+
+  async function handleConfirm() {
+    if (!pendingSubmit) return;
+
     setLoading(true);
     try {
-      await onSubmit({
-        name: name.trim(),
-        country,
-        categories,
-        rate_per_shipment: parseFloat(ratePerShipment),
-        status,
-        service_zone: serviceZone.trim() || null,
-        contact_email: contactEmail.trim() || null,
-        notes: notes.trim() || null,
-      });
+      await onSubmit(pendingSubmit);
       onClose();
     } catch {
       setErrors({ submit: "Error al guardar el proveedor" });
@@ -215,10 +225,22 @@ export function SupplierForm({ supplier, onSubmit, onClose }: SupplierFormProps)
             onClick={handleSubmit}
             className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-50"
           >
-            {loading ? "Guardando..." : supplier ? "Guardar cambios" : "Crear proveedor"}
+            {supplier ? "Guardar cambios" : "Crear proveedor"}
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingSubmit !== null}
+        title={supplier ? "Guardar cambios" : "Crear proveedor"}
+        message={`Estás a punto de guardar al proveedor "${
+          name.trim() || "sin nombre"
+        }". ¿Confirmas los datos?`}
+        confirmLabel={supplier ? "Guardar cambios" : "Crear proveedor"}
+        loading={loading}
+        onConfirm={handleConfirm}
+        onCancel={() => setPendingSubmit(null)}
+      />
     </div>
   );
 }

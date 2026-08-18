@@ -9,6 +9,7 @@ import {
   COUNTRY_FLAGS,
 } from "@/lib/types";
 import { SupplierForm } from "@/components/suppliers/SupplierForm";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/contexts/AuthContext";
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -361,32 +362,16 @@ export default function SuppliersPage() {
         />
       )}
 
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-white">Eliminar proveedor</h3>
-            <p className="mt-2 text-sm text-slate-400">
-              ¿Estás seguro de que quieres eliminar <span className="font-medium text-white">{confirmDelete.name}</span>?
-              Esta acción no se puede deshacer.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                disabled={actionLoading === confirmDelete.id}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 disabled:opacity-50"
-              >
-                {actionLoading === confirmDelete.id ? "Eliminando..." : "Eliminar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Eliminar proveedor"
+        message={`¿Estás seguro de que quieres eliminar ${confirmDelete?.name ?? ""}? Esta acción no se puede deshacer.`}
+        confirmLabel={actionLoading === confirmDelete?.id ? "Eliminando..." : "Eliminar"}
+        loading={actionLoading === confirmDelete?.id}
+        danger
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </>
   );
 }

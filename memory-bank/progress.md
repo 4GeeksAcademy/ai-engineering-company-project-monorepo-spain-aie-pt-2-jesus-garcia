@@ -87,11 +87,18 @@
 - Registro crea role `user`, por lo que un usuario recién registrado recibe 403 en suppliers/incidents (diseño intencional; admin/manager acceden).
 - `feature/auth-frontend` rebaseado sobre `origin/main` (incluye merge de auth #7).
 
+## UI — ConfirmDialog reutilizable (uis/backoffice)
+
+- Nuevo `components/ui/ConfirmDialog.tsx` reutilizable (overlay oscuro + panel slate). Props: `open`, `title`, `message`, `confirmLabel`, `cancelLabel`, `loading`, `danger`, `onConfirm`, `onCancel`. Estilo `danger` (rose) para acciones destructivas, por defecto cyan.
+- `SupplierForm.tsx`: al guardar valida primero y muestra ConfirmDialog → confirmar ejecuta `onSubmit` (vía estado `pendingSubmit`).
+- `Sidebar.tsx`: el botón "Cerrar sesión" abre ConfirmDialog (`danger`) antes de llamar a `logout()`. `AuthContext.logout()` sin cambios.
+- `suppliers/page.tsx`: modal de eliminación inline refactorizado a `ConfirmDialog`.
+- Type-check (raíz), lint y build (`uis/backoffice`) — todo OK.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
 - [ ] Implementar ruta dinámica `/candidates/[id]`
 - [ ] Añadir paginación en `CandidateList`
-- [ ] Implementar `ConfirmDialog` para eliminación
 - [ ] Pruebas end-to-end del flujo completo
 - [ ] Conectar formulario de aplicación con API real
