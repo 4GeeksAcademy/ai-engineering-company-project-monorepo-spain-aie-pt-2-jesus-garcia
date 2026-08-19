@@ -77,6 +77,18 @@ cd uis/website && npm run dev -- -p 3001
 - `RESEND_FROM`: remitente de los emails (por defecto `onboarding@resend.dev`).
 - `FRONTEND_URL`: base del backoffice (por defecto `http://localhost:3000`); se usa para construir el enlace de restablecimiento.
 
+## Configuración de email (Recuperación de contraseña)
+
+Las variables del backend se cargan desde `services/api/.env` (via `python-dotenv` en `app/main.py`). El archivo `.env` NO se commitea (ya ignorado).
+
+- **Modo stub (default):** dejando `RESEND_API_KEY` vacío, el enlace de restablecimiento se imprime por **consola del backend**:
+  ```
+  [email_service] RESEND_API_KEY no configurada. Enlace de restablecimiento para <email>: http://localhost:3000/reset-password?token=...
+  ```
+  Copia la URL completa (incluye `token`) y ábrela en el navegador. Este es el "servicio de captura" para desarrollo local (Resend es API HTTP, no SMTP, así que no se puede redirigir a Mailpit/MailHog).
+- **Modo test/real (opcional, sin dominio):** rellena `RESEND_API_KEY` con una clave de `resend.com` (Dashboard → API Keys). Con `RESEND_FROM="TrackFlow <onboarding@resend.dev>"` Resend entrega **solo a tu email verificado** en `resend.com` (limitación del modo test sin dominio). Valida el camino real end-to-end.
+- **Producción con dominio:** añadir el dominio en Resend + verificación DNS y usar `no-reply@tudominio.com`; ahí sí se puede enviar a cualquier destinatario.
+
 ## Convenciones de código
 
 - TypeScript estricto, sin comentarios en código

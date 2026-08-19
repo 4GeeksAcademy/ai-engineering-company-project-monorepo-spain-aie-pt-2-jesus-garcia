@@ -103,6 +103,7 @@
 - Invalidación por estado en servidor: campo `password_changed_at` en el documento del usuario; se rechaza cualquier token-reset con `iat` anterior a ese momento. No se expone en el response `User`.
 - `app/email_service.py` (nuevo) — Resend real si `RESEND_API_KEY` configurada; en desarrollo sin credenciales loguea el enlace (stub) para no romper el flujo.
 - Env nuevas: `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`, `RESEND_API_KEY`, `RESEND_FROM`, `FRONTEND_URL`. Dep `resend` añadida al venv y a `requirements.txt`.
+- Config de email: `python-dotenv` + `load_dotenv()` en `app/main.py`; env se cargan de `services/api/.env` (ignorado por git). Sin `RESEND_API_KEY` → stub por consola (captura dev); con clave → modo test de Resend (envío a email verificado propio, sin dominio). Documentado en `techContext.md`.
 - Tests: `pytest` (10 OK) y typecheck raíz OK.
 
 ## Auth — Frontend recuperación y cambio de contraseña (uis/backoffice)
