@@ -248,41 +248,13 @@ class IncidentCreate(BaseModel):
     category: str
     status: str = "open"
 
-    @field_validator("origin")
-    @classmethod
-    def origin_must_be_valid(cls, v: str) -> str:
-        if v not in INCIDENT_ORIGINS:
-            raise ValueError(f"origin must be one of {INCIDENT_ORIGINS}")
-        return v
-
-    @field_validator("branch")
-    @classmethod
-    def branch_must_be_valid(cls, v: str) -> str:
-        if v not in INCIDENT_BRANCHES:
-            raise ValueError(f"branch must be one of {INCIDENT_BRANCHES}")
-        return v
-
-    @field_validator("category")
-    @classmethod
-    def category_must_be_valid(cls, v: str) -> str:
-        if v not in INCIDENT_CATEGORIES:
-            raise ValueError(f"category must be one of {INCIDENT_CATEGORIES}")
-        return v
-
-    @field_validator("status")
-    @classmethod
-    def status_must_be_valid(cls, v: str) -> str:
-        if v not in INCIDENT_STATUSES:
-            raise ValueError(f"status must be one of {INCIDENT_STATUSES}")
-        return v
-
 
 class IncidentStatusUpdate(BaseModel):
     status: str
 
-    @field_validator("status")
-    @classmethod
-    def status_must_be_valid(cls, v: str) -> str:
-        if v not in INCIDENT_STATUSES:
-            raise ValueError(f"status must be one of {INCIDENT_STATUSES}")
-        return v
+
+class IncidentSummary(BaseModel):
+    by_status: dict[str, int]
+    by_category: dict[str, int]
+    by_origin: dict[str, int]
+    by_branch: dict[str, int]
