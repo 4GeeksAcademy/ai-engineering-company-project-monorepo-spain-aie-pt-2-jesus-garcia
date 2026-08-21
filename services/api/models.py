@@ -192,3 +192,97 @@ class SupplierUpdate(BaseModel):
         if v not in VALID_STATUSES:
             raise ValueError(f"status must be one of {VALID_STATUSES}")
         return v
+
+
+INCIDENT_ORIGINS = ["customer", "branch", "internal"]
+
+INCIDENT_BRANCHES = [
+    "central",
+    "la_warehouse",
+    "la_office",
+    "zaragoza_warehouse",
+    "zaragoza_office",
+]
+
+INCIDENT_CATEGORIES = [
+    "lost_parcel",
+    "delivery_failure",
+    "inventory_discrepancy",
+    "carrier_issue",
+    "returns_issue",
+    "warehouse_incident",
+    "system_failure",
+    "client_complaint",
+    "other",
+]
+
+INCIDENT_STATUSES = ["open", "in_progress", "resolved", "discarded"]
+
+INCIDENT_STATUS_TRANSITIONS = {
+    "open": {"in_progress", "discarded"},
+    "in_progress": {"resolved", "discarded"},
+    "resolved": set(),
+    "discarded": set(),
+}
+
+FINAL_INCIDENT_STATUSES = {"resolved", "discarded"}
+
+
+class Incident(BaseModel):
+    id: str
+    title: str
+    description: str
+    origin: str
+    branch: str
+    category: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+class IncidentCreate(BaseModel):
+    title: str
+    description: str
+    origin: str
+    branch: str
+    category: str
+    status: str = "open"
+
+    @field_validator("origin")
+    @classmethod
+    def origin_must_be_valid(cls, v: str) -> str:
+        if v not in INCIDENT_ORIGINS:
+            raise ValueError(f"origin must be one of {INCIDENT_ORIGINS}")
+        return v
+
+    @field_validator("branch")
+    @classmethod
+    def branch_must_be_valid(cls, v: str) -> str:
+        if v not in INCIDENT_BRANCHES:
+            raise ValueError(f"branch must be one of {INCIDENT_BRANCHES}")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_valid(cls, v: str) -> str:
+        if v not in INCIDENT_CATEGORIES:
+            raise ValueError(f"category must be one of {INCIDENT_CATEGORIES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def status_must_be_valid(cls, v: str) -> str:
+        if v not in INCIDENT_STATUSES:
+            raise ValueError(f"status must be one of {INCIDENT_STATUSES}")
+        return v
+
+
+class IncidentStatusUpdate(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def status_must_be_valid(cls, v: str) -> str:
+        if v not in INCIDENT_STATUSES:
+            raise ValueError(f"status must be one of {INCIDENT_STATUSES}")
+        return v
