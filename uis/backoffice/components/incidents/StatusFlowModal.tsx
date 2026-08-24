@@ -91,7 +91,7 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
     setError(null);
     try {
       await onTransition(incident.id, selected);
-      onClose();
+      setSelected(null);
     } catch {
       setError("Error al cambiar el estado");
       setLoading(false);
