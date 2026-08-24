@@ -41,7 +41,7 @@ function StatusNode({
   const style = isCurrent
     ? `${base} ${FLOW_COLORS[status]} ring-2 ring-white/50 border-white/30`
     : isAllowed
-      ? `${base} ${FLOW_COLORS[status]} cursor-pointer hover:brightness-125 border-white/20`
+      ? `${base} border-white/10 bg-white/10 text-white cursor-pointer hover:bg-white/20`
       : `${base} border-white/5 bg-slate-800/40 text-slate-600`;
 
   return (

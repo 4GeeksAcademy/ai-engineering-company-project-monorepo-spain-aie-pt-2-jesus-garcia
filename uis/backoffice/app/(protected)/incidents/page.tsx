@@ -96,20 +96,20 @@ export default function IncidentsPage() {
     await refresh();
   }
 
-  async function handleTransition(target: string) {
+  async function handleTransition(target: string, status: string) {
     const incident = flowTarget;
-    if (!incident) return;
-    if (!nextStatuses(incident.status).includes(target)) {
-      setError(`Destino de estado inválido: ${target}`);
+    if (!incident || incident.id !== target) return;
+    if (!nextStatuses(incident.status).includes(status)) {
+      setError(`Destino de estado inválido: ${status}`);
       return;
     }
     try {
-      await updateIncidentStatus(incident.id, { status: target }, token);
+      await updateIncidentStatus(incident.id, { status: status }, token);
       setFlowTarget(null);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cambiar el estado");
-    }
+    } 
   }
 
   const selectClass =
