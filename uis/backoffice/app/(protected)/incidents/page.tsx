@@ -97,8 +97,14 @@ export default function IncidentsPage() {
   }
 
   async function handleTransition(target: string) {
+    const incident = flowTarget;
+    if (!incident) return;
+    if (!nextStatuses(incident.status).includes(target)) {
+      setError(`Destino de estado inválido: ${target}`);
+      return;
+    }
     try {
-      await updateIncidentStatus(flowTarget!.id, { status: target }, token);
+      await updateIncidentStatus(incident.id, { status: target }, token);
       setFlowTarget(null);
       await refresh();
     } catch (err) {
