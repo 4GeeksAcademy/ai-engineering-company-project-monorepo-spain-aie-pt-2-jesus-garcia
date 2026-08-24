@@ -32,10 +32,19 @@ def send_password_reset_email(to_email: str, token: str) -> None:
                 "<p>Si no solicitaste este cambio, ignora este email.</p>"
             ),
         })
-    except Exception as exc:  # noqa: BLE001
+    except resend.exceptions.Error as exc:
         logger.error(
             "Error al enviar el correo de restablecimiento a %s: %s",
             to_email,
             exc,
             exc_info=True,
         )
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Error inesperado al enviar el correo de restablecimiento a %s: %s",
+            to_email,
+            exc,
+            exc_info=True,
+        )
+        raise

@@ -55,7 +55,14 @@ def forgot_password(payload: ForgotPasswordRequest):
         if doc.get("email") == payload.email:
             if doc.get("is_active", True):
                 token = create_password_reset_token(str(doc.doc_id))
-                send_password_reset_email(doc["email"], token)
+                try:
+                    send_password_reset_email(doc["email"], token)
+                except Exception as exc:  # noqa: BLE001
+                    db.close()
+                    raise HTTPException(
+                        status_code=503,
+                        detail="No se pudo enviar el correo de restablecimiento. Inténtalo de nuevo.",
+                    ) from exc
             break
 
     db.close()
