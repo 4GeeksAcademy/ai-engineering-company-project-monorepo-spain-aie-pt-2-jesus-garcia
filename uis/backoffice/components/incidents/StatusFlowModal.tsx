@@ -81,6 +81,17 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
   const canDiscard = allowed.includes("discarded");
   const hasTransition = allowed.length > 0;
 
+  function reset() {
+    setSelected(null);
+    setLoading(false);
+    setError(null);
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
   function handleDiscard() {
     setSelected("discarded");
   }
@@ -91,7 +102,7 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
     setError(null);
     try {
       await onTransition(incident.id, selected);
-      setSelected(null);
+      reset();
     } catch {
       setError("Error al cambiar el estado");
       setLoading(false);
@@ -99,8 +110,14 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-900 shadow-xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={handleClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-xl border border-white/10 bg-slate-900 shadow-xl"
+      >
         <div className="p-6">
           <h2 className="text-xl font-bold text-white">Transición de estado</h2>
           <p className="mt-1 line-clamp-1 text-sm text-slate-400">{incident.title}</p>
@@ -138,13 +155,13 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
             Descartar incidencia
           </button>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
-            >
-              Cerrar
-            </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
+          >
+            Cerrar
+          </button>
             {selected && (
               <button
                 type="button"
@@ -159,18 +176,20 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
         </div>
       </div>
 
-      <ConfirmDialog
-        open={selected !== null}
-        title="Cambiar estado"
-        danger={selected === "discarded"}
-        message={`¿Confirmas cambiar la incidencia "${
-          incident.title
-        }" a "${selected ? (INCIDENT_STATUSES[selected] ?? selected) : ""}"?`}
-        confirmLabel={loading ? "Guardando..." : "Confirmar"}
-        loading={loading}
-        onConfirm={handleConfirm}
-        onCancel={() => setSelected(null)}
-      />
+      <div onClick={(e) => e.stopPropagation()}>
+        <ConfirmDialog
+          open={selected !== null}
+          title="Cambiar estado"
+          danger={selected === "discarded"}
+          message={`¿Confirmas cambiar la incidencia "${
+            incident.title
+          }" a "${selected ? (INCIDENT_STATUSES[selected] ?? selected) : ""}"?`}
+          confirmLabel={loading ? "Guardando..." : "Confirmar"}
+          loading={loading}
+          onConfirm={handleConfirm}
+          onCancel={reset}
+        />
+      </div>
     </div>
   );
 }
