@@ -132,14 +132,18 @@ Feature completa (backend + frontend) para registrar y trazar incidencias operat
   - `GET /api/incidents/summary` → agregados por `status`/`category`/`origin`/`branch`.
   - Todo protegido con `require_manager` (admin/manager). Ruta `/summary` declarada antes de `/{id}`.
 - `app/main.py` — registra `incidents_manager_router` y añade handler global de excepción → **500** `{detail: "Internal Server Error"}`.
-- Tests: `tests/test_incident_manager.py` (21 casos; fixture `_clean_incidents` trunca la tabla). Suites: **31 passed**.
+- Tests: `tests/test_incident_manager.py` (25 casos; fixture `_clean_incidents` trunca la tabla). Suites: **34 passed**.
+
+**Máquina de estados (actualizada)** — `INCIDENT_STATUS_TRANSITIONS` / `FINAL_INCIDENT_STATUSES`:
+`open → {in_progress, discarded}`, `in_progress → {resolved, discarded, open}`, `resolved → {in_progress}`, `discarded → {}`. Solo `discarded` es final (`resolved` puede volver a `in_progress`).
 
 ### Frontend (`uis/backoffice`)
-- `lib/types.ts` — tipos `Incident`, `IncidentCreate`, `IncidentStatusUpdate`, `IncidentSummary` + mapas de etiquetas (`INCIDENT_STATUSES`, `INCIDENT_CATEGORIES`, `INCIDENT_ORIGINS`, `INCIDENT_BRANCHES`, `INCIDENT_STATUS_ORDER`).
+- `lib/types.ts` — tipos `Incident`, `IncidentCreate`, `IncidentStatusUpdate`, `IncidentSummary` + mapas de etiquetas (`INCIDENT_STATUSES`, `INCIDENT_CATEGORIES`, `INCIDENT_ORIGINS`, `INCIDENT_BRANCHES`, `INCIDENT_STATUS_ORDER`) + `INCIDENT_TRANSITIONS` y helper `nextStatuses()` (mismo mapa que backend).
 - `lib/api.ts` — helpers `fetchIncidents`, `fetchIncident`, `createIncident`, `updateIncidentStatus`, `fetchIncidentSummary` (Bearer token).
-- `app/(protected)/incidents/page.tsx` — dashboard: 4 tarjetas de resumen por estado, filtros (status/origen/sede/categoría), tabla con badge de estado, botón "Iniciar gestión"/"Marcar resuelto" (transición) con `ConfirmDialog`, y "+ Nueva incidencia".
+- `app/(protected)/incidents/page.tsx` — dashboard: 4 tarjetas de resumen por estado, filtros (status/origen/sede/categoría), tabla con badge de estado, botón "Cambiar estado" que abre el modal de flujo, y "+ Nueva incidencia".
+- `components/incidents/StatusFlowModal.tsx` — modal esquemático de transición: muestra los 4 estados (Abierto → En curso → Resuelto | Descartado) con conectores; solo pulsables los estados de transición válida según `nextStatuses()`; el estado actual se destaca; al seleccionar destino se pide confirmación (`ConfirmDialog`) antes del `PATCH`.
 - `components/incidents/IncidentForm.tsx` — modal de creación (solo create; la API sin actualizar campos) con selects grandes para uso táctil y confirmación.
-- `components/Sidebar.tsx` — nueva entrada "Gestor de incidencias" → `/incidents`.
+- `components/Sidebar.tsx` — entrada "Gestor de incidencias" → `/incidents`.
 
 Type-check (raíz), lint y build (`uis/backoffice`) OK. Ruta `/incidents` añadida al build.
 
