@@ -270,6 +270,7 @@ export default function IncidentsPage() {
       {showForm && <IncidentForm onSubmit={handleCreate} onClose={() => setShowForm(false)} />}
 
       <StatusFlowModal
+        key={flowTarget?.id ?? "none"}
         incident={flowTarget}
         onClose={() => setFlowTarget(null)}
         onTransition={handleTransition}
