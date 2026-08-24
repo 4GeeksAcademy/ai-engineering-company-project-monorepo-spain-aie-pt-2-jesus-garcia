@@ -11,6 +11,14 @@ interface StatusFlowModalProps {
   onTransition: (id: string, target: string) => Promise<void>;
 }
 
+const FLOW_STATUSES = ["open", "in_progress", "resolved"];
+
+const FLOW_COLORS: Record<string, string> = {
+  open: "bg-amber-500/20 text-amber-300",
+  in_progress: "bg-cyan-500/20 text-cyan-300",
+  resolved: "bg-emerald-500/20 text-emerald-300",
+};
+
 function StatusNode({
   status,
   current,
@@ -31,9 +39,9 @@ function StatusNode({
   const base =
     "rounded-xl border px-5 py-3 text-sm font-medium transition select-none";
   const style = isCurrent
-    ? `${base} bg-slate-800 text-white ring-2 ring-white/40 border-white/20`
+    ? `${base} ${FLOW_COLORS[status]} ring-2 ring-white/50 border-white/30`
     : isAllowed
-      ? `${base} border-white/10 bg-cyan-600 text-white cursor-pointer hover:bg-cyan-500`
+      ? `${base} ${FLOW_COLORS[status]} cursor-pointer hover:brightness-125 border-white/20`
       : `${base} border-white/5 bg-slate-800/40 text-slate-600`;
 
   return (
@@ -41,7 +49,7 @@ function StatusNode({
       type="button"
       disabled={!isAllowed}
       onClick={() => onSelect(status)}
-      className={`${style} ${isSelected && !isCurrent ? "ring-2 ring-cyan-400" : ""}`}
+      className={`${style} ${isSelected && !isCurrent ? "ring-2 ring-white/40" : ""}`}
     >
       {INCIDENT_STATUSES[status] ?? status}
       {(isCurrent || isAllowed) && (
@@ -61,15 +69,6 @@ function Connector() {
   );
 }
 
-function BranchConnector() {
-  return (
-    <div className="mt-1 mb-2 flex w-64 items-center">
-      <div className="h-px flex-1 bg-white/20" />
-      <div className="h-px flex-1 bg-white/20" />
-    </div>
-  );
-}
-
 export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowModalProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -78,7 +77,13 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
   if (!incident) return null;
 
   const allowed = nextStatuses(incident.status);
+  const flowTargets = allowed.filter((s) => s !== "discarded");
+  const canDiscard = allowed.includes("discarded");
   const hasTransition = allowed.length > 0;
+
+  function handleDiscard() {
+    setSelected("discarded");
+  }
 
   async function handleConfirm() {
     if (!incident || !selected) return;
@@ -101,38 +106,18 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
           <p className="mt-1 line-clamp-1 text-sm text-slate-400">{incident.title}</p>
 
           <div className="mt-6 flex flex-col items-center">
-            <StatusNode
-              status="open"
-              current={incident.status}
-              allowed={allowed}
-              selected={selected}
-              onSelect={setSelected}
-            />
-            <Connector />
-            <StatusNode
-              status="in_progress"
-              current={incident.status}
-              allowed={allowed}
-              selected={selected}
-              onSelect={setSelected}
-            />
-            <BranchConnector />
-            <div className="flex w-full max-w-xs items-center justify-between gap-4">
-              <StatusNode
-                status="resolved"
-                current={incident.status}
-                allowed={allowed}
-                selected={selected}
-                onSelect={setSelected}
-              />
-              <StatusNode
-                status="discarded"
-                current={incident.status}
-                allowed={allowed}
-                selected={selected}
-                onSelect={setSelected}
-              />
-            </div>
+            {FLOW_STATUSES.map((status, index) => (
+              <div key={status} className="flex flex-col items-center">
+                <StatusNode
+                  status={status}
+                  current={incident.status}
+                  allowed={flowTargets}
+                  selected={selected}
+                  onSelect={setSelected}
+                />
+                {index < FLOW_STATUSES.length - 1 && <Connector />}
+              </div>
+            ))}
           </div>
 
           {!hasTransition && (
@@ -143,30 +128,41 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
           {error && <p className="mt-4 text-center text-sm text-rose-400">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-white/10 px-6 py-4">
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-6 py-4">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
+            onClick={handleDiscard}
+            disabled={!canDiscard || loading}
+            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 disabled:opacity-40"
           >
-            Cerrar
+            Descartar incidencia
           </button>
-          {selected && (
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleConfirm}
-              disabled={loading}
-              className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-50"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
             >
-              {loading ? "Guardando..." : "Aplicar cambio"}
+              Cerrar
             </button>
-          )}
+            {selected && (
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={loading}
+                className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-50"
+              >
+                {loading ? "Guardando..." : "Aplicar cambio"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       <ConfirmDialog
         open={selected !== null}
         title="Cambiar estado"
+        danger={selected === "discarded"}
         message={`¿Confirmas cambiar la incidencia "${
           incident.title
         }" a "${selected ? (INCIDENT_STATUSES[selected] ?? selected) : ""}"?`}
