@@ -168,3 +168,14 @@ export const INCIDENT_BRANCHES: Record<string, string> = {
 };
 
 export const INCIDENT_STATUS_ORDER = ["open", "in_progress", "resolved", "discarded"];
+
+export const INCIDENT_TRANSITIONS: Record<string, string[]> = {
+  open: ["in_progress", "discarded"],
+  in_progress: ["resolved", "discarded", "open"],
+  resolved: ["in_progress"],
+  discarded: [],
+};
+
+export function nextStatuses(status: string): string[] {
+  return INCIDENT_TRANSITIONS[status] ?? [];
+}

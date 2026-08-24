@@ -14,9 +14,10 @@ import {
   INCIDENT_BRANCHES,
   INCIDENT_STATUSES,
   INCIDENT_STATUS_ORDER,
+  nextStatuses,
 } from "@/lib/types";
 import { IncidentForm } from "@/components/incidents/IncidentForm";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { StatusFlowModal } from "@/components/incidents/StatusFlowModal";
 import { useAuth } from "@/contexts/AuthContext";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -25,12 +26,6 @@ const STATUS_BADGE: Record<string, string> = {
   resolved: "bg-emerald-500/20 text-emerald-300",
   discarded: "bg-slate-500/20 text-slate-400",
 };
-
-function nextStatus(status: string): string | null {
-  if (status === "open") return "in_progress";
-  if (status === "in_progress") return "resolved";
-  return null;
-}
 
 export default function IncidentsPage() {
   const { token } = useAuth();
@@ -46,8 +41,7 @@ export default function IncidentsPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
 
   const [showForm, setShowForm] = useState(false);
-  const [confirmChange, setConfirmChange] = useState<Incident | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [flowTarget, setFlowTarget] = useState<Incident | null>(null);
 
   async function refresh() {
     const fresh = await fetchIncidents(
@@ -102,18 +96,13 @@ export default function IncidentsPage() {
     await refresh();
   }
 
-  async function handleConfirmStatus() {
-    if (!confirmChange) return;
-    setActionLoading(true);
-    const target = nextStatus(confirmChange.status) ?? "discarded";
+  async function handleTransition(target: string) {
     try {
-      await updateIncidentStatus(confirmChange.id, { status: target }, token);
-      setConfirmChange(null);
+      await updateIncidentStatus(flowTarget!.id, { status: target }, token);
+      setFlowTarget(null);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cambiar el estado");
-    } finally {
-      setActionLoading(false);
     }
   }
 
@@ -240,14 +229,12 @@ export default function IncidentsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {nextStatus(incident.status) ? (
+                      {nextStatuses(incident.status).length > 0 ? (
                         <button
-                          onClick={() => setConfirmChange(incident)}
+                          onClick={() => setFlowTarget(incident)}
                           className="rounded-lg bg-cyan-600/20 px-3 py-1 text-xs font-medium text-cyan-300 transition hover:bg-cyan-600/40"
                         >
-                          {incident.status === "open"
-                            ? "Iniciar gestión"
-                            : "Marcar resuelto"}
+                          Cambiar estado
                         </button>
                       ) : (
                         <span className="text-xs text-slate-600">—</span>
@@ -276,16 +263,10 @@ export default function IncidentsPage() {
 
       {showForm && <IncidentForm onSubmit={handleCreate} onClose={() => setShowForm(false)} />}
 
-      <ConfirmDialog
-        open={confirmChange !== null}
-        title="Cambiar estado"
-        message={`¿Confirmas cambiar el estado de "${
-          confirmChange?.title ?? ""
-        }"?`}
-        confirmLabel={actionLoading ? "Guardando..." : "Confirmar"}
-        loading={actionLoading}
-        onConfirm={handleConfirmStatus}
-        onCancel={() => setConfirmChange(null)}
+      <StatusFlowModal
+        incident={flowTarget}
+        onClose={() => setFlowTarget(null)}
+        onTransition={handleTransition}
       />
     </>
   );
