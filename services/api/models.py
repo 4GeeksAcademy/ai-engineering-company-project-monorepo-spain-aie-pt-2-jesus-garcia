@@ -220,12 +220,12 @@ INCIDENT_STATUSES = ["open", "in_progress", "resolved", "discarded"]
 
 INCIDENT_STATUS_TRANSITIONS = {
     "open": {"in_progress", "discarded"},
-    "in_progress": {"resolved", "discarded"},
-    "resolved": set(),
+    "in_progress": {"resolved", "discarded", "open"},
+    "resolved": {"in_progress"},
     "discarded": set(),
 }
 
-FINAL_INCIDENT_STATUSES = {"resolved", "discarded"}
+FINAL_INCIDENT_STATUSES = {"discarded"}
 
 
 class Incident(BaseModel):

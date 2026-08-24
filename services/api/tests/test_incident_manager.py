@@ -133,8 +133,26 @@ class TestTransitions:
         assert res.status_code == 400
         assert "Transición inválida" in res.json()["detail"]
 
-    def test_final_status_cannot_change(self, client, auth_headers):
+    def test_in_progress_to_open(self, client, auth_headers):
+        iid = _create(client, auth_headers, status="in_progress").json()["id"]
+        res = client.patch(f"/api/incidents/{iid}/status", headers=auth_headers, json={"status": "open"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "open"
+
+    def test_resolved_to_in_progress(self, client, auth_headers):
         iid = _create(client, auth_headers, status="resolved").json()["id"]
+        res = client.patch(f"/api/incidents/{iid}/status", headers=auth_headers, json={"status": "in_progress"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "in_progress"
+
+    def test_in_progress_to_discarded(self, client, auth_headers):
+        iid = _create(client, auth_headers, status="in_progress").json()["id"]
+        res = client.patch(f"/api/incidents/{iid}/status", headers=auth_headers, json={"status": "discarded"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "discarded"
+
+    def test_final_status_cannot_change(self, client, auth_headers):
+        iid = _create(client, auth_headers, status="discarded").json()["id"]
         res = client.patch(f"/api/incidents/{iid}/status", headers=auth_headers, json={"status": "open"})
         assert res.status_code == 400
         assert "estado final" in res.json()["detail"]
