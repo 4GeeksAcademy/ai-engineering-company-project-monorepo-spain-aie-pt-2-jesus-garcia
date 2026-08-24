@@ -104,8 +104,8 @@ export default function IncidentsPage() {
       return;
     }
     try {
-      await updateIncidentStatus(incident.id, { status: status }, token);
-      setFlowTarget(null);
+      const updated = await updateIncidentStatus(incident.id, { status }, token);
+      setFlowTarget(updated);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cambiar el estado");
