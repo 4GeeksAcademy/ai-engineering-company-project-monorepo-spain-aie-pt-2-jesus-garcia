@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from database import get_db
 from models import (
@@ -57,12 +61,10 @@ def forgot_password(payload: ForgotPasswordRequest):
                 token = create_password_reset_token(str(doc.doc_id))
                 try:
                     send_password_reset_email(doc["email"], token)
-                except Exception as exc:  # noqa: BLE001
-                    db.close()
-                    raise HTTPException(
-                        status_code=503,
-                        detail="No se pudo enviar el correo de restablecimiento. Inténtalo de nuevo.",
-                    ) from exc
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Fallo al enviar el correo de restablecimiento"
+                    )
             break
 
     db.close()
