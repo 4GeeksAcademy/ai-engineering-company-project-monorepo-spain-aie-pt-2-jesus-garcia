@@ -38,7 +38,12 @@ def analyze_upload(raw: bytes) -> AnalysisResponse:
     if not raw or not raw.strip():
         raise EmptyFileError("El archivo está vacío.")
 
-    content = raw.decode("utf-8-sig", errors="replace")
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise InvalidFormatError(
+            "El archivo no tiene una codificación UTF-8 válida."
+        ) from exc
     stream = io.StringIO(content)
 
     try:

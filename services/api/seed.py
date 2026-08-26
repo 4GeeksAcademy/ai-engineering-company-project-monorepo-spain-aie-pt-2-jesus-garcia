@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import sys
+
 from database import get_db
 from models import SupplierCreate, CURRENCY_BY_COUNTRY
 
@@ -173,5 +175,14 @@ def seed():
     print(f"Seeded {len(SUPPLIERS_SEED)} suppliers.")
 
 
+def main():
+    try:
+        seed()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error al seedear proveedores: {exc}")
+        sys.exit(1)
+    sys.exit(0)
+
+
 if __name__ == "__main__":
-    seed()
+    main()

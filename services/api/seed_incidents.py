@@ -9,6 +9,7 @@ Salida esperada de /api/incidents/summary (post-transformación):
 """
 
 from datetime import datetime, timedelta, timezone
+import sys
 
 from database import get_db
 
@@ -66,6 +67,15 @@ def seed() -> int:
     return len(records)
 
 
-if __name__ == "__main__":
-    total = seed()
+def main():
+    try:
+        total = seed()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error al seedear incidencias: {exc}")
+        sys.exit(1)
     print(f"Seed completado: {total} incidencias insertadas.")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

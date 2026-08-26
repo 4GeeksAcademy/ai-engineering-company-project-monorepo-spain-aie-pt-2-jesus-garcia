@@ -98,7 +98,11 @@ def reset_password(payload: ResetPasswordRequest):
     issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
     changed_at_raw = doc.get("password_changed_at")
     if changed_at_raw:
-        changed_at = datetime.fromisoformat(changed_at_raw)
+        try:
+            changed_at = datetime.fromisoformat(changed_at_raw)
+        except ValueError:
+            db.close()
+            raise HTTPException(status_code=400, detail="Invalid or expired token")
         if issued_at < changed_at:
             db.close()
             raise HTTPException(status_code=400, detail="Invalid or expired token")

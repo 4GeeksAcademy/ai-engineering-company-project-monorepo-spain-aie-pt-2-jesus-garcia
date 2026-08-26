@@ -33,7 +33,8 @@ async function handleResponse<T>(res: Response, mode: ResponseMode): Promise<T> 
     try {
       const body = await res.json();
       detail = (body as { detail?: unknown }).detail ?? body;
-    } catch {
+    } catch (err) {
+      console.error("Respuesta de error no es JSON válido", err);
       detail = res.statusText;
     }
     throw new ApiRequestError(

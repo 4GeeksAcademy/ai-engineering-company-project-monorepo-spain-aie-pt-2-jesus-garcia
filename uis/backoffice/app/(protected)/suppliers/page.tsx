@@ -100,8 +100,8 @@ export default function SuppliersPage() {
     try {
       await updateSupplier(supplier.id, { status: newStatus }, token);
       await refresh();
-    } catch {
-      setError("Error al cambiar estado");
+    } catch (err) {
+      setError(friendlyError(err));
     } finally {
       setActionLoading(null);
     }
@@ -114,8 +114,8 @@ export default function SuppliersPage() {
       await deleteSupplier(confirmDelete.id, token);
       setConfirmDelete(null);
       await refresh();
-    } catch {
-      setError("Error al eliminar proveedor");
+    } catch (err) {
+      setError(friendlyError(err));
     } finally {
       setActionLoading(null);
     }

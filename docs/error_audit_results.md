@@ -141,55 +141,63 @@
 
 ## BAJO
 
-### 22. Sin `sys.exit` declarativo en scripts seed
-- **Archivos:** `services/api/seed.py:176-177` · `seed_incidents.py:69-71` · `seed_users.py:39-40`
+### 22. Sin `sys.exit` declarativo en scripts seed — ✅ HECHO
+- **Archivos:** `services/api/seed.py` · `seed_incidents.py` · `seed_users.py`
 - **Categoría:** (F) Sin sys.exit
 - **Problema:** No controlan errores de forma explícita ni usar `sys.exit(1)`; fallos suaves terminan con 0.
-- **Corrección:** Envolver en `try/except` y usar `sys.exit(1)` en fallos y `sys.exit(0)` en éxito.
+- **Corrección aplicada:** cada `main` envuelve el `seed` en `try/except`; ante error imprime el motivo y sale con `sys.exit(1)`, y con `sys.exit(0)` en éxito.
 
-### 23. Decode con `errors="replace"` sin validar
+### 23. Decode con `errors="replace"` sin validar — ✅ HECHO
 - **Archivo:** `services/api/app/incidents/service.py:41`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** Evita crash pero silencia datos corruptos sin validar el resultado.
-- **Corrección:** Detectar caracteres de reemplazo y emitir error de formato explícito.
+- **Corrección aplicada:** decode estricto `utf-8-sig`; ante `UnicodeDecodeError` se lanza `InvalidFormatError` con mensaje explícito.
 
-### 24. `analyze_file` sin manejo de errores pandas interno
+### 24. `analyze_file` sin manejo de errores pandas interno — ✅ HECHO
 - **Archivo:** `services/api/app/incidents/analyzer.py:91-98`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** No maneja `ParserError`/`EmptyDataError`; depende del llamador, en CLI podría crashear.
-- **Corrección:** Manejar excepciones de pandas o exponer errores de dominio.
+- **Corrección aplicada:** `analyze_file` captura `ParserError`/`EmptyDataError` y lanza `InvalidFormatError` de dominio, de modo que también es segura cuando se usa desde el CLI.
 
-### 25. `fromisoformat` sin try
+### 25. `fromisoformat` sin try — ✅ HECHO
 - **Archivo:** `services/api/app/api/auth.py:92`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** Un valor corrupto en `password_changed_at` lanza `ValueError` → 500.
-- **Corrección:** Envolver en `try/except ValueError`.
+- **Corrección aplicada:** `datetime.fromisoformat(...)` se envuelve en `try/except ValueError` y se trata como token inválido (400).
 
-### 26. `database.py` sin manejo de `OSError`
+### 26. `database.py` sin manejo de `OSError` — ✅ HECHO
 - **Archivo:** `services/api/database.py:8-10`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** Fallos de permisos/espacio en `os.makedirs`/`TinyDB` propagan al endpoint.
-- **Corrección:** Capturar `OSError` y loguear error de dominio claro.
+- **Corrección aplicada:** `get_db()` captura `OSError`, loguea con `logger.exception` y relanza `RuntimeError` de dominio claro.
 
-### 27. `catch {}` vacíos en parseo de error defensivo
-- **Archivo:** `uis/backoffice/lib/api.ts:81,98,127,147,169,192,210,236,253,275,298,315`
+### 27. `catch {}` vacíos en parseo de error defensivo — ✅ HECHO
+- **Archivo:** `uis/backoffice/lib/api.ts`
 - **Categoría:** (B/C) Catch amplio / fallo silencioso
 - **Problema:** `catch {}` vacíos degradan el motivo a `statusText` poco útil.
-- **Corrección:** Al menos `console.error` del error original con fines de log.
+- **Corrección aplicada:** el parseo defensivo del cuerpo de error registra `console.error` con el error original antes de degradar a `statusText`.
 
-### 28. `catch {}` genéricos en suppliers toggle/delete
-- **Archivo:** `uis/backoffice/app/(protected)/suppliers/page.tsx:106-108,120-121`
+### 28. `catch {}` genéricos en suppliers toggle/delete — ✅ HECHO
+- **Archivo:** `uis/backoffice/app/(protected)/suppliers/page.tsx`
 - **Categoría:** (C) Fallo silencioso
 - **Problema:** Descartan el objeto de error y muestran mensaje genérico sin traza.
-- **Corrección:** Diferenciar `ApiRequestError` (mostrar `err.message`) de errores de red.
+- **Corrección aplicada:** `handleToggleStatus` y `handleConfirmDelete` capturan el error y muestran `friendlyError`.
 
 ## Recomendaciones prioritarias
 
 1. **Formulario web inoperativo (CRÍTICO)** — conectar el envío al backend. 🔜 **Aplicar a futuro** (requiere cambios grandes; arrastra #5 y #18).
-2. **Normalizar errores API en backoffice (A+D)** — `ApiRequestError` con mensajes amigables por status.
-3. **Frenar fugas de tokens/PII en logs (api + web)** — ✅ parcial (hallazgos #2 y #3 resueltos; fugas en `seed_users.py` (#4) y `ApplicationForm.tsx` (#5) 🔜 a futuro).
-4. **Reintentos en páginas de incidencias/proveedores**.
-5. **No invalidar sesión por fallo de red transitorio**.
+2. **Normalizar errores API en backoffice (A+D)** — ✅ resuelto (#6, #7, #13, #27).
+3. **Frenar fugas de tokens/PII en logs (api + web)** — ✅ parcial (tokens en email resueltos #2/#3; fugas en `seed_users.py` (#4) y `ApplicationForm.tsx` (#5) 🔜 a futuro).
+4. **Reintentos en páginas de incidencias/proveedores** — ✅ resuelto (#8, #16, #20).
+5. **No invalidar sesión por fallo de red transitorio** — ✅ resuelto (#14, #20).
+
+## Pendiente adicional
+
+## Resumen de estado
+
+- ✅ HECHO: #2, #3, #6, #7, #8, #9, #10, #11, #13, #14, #15, #16, #17, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28.
+- ⚠️ MITIGADO: #12 (vía logging de #11).
+- 🔜 APLICAR A FUTURO: #1, #4, #5, #18.
 
 ## Pendiente adicional
 
