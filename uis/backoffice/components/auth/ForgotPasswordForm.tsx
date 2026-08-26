@@ -2,23 +2,33 @@
 
 import { useState, type FormEvent } from "react";
 import { forgotPasswordRequest } from "@/lib/auth-api";
+import { ApiRequestError } from "@/lib/api";
 import Link from "next/link";
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       await forgotPasswordRequest(email);
-    } catch {
-      // Ignorar errores para no revelar si el email existe
+      setSent(true);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === -1) {
+        setError(
+          "No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.",
+        );
+      } else {
+        // No revelar si el email existe
+        setSent(true);
+      }
     } finally {
       setLoading(false);
-      setSent(true);
     }
   }
 
@@ -47,21 +57,30 @@ export function ForgotPasswordForm() {
         Introduce tu email y te enviaremos un enlace para restablecer tu
         contraseña.
       </p>
-      <div>
-        <label htmlFor="fp-email" className="block text-sm text-slate-200">
-          Email
-        </label>
-        <input
-          id="fp-email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="mt-2 w-full rounded-md border border-white/20 bg-slate-900/60 px-3 py-2 text-slate-100 outline-none focus:border-cyan-300"
-        />
-      </div>
+        <div>
+          <label htmlFor="fp-email" className="block text-sm text-slate-200">
+            Email
+          </label>
+          <input
+            id="fp-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="mt-2 w-full rounded-md border border-white/20 bg-slate-900/60 px-3 py-2 text-slate-100 outline-none focus:border-cyan-300"
+          />
+        </div>
 
-      <button
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md border border-red-300/30 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+          >
+            {error}
+          </p>
+        )}
+
+        <button
         type="submit"
         disabled={loading}
         className="w-full rounded-md bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50"

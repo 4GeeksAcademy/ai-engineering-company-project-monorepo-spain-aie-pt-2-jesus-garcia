@@ -6,6 +6,7 @@ import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_STATUSES,
 } from "@/lib/types";
+import { friendlyError } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface SupplierFormProps {
@@ -72,8 +73,8 @@ export function SupplierForm({ supplier, onSubmit, onClose }: SupplierFormProps)
     try {
       await onSubmit(pendingSubmit);
       onClose();
-    } catch {
-      setErrors({ submit: "Error al guardar el proveedor" });
+    } catch (err) {
+      setErrors({ submit: friendlyError(err) });
     } finally {
       setLoading(false);
     }

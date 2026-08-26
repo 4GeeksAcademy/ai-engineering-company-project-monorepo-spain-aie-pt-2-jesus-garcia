@@ -46,18 +46,25 @@ export default function IncidentsPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   async function refresh() {
-    const fresh = await fetchIncidents(
-      {
-        status: statusFilter || undefined,
-        origin: originFilter || undefined,
-        branch: branchFilter || undefined,
-        category: categoryFilter || undefined,
-      },
-      token,
-    );
-    setIncidents(fresh);
-    const s = await fetchIncidentSummary(token);
-    setSummary(s.by_status);
+    try {
+      const [fresh, s] = await Promise.all([
+        fetchIncidents(
+          {
+            status: statusFilter || undefined,
+            origin: originFilter || undefined,
+            branch: branchFilter || undefined,
+            category: categoryFilter || undefined,
+          },
+          token,
+        ),
+        fetchIncidentSummary(token),
+      ]);
+      setIncidents(fresh);
+      setSummary(s.by_status);
+      setError(null);
+    } catch (err) {
+      setError(friendlyError(err));
+    }
   }
 
   useEffect(() => {
