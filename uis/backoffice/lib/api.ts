@@ -25,6 +25,80 @@ function authHeaders(token?: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+type ResponseMode = "json" | "blob" | "none";
+
+async function handleResponse<T>(res: Response, mode: ResponseMode): Promise<T> {
+  if (!res.ok) {
+    let detail: unknown = res.statusText;
+    try {
+      const body = await res.json();
+      detail = (body as { detail?: unknown }).detail ?? body;
+    } catch {
+      detail = res.statusText;
+    }
+    throw new ApiRequestError(
+      res.status,
+      typeof detail === "string" ? detail : res.statusText,
+      detail,
+    );
+  }
+
+  if (mode === "json") {
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new ApiRequestError(
+        res.status,
+        "La respuesta del servidor no fue válida.",
+      );
+    }
+  }
+
+  if (mode === "blob") {
+    return (await res.blob()) as T;
+  }
+
+  return undefined as T;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit,
+  mode: ResponseMode = "json",
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, options);
+  } catch {
+    throw new ApiRequestError(-1, "No se pudo conectar con el servidor");
+  }
+  return handleResponse<T>(res, mode);
+}
+
+export function friendlyError(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    switch (err.status) {
+      case -1:
+        return "No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.";
+      case 400:
+        return "La solicitud no es válida. Revisa los datos enviados.";
+      case 401:
+        return "Sesión no autorizada. Vuelve a iniciar sesión.";
+      case 403:
+        return "No tienes permisos para realizar esta acción.";
+      case 404:
+        return "No se encontró el recurso solicitado.";
+      case 409:
+        return "El recurso ya existe o está en conflicto.";
+      case 422:
+        return "Los datos enviados no son válidos.";
+      default:
+        return "Ocurrió un error al procesar la solicitud. Inténtalo de nuevo.";
+    }
+  }
+  return "No se pudo conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo.";
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit & { token?: string } = {},
@@ -39,25 +113,7 @@ export async function apiRequest<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(path, { ...fetchOptions, headers });
-
-  if (!res.ok) {
-    let detail: unknown;
-    try {
-      const body = await res.json();
-      detail = body.detail ?? body;
-    } catch {
-      detail = res.statusText;
-    }
-    throw new ApiRequestError(
-      res.status,
-      typeof detail === "string" ? detail : res.statusText,
-      detail,
-    );
-  }
-
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  return request<T>(path, { ...fetchOptions, headers });
 }
 
 export async function analyzeCsv(
@@ -67,39 +123,19 @@ export async function analyzeCsv(
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("/api/incidents/analyze", {
+  return request<AnalysisResponse>("/api/incidents/analyze", {
     method: "POST",
-    headers: { ...authHeaders(token) },
+    headers: authHeaders(token),
     body: formData,
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<AnalysisResponse>;
 }
 
 export async function fetchExportCsv(token?: string | null): Promise<Blob> {
-  const response = await fetch("/api/incidents/results/export", {
-    headers: { ...authHeaders(token) },
-  });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.blob();
+  return request<Blob>(
+    "/api/incidents/results/export",
+    { headers: authHeaders(token) },
+    "blob",
+  );
 }
 
 export async function fetchSuppliers(params?: {
@@ -117,60 +153,27 @@ export async function fetchSuppliers(params?: {
   const query = searchParams.toString();
   const url = `/api/suppliers${query ? `?${query}` : ""}`;
 
-  const response = await fetch(url, { headers: { ...authHeaders(token) } });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Supplier[]>;
+  return request<Supplier[]>(url, { headers: authHeaders(token) });
 }
 
 export async function fetchSupplier(
   id: string,
   token?: string | null,
 ): Promise<Supplier> {
-  const response = await fetch(`/api/suppliers/${id}`, {
-    headers: { ...authHeaders(token) },
+  return request<Supplier>(`/api/suppliers/${id}`, {
+    headers: authHeaders(token),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Supplier>;
 }
 
 export async function createSupplier(
   data: SupplierCreate,
   token?: string | null,
 ): Promise<Supplier> {
-  const response = await fetch("/api/suppliers", {
+  return request<Supplier>("/api/suppliers", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Supplier>;
 }
 
 export async function updateSupplier(
@@ -178,38 +181,19 @@ export async function updateSupplier(
   data: SupplierUpdate,
   token?: string | null,
 ): Promise<Supplier> {
-  const response = await fetch(`/api/suppliers/${id}`, {
+  return request<Supplier>(`/api/suppliers/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Supplier>;
 }
 
 export async function deleteSupplier(id: string, token?: string | null): Promise<void> {
-  const response = await fetch(`/api/suppliers/${id}`, {
-    method: "DELETE",
-    headers: { ...authHeaders(token) },
-  });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
+  return request<void>(
+    `/api/suppliers/${id}`,
+    { method: "DELETE", headers: authHeaders(token) },
+    "none",
+  );
 }
 
 export async function fetchIncidents(params?: {
@@ -226,57 +210,25 @@ export async function fetchIncidents(params?: {
 
   const query = searchParams.toString();
   const url = `/api/incidents${query ? `?${query}` : ""}`;
-  const response = await fetch(url, { headers: { ...authHeaders(token) } });
 
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Incident[]>;
+  return request<Incident[]>(url, { headers: authHeaders(token) });
 }
 
 export async function fetchIncident(id: string, token?: string | null): Promise<Incident> {
-  const response = await fetch(`/api/incidents/${id}`, {
-    headers: { ...authHeaders(token) },
+  return request<Incident>(`/api/incidents/${id}`, {
+    headers: authHeaders(token),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Incident>;
 }
 
 export async function createIncident(
   data: IncidentCreate,
   token?: string | null,
 ): Promise<Incident> {
-  const response = await fetch("/api/incidents", {
+  return request<Incident>("/api/incidents", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Incident>;
 }
 
 export async function updateIncidentStatus(
@@ -284,37 +236,15 @@ export async function updateIncidentStatus(
   data: IncidentStatusUpdate,
   token?: string | null,
 ): Promise<Incident> {
-  const response = await fetch(`/api/incidents/${id}/status`, {
+  return request<Incident>(`/api/incidents/${id}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<Incident>;
 }
 
 export async function fetchIncidentSummary(token?: string | null): Promise<IncidentSummary> {
-  const response = await fetch("/api/incidents/summary", {
-    headers: { ...authHeaders(token) },
+  return request<IncidentSummary>("/api/incidents/summary", {
+    headers: authHeaders(token),
   });
-
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
-    } catch {}
-    throw new ApiRequestError(response.status, detail);
-  }
-
-  return response.json() as Promise<IncidentSummary>;
 }

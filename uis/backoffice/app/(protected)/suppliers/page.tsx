@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchSuppliers, createSupplier, updateSupplier, deleteSupplier, ApiRequestError } from "@/lib/api";
+import { fetchSuppliers, createSupplier, updateSupplier, deleteSupplier, friendlyError } from "@/lib/api";
 import type { Supplier, SupplierCreate, SupplierUpdate } from "@/lib/types";
 import {
   SUPPLIER_CATEGORIES,
@@ -38,6 +38,7 @@ export default function SuppliersPage() {
 
   const [confirmDelete, setConfirmDelete] = useState<Supplier | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   async function refresh() {
     const fresh = await fetchSuppliers({
@@ -64,11 +65,7 @@ export default function SuppliersPage() {
         if (!cancelled) setSuppliers(data);
       } catch (err) {
         if (!cancelled) {
-          if (err instanceof ApiRequestError) {
-            setError(err.message);
-          } else {
-            setError("Error al cargar proveedores");
-          }
+          setError(friendlyError(err));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -76,7 +73,7 @@ export default function SuppliersPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, [countryFilter, statusFilter, categoryFilter, debouncedSearch, token]);
+  }, [countryFilter, statusFilter, categoryFilter, debouncedSearch, token, reloadKey]);
 
   function handleCreateNew() {
     setEditingSupplier(null);
@@ -207,6 +204,12 @@ export default function SuppliersPage() {
             <p className="text-sm font-medium text-rose-300">
               Error: {error}
             </p>
+            <button
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="mt-3 rounded-lg bg-rose-500/20 px-4 py-2 text-sm font-medium text-rose-200 transition hover:bg-rose-500/30"
+            >
+              Reintentar
+            </button>
           </div>
         )}
 

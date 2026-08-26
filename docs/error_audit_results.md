@@ -7,7 +7,7 @@
 
 ## CRÍTICO
 
-### 1. El formulario de la web "envía" sin hacer ninguna petición — falso éxito
+### 1. El formulario de la web "envía" sin hacer ninguna petición — falso éxito — 🔜 APLICAR A FUTURO
 - **Archivo:** `uis/website/components/application/ApplicationForm.tsx:134-143`
 - **Categoría:** (C) Fallo silencioso + (A) try/catch ausente
 - **Problema:** `handleSubmit` recolecta los datos, los imprime con `console.log` y directamente `setSuccess(true)`, `setCurrentStep(1)`, `setFormData({})`. No existe ningún `fetch`/Server Action hacia `services/api`. El usuario ve "Aplicación enviada correctamente" (línea 335) aunque **nunca se envió nada**; los datos se pierden.
@@ -15,47 +15,48 @@
 
 ## ALTO
 
-### 2. Token de reset de contraseña volcado en logs
+### 2. Token de reset de contraseña volcado en logs — ✅ HECHO
 - **Archivo:** `services/api/app/email_service.py:8-16` y `:34`
 - **Categoría:** (E) Filtración de datos sensibles
 - **Problema:** Se imprime a stdout el enlace de restablecimiento que contiene el token de reset, y se vuelve a incluir junto a `exc` y el email del destinatario en los logs.
-- **Corrección:** Nunca imprimir el token/link (solo canalizarlo por email); usar el módulo `logging` y mensajes genéricos sin token ni datos personales.
+- **Corrección aplicada (commit `a09f863`):** se sustituyó `print` por el módulo `logging`; sin API key se hace `logger.warning` con solo el email (sin token/link), y en la rama de error `logger.error(..., exc_info=True)` sin incluir el enlace. El token solo viaja por el canal de email.
 
-### 3. Falso éxito al enviar email de reset
+### 3. Falso éxito al enviar email de reset — ✅ HECHO
 - **Archivo:** `services/api/app/email_service.py:18-36`
 - **Categoría:** (C) Fallo silencioso + (B) catch demasiado amplio
 - **Problema:** `except Exception as exc` captura todo error de envío y solo hace `print(...)`, sin re-lanzar. Como consecuencia `forgot_password` (`auth.py:58`) responde 202 aunque el email nunca se envió.
-- **Corrección:** Capturar excepciones específicas del SDK de `resend`, usar `logging.error(..., exc_info=True)` y no devolver 202 en falso ante fallo real.
+- **Corrección aplicada:** `send_password_reset_email` registra el fallo con `logger.error(..., exc_info=True)` y **re-lanza** la excepción. `forgot_password` (`auth.py`) captura el fallo, lo registra en el servidor con `logger.exception(...)` y **devuelve siempre 202**, preservando la anti-enumeración de emails (el cliente no puede saber si la cuenta existe). La función sigue un único `except Exception` para evitar un `NameError` latente al evaluar `resend.exceptions.Error`.
 
-### 4. Credencial admin por defecto hardcodeada y logueada
+### 4. Credencial admin por defecto hardcodeada y logueada — 🔜 APLICAR A FUTURO
 - **Archivo:** `services/api/seed_users.py:20` y `:36`
 - **Categoría:** (E) Filtración de datos sensibles
 - **Problema:** `admin@trackflow.com` / `admin123` está hardcodeada y además se imprime en consola al seedear.
 - **Corrección:** Cargar la credencial de entorno, no imprimir la contraseña y forzar su rotación tras el primer login.
 
-### 5. PII del candidato volcada a consola del navegador
+### 5. PII del candidato volcada a consola del navegador — 🔜 APLICAR A FUTURO
+> **Depende de #1** (mismo componente `ApplicationForm.tsx`): se abordará junto con la implementación del envío real del formulario.
 - **Archivo:** `uis/website/components/application/ApplicationForm.tsx:138`
 - **Categoría:** (E) Filtración de datos sensibles
 - **Problema:** `console.log("Enviando datos del formulario:", allData)` expone nombre, email, teléfono, ciudad, país, experiencia, propuesta, URLs y rango salarial.
 - **Corrección:** Eliminar el log, o restringirlo a `process.env.NODE_ENV !== "production"` logueando solo un id/summary anónimo.
 
-### 6. Fetch sin manejo de errores de red en la capa API
-- **Archivo:** `uis/backoffice/lib/api.ts:42,70,89,120,138,158,181,200,229,244,264,287,306`
+### 6. Fetch sin manejo de errores de red en la capa API — ✅ HECHO
+- **Archivo:** `uis/backoffice/lib/api.ts`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** Los `fetch()` sin `try/catch` lanzan `TypeError("Failed to fetch")` crudo que se propaga sin normalizar hasta la UI.
-- **Corrección:** Envolver cada `fetch` en `try/catch` y lanzar `ApiRequestError` tipado con mensaje amigable.
+- **Corrección aplicada:** se añadió un helper central `request<T>()` que envuelve el `fetch` (error de red → `ApiRequestError(-1)`) y el parseo de `json()`/`blob()` (respuesta corrupta → error tipado). Todos los helpers exportados (`analyzeCsv`, `fetchExportCsv`, suppliers/incidents CRUD, summary) se refactorizaron para usarlo.
 
-### 7. Exposición de errores crudos del backend a la UI
-- **Archivos:** `uis/backoffice/app/(protected)/incidents/page.tsx:82,111` · `app/(protected)/page.tsx:30-34` · `app/(protected)/suppliers/page.tsx:68`
+### 7. Exposición de errores crudos del backend a la UI — ✅ HECHO
+- **Archivos:** `uis/backoffice/app/(protected)/incidents/page.tsx` · `app/(protected)/page.tsx` · `app/(protected)/suppliers/page.tsx`
 - **Categoría:** (D) Exposición de errores en crudo
 - **Problema:** `setError(err.message)` muestra verbatim el `detail` del backend y "Failed to fetch".
-- **Corrección:** Mapear por `status` a mensajes amigables en español y loggear el detalle técnico por separado.
+- **Corrección aplicada:** se añadió `friendlyError(err)` en `lib/api.ts` que mapea por código de estado (red/-1, 400, 401, 403, 404, 409, 422, resto) a mensajes amigables en español, sin volcar el `detail` crudo. Se sustituyeron los `setError(...)` de incidencias (carga + cambio de estado), del análisis CSV y de proveedores.
 
-### 8. Errores sin acciones para el usuario
-- **Archivos:** `uis/backoffice/app/(protected)/incidents/page.tsx:186-190` · `app/(protected)/suppliers/page.tsx:205-211`
+### 8. Errores sin acciones para el usuario — ✅ HECHO
+- **Archivos:** `uis/backoffice/app/(protected)/incidents/page.tsx` · `app/(protected)/suppliers/page.tsx`
 - **Categoría:** (H) Sin acción para el usuario
 - **Problema:** Pantallas de error sin botón de reintentar ni navegación alternativa.
-- **Corrección:** Añadir botón "Reintentar" que vuelva a llamar a `load()`.
+- **Corrección aplicada:** se añadió un estado `reloadKey` (en las deps del effect de carga) y un botón **"Reintentar"** en el bloque de error de incidencias y proveedores.
 
 ## MEDIO
 
@@ -113,7 +114,8 @@
 - **Problema:** El `catch {}` es anti-enumeración, pero un fallo de red también muestra "te hemos enviado un enlace".
 - **Corrección:** Distinguir errores de red ("No se pudo conectar. Reintenta.") sin romper la anti-enumeración.
 
-### 18. Sin estados de carga/error/reintento en formulario
+### 18. Sin estados de carga/error/reintento en formulario — 🔜 APLICAR A FUTURO
+> **Depende de #1** (mismo componente `ApplicationForm.tsx`): los estados de carga/error/reintento se implementarán junto con el envío real del formulario.
 - **Archivo:** `uis/website/components/application/ApplicationForm.tsx:321-337`
 - **Categoría:** (G) Estados ausentes + (H) Sin acción
 - **Problema:** No hay `isSubmitting`, ni estado de error de red/servidor, ni acción posterior al éxito.
@@ -183,9 +185,9 @@
 
 ## Recomendaciones prioritarias
 
-1. **Formulario web inoperativo (CRÍTICO)** — conectar el envío al backend.
+1. **Formulario web inoperativo (CRÍTICO)** — conectar el envío al backend. 🔜 **Aplicar a futuro** (requiere cambios grandes; arrastra #5 y #18).
 2. **Normalizar errores API en backoffice (A+D)** — `ApiRequestError` con mensajes amigables por status.
-3. **Frenar fugas de tokens/PII en logs (api + web)**.
+3. **Frenar fugas de tokens/PII en logs (api + web)** — ✅ parcial (hallazgos #2 y #3 resueltos; fugas en `seed_users.py` (#4) y `ApplicationForm.tsx` (#5) 🔜 a futuro).
 4. **Reintentos en páginas de incidencias/proveedores**.
 5. **No invalidar sesión por fallo de red transitorio**.
 
