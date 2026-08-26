@@ -47,8 +47,10 @@ def analyze_upload(raw: bytes) -> AnalysisResponse:
             raise InvalidFormatError("El archivo está vacío o no contiene encabezados.")
 
         header = next(csv.reader(first_lines))
-    except csv.Error as exc:
-        raise InvalidFormatError(f"Formato incorrecto: no se pudo leer la cabecera CSV. ({exc})")
+    except csv.Error:
+        raise InvalidFormatError(
+            "Formato incorrecto: no se pudo leer la cabecera CSV."
+        )
 
     missing = [col for col in REQUIRED_COLUMNS if col not in header]
     if missing:
@@ -58,8 +60,10 @@ def analyze_upload(raw: bytes) -> AnalysisResponse:
 
     try:
         stats = analyze_file(stream)
-    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
-        raise InvalidFormatError(f"Formato incorrecto: el CSV no es válido. ({exc})")
+    except (pd.errors.ParserError, pd.errors.EmptyDataError):
+        raise InvalidFormatError(
+            "Formato incorrecto: el CSV no es válido."
+        )
 
     global _last_analysis
     _last_analysis = AnalysisResponse(**stats)
