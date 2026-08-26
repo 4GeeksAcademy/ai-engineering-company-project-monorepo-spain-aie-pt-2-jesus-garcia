@@ -60,59 +60,59 @@
 
 ## MEDIO
 
-### 9. `file.read()` async sin try
+### 9. `file.read()` async sin try — ✅ HECHO
 - **Archivo:** `services/api/app/api/incidents.py:21`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** Lectura async del archivo subido fuera de `try`; un error I/O responde 500 genérico en lugar de 400 (input del usuario).
-- **Corrección:** Envolver `await file.read()` en `try/except (OSError, ...)` y convertir a `HTTPException(400, ...)`.
+- **Corrección aplicada:** `await file.read()` se envuelve en `try/except OSError` y devuelve `HTTPException(400)`.
 
-### 10. Excepción raw al cliente en CSV
+### 10. Excepción raw al cliente en CSV — ✅ HECHO
 - **Archivos:** `services/api/app/api/incidents.py:23-25` · `services/api/app/incidents/service.py:51`
 - **Categoría:** (D) Exposición de errores en crudo
 - **Problema:** `detail=str(exc)` e `InvalidFormatError` con el detalle interno de pandas viaja hasta la respuesta HTTP.
-- **Corrección:** Devolver mensaje genérico mapeado ("CSV inválido") y loguear el detalle técnico aparte.
+- **Corrección aplicada:** se eliminó el texto interno incrustado `({exc})` en `service.py` (cabecera CSV y datos). Se conservan los mensajes de dominio útiles al usuario (p. ej. "el archivo está vacío", columnas que faltan) que usa la validación y dependen de los tests; ya no se filtra el detalle crudo de parseo.
 
-### 11. Handler global 500 sin log del stack trace
+### 11. Handler global 500 sin log del stack trace — ✅ HECHO
 - **Archivo:** `services/api/app/main.py:37-39`
 - **Categoría:** (C) Fallo silencioso + (B) catch amplio
 - **Problema:** Captura todas las excepciones y devuelve 500 genérico sin registrar el stack trace, dificultando el debug.
-- **Corrección:** `logger.exception(..., exc_info=True)` dentro del handler.
+- **Corrección aplicada:** `logger.exception(...)` con método y ruta en el handler.
 
-### 12. Operaciones TinyDB sin manejo (severidad perdida)
+### 12. Operaciones TinyDB sin manejo (severidad perdida) — ⚠️ MITIGADO POR #11
 - **Archivos:** `services/api/app/api/{suppliers,incidents_manager,auth}.py` · `services/api/app/core/dependencies.py:30-36`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** Consultas/iteraciones de TinyDB sin `try/except`; fallos escalan a 500 vía handler global.
-- **Corrección:** Acotar el manejo en lecturas de alto riesgo y/o loggear el detalle en el handler global.
+- **Corrección aplicada:** el handler global 500 ahora registra con `logger.exception(...)` el error real y su stack (#11), de modo que los fallos de DB pierden la severidad concreta pero quedan trazables. No se envolvió cada operación de DB (requiere refactor amplio); se mantiene la lectura de alto riesgo protegida (#9).
 
-### 13. `json()` sin try/catch (respuesta corrupta)
-- **Archivo:** `uis/backoffice/lib/api.ts:60,85,102,131,151,173,196,240,257,279,302,319`
+### 13. `json()` sin try/catch (respuesta corrupta) — ✅ HECHO
+- **Archivo:** `uis/backoffice/lib/api.ts`
 - **Categoría:** (A) try/catch ausente
 - **Problema:** `return response.json()` rechaza con `SyntaxError` si el body no es JSON válido; no se captura.
-- **Corrección:** Capturar el error de parseo y lanzar `ApiRequestError` con status coherente.
+- **Corrección aplicada:** el helper central `request()` (commit de #6) envuelve el parseo de `json()` en `try/catch` y lanza `ApiRequestError` con status coherente.
 
-### 14. `fetchMeRequest` invalida sesión en fallo de red transitorio
-- **Archivo:** `uis/backoffice/contexts/AuthContext.tsx:70-73`
+### 14. `fetchMeRequest` invalida sesión en fallo de red transitorio — ✅ HECHO
+- **Archivo:** `uis/backoffice/contexts/AuthContext.tsx`
 - **Categoría:** (C) Fallo silencioso
 - **Problema:** `.catch(() => { clearToken(); })` traga el error; un fallo transitorio invalida una sesión válida y redirige al login sin feedback.
-- **Corrección:** No limpiar el token en fallos de red; permitir reintento y registrar el motivo real.
+- **Corrección aplicada:** solo se limpia el token en `401` (sesión realmente invalidada). En errores de red/5xx se conserva el token y se expone `sessionError` con reintento.
 
-### 15. `AuthContext.login/register` lanzan sin capturar
-- **Archivo:** `uis/backoffice/contexts/AuthContext.tsx:83-102`
+### 15. `AuthContext.login/register` lanzan sin capturar — ✅ CUBIERTO EN CALLERS
+- **Archivo:** `uis/backoffice/contexts/AuthContext.tsx` · `components/auth/LoginForm.tsx` · `components/auth/RegisterForm.tsx`
 - **Categoría:** (A/B) try/catch ausente / catch amplio
 - **Problema:** Dependen del caller; un futuro caller sin captura genera unhandled rejection.
-- **Corrección:** Capturar y normalizar a `ApiRequestError` aquí mismo o garantizar captura en todos los callers.
+- **Corrección:** ambos callers (`LoginForm` y `RegisterForm`) capturan y normalizan el error (`401`, `409`, `422`, red). No se añadió duplicado de manejo en el contexto (lo haría redundante el manejo existente).
 
-### 16. `refresh()` con commit de estado parcial
-- **Archivo:** `uis/backoffice/app/(protected)/incidents/page.tsx:46-59`
+### 16. `refresh()` con commit de estado parcial — ✅ HECHO
+- **Archivo:** `uis/backoffice/app/(protected)/incidents/page.tsx`
 - **Categoría:** (B/C) Catch amplio / fallo silencioso
 - **Problema:** Lanza dos `await` sin try; si el segundo falla, deja estado parcial y el error se propaga.
-- **Corrección:** Envolver en `try/catch`, exponer el error en la UI y evitar commit parcial (o `Promise.all`).
+- **Corrección aplicada:** `refresh()` usa `Promise.all` (ningún commit parcial) dentro de `try/catch` y muestra `friendlyError` en la UI.
 
-### 17. `ForgotPasswordForm` muestra "enlace enviado" ante fallo de red
-- **Archivo:** `uis/backoffice/components/auth/ForgotPasswordForm.tsx:17-22`
+### 17. `ForgotPasswordForm` muestra "enlace enviado" ante fallo de red — ✅ HECHO
+- **Archivo:** `uis/backoffice/components/auth/ForgotPasswordForm.tsx`
 - **Categoría:** (C) Fallo silencioso
 - **Problema:** El `catch {}` es anti-enumeración, pero un fallo de red también muestra "te hemos enviado un enlace".
-- **Corrección:** Distinguir errores de red ("No se pudo conectar. Reintenta.") sin romper la anti-enumeración.
+- **Corrección aplicada:** en error de red (`ApiRequestError` con `status -1`) se muestra "No se pudo conectar…" y se permite reintentar; el resto de errores mantienen la anti-enumeración (se muestra el mensaje genérico de envío).
 
 ### 18. Sin estados de carga/error/reintento en formulario — 🔜 APLICAR A FUTURO
 > **Depende de #1** (mismo componente `ApplicationForm.tsx`): los estados de carga/error/reintento se implementarán junto con el envío real del formulario.
@@ -121,23 +121,23 @@
 - **Problema:** No hay `isSubmitting`, ni estado de error de red/servidor, ni acción posterior al éxito.
 - **Corrección:** Añadir `isSubmitting` con spinner, estado de error con "Reintentar"/contacto y navegación en éxito.
 
-### 19. Sin error boundaries
-- **Archivo:** `uis/website/app/` — no existen `error.tsx`, `not-found.tsx`, `global-error.tsx`
+### 19. Sin error boundaries — ✅ HECHO
+- **Archivo:** `uis/website/app/` — se añadieron `error.tsx`, `not-found.tsx` y `global-error.tsx`
 - **Categoría:** (G) Estados ausentes + (D) Exposición
 - **Problema:** Si un Server/Route component lanza, el usuario ve un error crudo sin mensaje amigable.
-- **Corrección:** Añadir `error.tsx`, `not-found.tsx` y `global-error.tsx` sin exponer `error.message`.
+- **Corrección aplicada:** `error.tsx` (client) con botón "Reintentar" (`unstable_retry`, Next 16) y enlace a inicio, `not-found.tsx` para 404 y `global-error.tsx` con su propio `<html>/<body>`. No se renderiza `error.message` (evita fuga).
 
-### 20. Sin estado de error al validar sesión
-- **Archivos:** `uis/backoffice/contexts/AuthContext.tsx:50-81` · `uis/backoffice/app/(protected)/layout.tsx:22-30`
+### 20. Sin estado de error al validar sesión — ✅ HECHO
+- **Archivos:** `uis/backoffice/contexts/AuthContext.tsx` · `uis/backoffice/app/(protected)/layout.tsx`
 - **Categoría:** (G) Estados ausentes
 - **Problema:** Cuando `fetchMeRequest` falla, el layout renderea `null` y redirige a `/login` sin mensaje/reintento.
-- **Corrección:** Añadir estado de "error al validar sesión" con reintento.
+- **Corrección aplicada:** `AuthContext` expone `sessionError` y `retryValidation()`; el layout protegido muestra una pantalla de error con "Reintentar" e "Ir a iniciar sesión" en vez de `null`.
 
-### 21. Export/Guardado sin crudo y sin reintento
-- **Archivos:** `uis/backoffice/components/ExportLink.tsx:26-30,45` · `components/suppliers/SupplierForm.tsx:76` · `components/incidents/IncidentForm.tsx:58`
+### 21. Export/Guardado sin crudo y sin reintento — ✅ HECHO
+- **Archivos:** `uis/backoffice/components/ExportLink.tsx` · `components/suppliers/SupplierForm.tsx` · `components/incidents/IncidentForm.tsx`
 - **Categoría:** (D) Exposición + (H) Sin acción
 - **Problema:** `setError(err.message)` expone detalle del backend; al guardar no hay reintento sin reabrir el modal.
-- **Corrección:** Mensajes amigables por `status` y acción de reintento sobre la misma operación.
+- **Corrección aplicada:** se usa `friendlyError` (mensajes amigables por status). En los formularios de guardado el diálogo de confirmación permanece abierto ante error, permitiendo reintentar la misma operación mostrando el mensaje real.
 
 ## BAJO
 
