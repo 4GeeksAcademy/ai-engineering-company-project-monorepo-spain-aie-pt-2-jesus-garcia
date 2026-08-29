@@ -6,11 +6,11 @@ from database import get_db
 from models import Supplier, SupplierCreate, SupplierUpdate
 from app.core.dependencies import require_manager
 
-router = APIRouter(prefix="/suppliers", tags=["suppliers"])
+router = APIRouter(prefix="/api", tags=["suppliers"])
 
 
 @router.get(
-    "",
+    "/suppliers",
     response_model=list[Supplier],
     summary="Listar proveedores con filtros opcionales",
 )
@@ -42,7 +42,7 @@ def list_suppliers(
 
 
 @router.get(
-    "/{supplier_id}",
+    "/suppliers/{supplier_id}",
     response_model=Supplier,
     summary="Obtener un proveedor por ID",
 )
@@ -61,7 +61,7 @@ def get_supplier(supplier_id: str, _=Depends(require_manager)) -> Supplier:
 
 
 @router.post(
-    "",
+    "/suppliers",
     response_model=Supplier,
     status_code=201,
     summary="Crear un nuevo proveedor",
@@ -91,7 +91,7 @@ def create_supplier(payload: SupplierCreate, _=Depends(require_manager)) -> Supp
 
 
 @router.put(
-    "/{supplier_id}",
+    "/suppliers/{supplier_id}",
     response_model=Supplier,
     summary="Actualizar un proveedor existente",
 )
@@ -127,7 +127,7 @@ def update_supplier(supplier_id: str, payload: SupplierUpdate, _=Depends(require
 
 
 @router.delete(
-    "/{supplier_id}",
+    "/suppliers/{supplier_id}",
     status_code=204,
     summary="Eliminar un proveedor",
 )

@@ -6,6 +6,7 @@ pandas
 pydantic
 httpx
 pytest
+pytest-cov
 tinydb
 passlib[bcrypt]
 python-jose[cryptography]

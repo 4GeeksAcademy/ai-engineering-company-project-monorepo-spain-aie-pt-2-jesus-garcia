@@ -1,6 +1,9 @@
 import io
+import os
 import sys
 from pathlib import Path
+
+os.environ["SECRET_KEY"] = os.environ.get("SECRET_KEY", "test-secret-key")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,24 +29,21 @@ INVALID_HEADER_CSV = """foo,bar,baz
 
 
 @pytest.fixture(autouse=True)
-def _seed_admin():
+def _clean_db():
     from database import get_db
     db = get_db()
-    table = db.table("users")
-    table.truncate()
-    existing = None
-    for doc in table.all():
-        existing = doc
-        break
-    if existing is None:
-        from datetime import datetime, timezone
-        table.insert({
-            "email": "admin@test.com",
-            "hashed_password": hash_password("admin123"),
-            "is_active": True,
-            "role": "admin",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+    for table_name in ("users", "profiles", "incidents"):
+        db.table(table_name).truncate()
+
+    users = db.table("users")
+    from datetime import datetime, timezone
+    users.insert({
+        "email": "admin@test.com",
+        "hashed_password": hash_password("admin123"),
+        "is_active": True,
+        "role": "admin",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
     db.close()
 
 
@@ -62,6 +62,34 @@ def client():
     app = create_app()
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture()
+def register_user(client):
+    payload = {
+        "email": "user@test.com",
+        "password": "securepass123",
+        "name": "Test User",
+        "phone": "+34 600 000000",
+        "address": "Calle Test 1",
+    }
+    created = client.post("/api/users", json=payload)
+    return payload, created
+
+
+@pytest.fixture()
+def user_token(client, register_user):
+    payload, _ = register_user
+    login = client.post("/api/auth/login", json={
+        "email": payload["email"],
+        "password": payload["password"],
+    })
+    return login.json()["access_token"]
+
+
+@pytest.fixture()
+def user_headers(user_token):
+    return {"Authorization": f"Bearer {user_token}"}
 
 
 @pytest.fixture(autouse=True)

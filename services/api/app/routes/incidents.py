@@ -6,11 +6,11 @@ from ..incidents.exceptions import EmptyFileError, InvalidFormatError, NoAnalysi
 from ..incidents.schemas import AnalysisResponse
 from ..core.dependencies import require_manager
 
-router = APIRouter(prefix="/incidents", tags=["incidents"])
+router = APIRouter(prefix="/api", tags=["incidents"])
 
 
 @router.post(
-    "/analyze",
+    "/incidents/analyze",
     response_model=AnalysisResponse,
     summary="Analiza un CSV de incidentes y devuelve el resumen en JSON",
 )
@@ -33,7 +33,7 @@ async def analyze_incidents(file: UploadFile = File(...), _=Depends(require_mana
 
 
 @router.get(
-    "/results/export",
+    "/incidents/results/export",
     summary="Devuelve el último análisis en formato CSV descargable",
 )
 async def export_results(_=Depends(require_manager)) -> Response:

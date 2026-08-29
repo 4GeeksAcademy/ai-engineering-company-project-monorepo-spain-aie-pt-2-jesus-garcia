@@ -17,7 +17,7 @@ from models import (
 )
 from app.core.dependencies import require_manager
 
-router = APIRouter(prefix="/incidents", tags=["incident-manager"])
+router = APIRouter(prefix="/api", tags=["incident-manager"])
 
 
 def _find_incident(table, incident_id):
@@ -59,7 +59,7 @@ def _validate_create(data: dict) -> None:
 
 
 @router.get(
-    "/summary",
+    "/incidents/summary",
     response_model=IncidentSummary,
     summary="Métricas agregadas de incidencias",
 )
@@ -85,7 +85,7 @@ def incident_summary(_=Depends(require_manager)) -> IncidentSummary:
 
 
 @router.get(
-    "",
+    "/incidents",
     response_model=list[Incident],
     summary="Listar incidencias con filtros opcionales",
 )
@@ -116,7 +116,7 @@ def list_incidents(
 
 
 @router.get(
-    "/{incident_id}",
+    "/incidents/{incident_id}",
     response_model=Incident,
     summary="Obtener una incidencia por ID",
 )
@@ -134,7 +134,7 @@ def get_incident(incident_id: str, _=Depends(require_manager)) -> Incident:
 
 
 @router.post(
-    "",
+    "/incidents",
     response_model=Incident,
     status_code=201,
     summary="Crear una nueva incidencia",
@@ -163,7 +163,7 @@ def create_incident(payload: IncidentCreate, _=Depends(require_manager)) -> Inci
 
 
 @router.patch(
-    "/{incident_id}/status",
+    "/incidents/{incident_id}/status",
     response_model=Incident,
     summary="Cambiar el estado de una incidencia validando la transición",
 )

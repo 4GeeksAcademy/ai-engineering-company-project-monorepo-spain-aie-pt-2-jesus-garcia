@@ -7,10 +7,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.incidents import router as incidents_router
-from .api.incidents_manager import router as incidents_manager_router
-from .api.suppliers import router as suppliers_router
-from .api.auth import router as auth_router
+from .routes.incidents import router as incidents_router
+from .routes.incidents_manager import router as incidents_manager_router
+from .routes.suppliers import router as suppliers_router
+from .routes.auth import router as auth_router
+from .routes.users import router as users_router
+from .routes.profiles import router as profiles_router
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +34,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(incidents_router, prefix="/api")
-    app.include_router(incidents_manager_router, prefix="/api")
-    app.include_router(suppliers_router, prefix="/api")
+    app.include_router(incidents_router)
+    app.include_router(incidents_manager_router)
+    app.include_router(suppliers_router)
     app.include_router(auth_router)
+    app.include_router(users_router)
+    app.include_router(profiles_router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

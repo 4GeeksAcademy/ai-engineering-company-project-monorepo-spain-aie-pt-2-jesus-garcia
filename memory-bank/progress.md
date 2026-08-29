@@ -147,6 +147,19 @@ Feature completa (backend + frontend) para registrar y trazar incidencias operat
 
 Type-check (raíz), lint y build (`uis/backoffice`) OK. Ruta `/incidents` añadida al build.
 
+## Test suite de autenticación + TESTING.md (services/api)
+
+- Refactor estructural de `app/api/` → `app/routes/` + `app/services/`:
+  - `app/routes/auth.py` (login, forgot/reset/change-password, `/auth/me`), `users.py` (registro + CRUD), `profiles.py` (`/profiles/me`), más los routers preexistentes movidos: `suppliers.py`, `incidents.py`, `incidents_manager.py`. `app/api/` eliminado.
+  - `app/services/user_service.py` — capa de servicios del dominio usuario (register/authenticate/CRUD/profile/password flows). `core/dependencies.py` y `core/security.py` intactos.
+  - URLs exactamente idénticas; `app/main.py` registra los routers `app.routes.*`.
+- `pyproject.toml` nuevo (deps + `[dependency-groups].dev` + `[tool.pytest.ini_options]`); `requirements.txt` conserva el flujo pip/venv y añade `pytest-cov`.
+- Tests nuevos por concern de auth en `tests/`: `test_register.py` (19), `test_login.py` (15), `test_token.py` (6), `test_profiles.py` (5). Cada endpoint con casos happy / edge / failure y asserts de lógica de negocio.
+- `conftest.py`: `SECRET_KEY` determinista para tests, fixture autouse `_clean_db` (trunca `users`, `profiles`, `incidents` + siembra admin) y fixtures `register_user`, `user_token`, `user_headers`.
+- Bug detectado al correr la suite: la tabla TinyDB `profiles` no se limpiaba entre tests → datos contaminados en 5 casos; resuelto con `_clean_db`. Documentado en TESTING.md (§5).
+- Resultado: **79 passed**; cobertura total `app` **83 %**, módulo de auth ≥ 93 % (rúbrica pide ≥ 70 %).
+- `TESTING.md` creado en `services/api/` (cómo ejecutar, qué cubre cada suite, plan de casos y por qué, snapshot de cobertura, hallazgo con IA). Frontends: jest en backoffice / website sin tests → bonus/no aplica ahora.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
