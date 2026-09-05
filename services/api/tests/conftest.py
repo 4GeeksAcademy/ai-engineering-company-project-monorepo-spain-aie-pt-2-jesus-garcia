@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 os.environ["SECRET_KEY"] = os.environ.get("SECRET_KEY", "test-secret-key")
+os.environ["DATABASE_URL"] = "sqlite:///./test_inventory.db"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,8 +31,8 @@ INVALID_HEADER_CSV = """foo,bar,baz
 
 @pytest.fixture(autouse=True)
 def _clean_db():
-    from database import get_db
-    db = get_db()
+    from database import get_tinydb
+    db = get_tinydb()
     for table_name in ("users", "profiles", "incidents"):
         db.table(table_name).truncate()
 

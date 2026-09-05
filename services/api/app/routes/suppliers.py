@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from database import get_db
+from database import get_tinydb
 from models import Supplier, SupplierCreate, SupplierUpdate
 from app.core.dependencies import require_manager
 
@@ -21,7 +21,7 @@ def list_suppliers(
     search: str | None = Query(None, description="Buscar por nombre"),
     _=Depends(require_manager),
 ) -> list[Supplier]:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
 
     results = []
@@ -47,7 +47,7 @@ def list_suppliers(
     summary="Obtener un proveedor por ID",
 )
 def get_supplier(supplier_id: str, _=Depends(require_manager)) -> Supplier:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
 
     target_id = int(supplier_id) if supplier_id.isdigit() else supplier_id
@@ -67,7 +67,7 @@ def get_supplier(supplier_id: str, _=Depends(require_manager)) -> Supplier:
     summary="Crear un nuevo proveedor",
 )
 def create_supplier(payload: SupplierCreate, _=Depends(require_manager)) -> Supplier:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -96,7 +96,7 @@ def create_supplier(payload: SupplierCreate, _=Depends(require_manager)) -> Supp
     summary="Actualizar un proveedor existente",
 )
 def update_supplier(supplier_id: str, payload: SupplierUpdate, _=Depends(require_manager)) -> Supplier:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
 
     target_id = int(supplier_id) if supplier_id.isdigit() else supplier_id
@@ -132,7 +132,7 @@ def update_supplier(supplier_id: str, payload: SupplierUpdate, _=Depends(require
     summary="Eliminar un proveedor",
 )
 def delete_supplier(supplier_id: str, _=Depends(require_manager)) -> None:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
 
     target_id = int(supplier_id) if supplier_id.isdigit() else supplier_id

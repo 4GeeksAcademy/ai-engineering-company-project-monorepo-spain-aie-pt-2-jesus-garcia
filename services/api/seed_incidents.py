@@ -11,7 +11,7 @@ Salida esperada de /api/incidents/summary (post-transformación):
 from datetime import datetime, timedelta, timezone
 import sys
 
-from database import get_db
+from database import get_tinydb
 
 # Reparto por categoría -> (open, resolved, discarded); suma 95 en total.
 SPLIT = {
@@ -58,7 +58,7 @@ def build_records() -> list[dict]:
 
 
 def seed() -> int:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
     table.truncate()
     records = build_records()

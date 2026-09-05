@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
-from database import get_db
+from database import get_tinydb
 from models import (
     AuthMeResponse,
     Profile,
@@ -49,7 +49,7 @@ def find_profile_for_user(profiles_table, user_id):
 
 
 def register_user(email: str, password: str, name, phone, address) -> User:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
 
     for doc in table.all():
@@ -87,7 +87,7 @@ def register_user(email: str, password: str, name, phone, address) -> User:
 
 
 def authenticate(email: str, password: str) -> User:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
 
     for doc in table.all():
@@ -108,7 +108,7 @@ def authenticate(email: str, password: str) -> User:
 
 
 def list_users() -> list[User]:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
     users = [_user_from_doc(doc) for doc in table.all()]
     db.close()
@@ -116,7 +116,7 @@ def list_users() -> list[User]:
 
 
 def get_user(user_id: str) -> User:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
     doc = _find_doc(table, user_id)
     if doc is None:
@@ -133,7 +133,7 @@ def update_user(user_id: str, update_data: dict, current_user: dict) -> User:
     if not is_admin and not is_owner:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
 
     doc = _find_doc(table, user_id)
@@ -169,7 +169,7 @@ def delete_user(user_id: str, current_user: dict) -> None:
     if not is_admin and not is_owner:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
 
     doc = _find_doc(table, user_id)
@@ -197,7 +197,7 @@ def build_auth_me(user_id: str, current_user: dict) -> AuthMeResponse:
 
 
 def get_profile_for_user(user_id: str) -> Profile | None:
-    db = get_db()
+    db = get_tinydb()
     profiles_table = db.table("profiles")
     profile = find_profile_for_user(profiles_table, user_id)
     if profile is None:
@@ -209,7 +209,7 @@ def get_profile_for_user(user_id: str) -> Profile | None:
 
 
 def get_my_profile(user_id: str) -> Profile:
-    db = get_db()
+    db = get_tinydb()
     profiles_table = db.table("profiles")
     profile = find_profile_for_user(profiles_table, user_id)
     if profile is None:
@@ -221,7 +221,7 @@ def get_my_profile(user_id: str) -> Profile:
 
 
 def update_my_profile(user_id: str, update_data: dict) -> Profile:
-    db = get_db()
+    db = get_tinydb()
     profiles_table = db.table("profiles")
 
     profile = find_profile_for_user(profiles_table, user_id)
@@ -243,7 +243,7 @@ def update_my_profile(user_id: str, update_data: dict) -> Profile:
 
 
 def change_password(user_id: str, current_password: str, new_password: str) -> None:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
 
     doc = _find_doc(table, user_id)
@@ -262,7 +262,7 @@ def change_password(user_id: str, current_password: str, new_password: str) -> N
 
 
 def apply_password_reset(user_id: str, new_password: str, token_iat) -> None:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
 
     doc = _find_doc(table, user_id)
@@ -292,7 +292,7 @@ def apply_password_reset(user_id: str, new_password: str, token_iat) -> None:
 
 
 def issue_password_reset_token(email: str) -> str | None:
-    db = get_db()
+    db = get_tinydb()
     users_table = db.table("users")
 
     for doc in users_table.all():

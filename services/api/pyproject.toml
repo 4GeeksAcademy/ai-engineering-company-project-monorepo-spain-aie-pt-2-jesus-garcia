@@ -13,6 +13,8 @@ dependencies = [
     "pydantic",
     "httpx",
     "tinydb",
+    "sqlmodel",
+    "psycopg2-binary",
     "passlib[bcrypt]",
     "bcrypt",
     "python-jose[cryptography]",

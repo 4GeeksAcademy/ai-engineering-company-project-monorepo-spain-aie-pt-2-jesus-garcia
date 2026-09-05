@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from database import get_db
+from database import get_tinydb
 from models import (
     FINAL_INCIDENT_STATUSES,
     INCIDENT_BRANCHES,
@@ -64,7 +64,7 @@ def _validate_create(data: dict) -> None:
     summary="Métricas agregadas de incidencias",
 )
 def incident_summary(_=Depends(require_manager)) -> IncidentSummary:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
 
     summary = {
@@ -96,7 +96,7 @@ def list_incidents(
     category: str | None = Query(None, description="Filtrar por categoría"),
     _=Depends(require_manager),
 ) -> list[Incident]:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
 
     results = []
@@ -121,7 +121,7 @@ def list_incidents(
     summary="Obtener una incidencia por ID",
 )
 def get_incident(incident_id: str, _=Depends(require_manager)) -> Incident:
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
 
     doc = _find_incident(table, incident_id)
@@ -142,7 +142,7 @@ def get_incident(incident_id: str, _=Depends(require_manager)) -> Incident:
 def create_incident(payload: IncidentCreate, _=Depends(require_manager)) -> Incident:
     _validate_create(payload.model_dump())
 
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -177,7 +177,7 @@ def update_incident_status(
             detail=f"status inválido. Debe ser uno de: {', '.join(INCIDENT_STATUSES)}.",
         )
 
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
 
     doc = _find_incident(table, incident_id)

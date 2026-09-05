@@ -37,9 +37,9 @@ class TestProfiles:
         from datetime import datetime, timezone
 
         from app.core.security import hash_password
-        from database import get_db
+        from database import get_tinydb
 
-        db = get_db()
+        db = get_tinydb()
         doc_id = db.table("users").insert({
             "email": "noprofile@test.com",
             "hashed_password": hash_password("securepass123"),

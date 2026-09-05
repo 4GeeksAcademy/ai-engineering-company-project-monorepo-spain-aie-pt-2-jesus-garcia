@@ -45,8 +45,8 @@ class TestLogin:
     def test_inactive_user_is_rejected_with_403(self, client, register_user):
         payload, created = register_user
         user_id = created.json()["id"]
-        from database import get_db
-        db = get_db()
+        from database import get_tinydb
+        db = get_tinydb()
         db.table("users").update({"is_active": False}, doc_ids=[int(user_id)])
         db.close()
         res = client.post("/api/auth/login", json={
@@ -150,8 +150,8 @@ class TestPasswordFlows:
 
     def test_forgot_password_inactive_user_gets_no_token(self, client, register_user, monkeypatch):
         payload, created = register_user
-        from database import get_db
-        db = get_db()
+        from database import get_tinydb
+        db = get_tinydb()
         db.table("users").update({"is_active": False}, doc_ids=[int(created.json()["id"])])
         db.close()
         sent = {}

@@ -8,6 +8,8 @@ httpx
 pytest
 pytest-cov
 tinydb
+sqlmodel
+psycopg2-binary
 passlib[bcrypt]
 python-jose[cryptography]
 resend

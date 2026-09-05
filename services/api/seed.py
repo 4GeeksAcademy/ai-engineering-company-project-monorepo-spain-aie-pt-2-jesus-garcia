@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import sys
 
-from database import get_db
+from database import get_tinydb
 from models import SupplierCreate, CURRENCY_BY_COUNTRY
 
 SUPPLIERS_SEED = [
@@ -151,7 +151,7 @@ SUPPLIERS_SEED = [
 
 
 def seed():
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
     table.truncate()
 
