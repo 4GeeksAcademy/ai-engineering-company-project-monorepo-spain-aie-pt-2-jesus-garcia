@@ -174,6 +174,13 @@ Backend del módulo de inventario con **doble conexión a BD**: TinyDB sigue sie
 - `seed_inventory.py` (nuevo) — seed determinista e idempotente (truncate + repoblado): 4 SKUs de sneakers y 5 entradas + 4 salidas fijas; `CLT-SNK-W-42` → stock neto **47** en Los Ángeles (coincide con la muestra del milestone). `user_uuid` fijo.
 - Tests: `tests/test_inventory.py` (15 casos; fixture autouse `_clean_inventory` trunca `stock_exit/stock_entry/sku` vía sesión SQLModel). Suites: **94 passed**; cobertura total `app` **85 %**, auth ≥ 93 %, inventario ≥ 97 %.
 
+### Decisiones de diseño (MILESTONE_5)
+
+- **Rename `get_db()` → `get_tinydb()`**: el getter de TinyDB se renombró en `database.py`. `get_db` ahora es el generador SQLModel (`with Session(engine)`) que se inyecta por request. Todos los imports/llamadas legacy (routes de suppliers/incidents/auth, seeds, tests) usan `get_tinydb()`.
+- **SQLite en tests**: `tests/conftest.py` fija `DATABASE_URL = "sqlite:///./test_inventory.db"` **antes** de importar `app.main`. Como `load_dotenv()` no sobreescribe variables ya definidas (`override=False`), los tests corren contra un fichero sqlite local y **nunca tocan Supabase**. `test_inventory.db` es artefacto borrable tras cada corrida.
+- **Driver fallback**: se usa `psycopg2-binary` para el engine PostgreSQL; si faltara wheel para el Python del entorno, el fallback documentado es `psycopg[binary]` (mismo `DATABASE_URL`).
+- **`current_stock` siempre calculado** desde las órdenes (inbound − outbound por almacén), nunca almacenado en `sku`. Outbound excedente → `400` con check-then-write (sin insert).
+
 ## Siguientes pasos
 
 - [ ] UI de inventario en `uis/backoffice` (pantalla de productos/stock y registro de órdenes inbound/outbound)
