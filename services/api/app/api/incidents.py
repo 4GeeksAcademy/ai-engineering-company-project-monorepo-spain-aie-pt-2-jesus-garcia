@@ -18,7 +18,14 @@ async def analyze_incidents(file: UploadFile = File(...), _=Depends(require_mana
     if file is None or file.filename is None or file.filename == "":
         raise HTTPException(status_code=400, detail="Falta el archivo CSV en el campo 'file'.")
 
-    raw = await file.read()
+    try:
+        raw = await file.read()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo leer el archivo subido. Inténtalo de nuevo.",
+        ) from exc
+
     try:
         return service.analyze_upload(raw)
     except (EmptyFileError, InvalidFormatError) as exc:

@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import sys
+
 from database import get_db
 from app.core.security import hash_password
 
@@ -36,5 +38,14 @@ def seed_users():
     print(f"Seeded admin user (id={doc_id}, email=admin@trackflow.com, password=admin123).")
 
 
+def main():
+    try:
+        seed_users()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error al seedear el usuario admin: {exc}")
+        sys.exit(1)
+    sys.exit(0)
+
+
 if __name__ == "__main__":
-    seed_users()
+    main()

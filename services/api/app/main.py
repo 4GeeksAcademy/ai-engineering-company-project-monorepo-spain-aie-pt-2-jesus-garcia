@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
@@ -10,6 +11,8 @@ from .api.incidents import router as incidents_router
 from .api.incidents_manager import router as incidents_manager_router
 from .api.suppliers import router as suppliers_router
 from .api.auth import router as auth_router
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:3000,http://localhost:3001"
 
@@ -35,7 +38,12 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(_: Request, __: Exception) -> JSONResponse:
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception(
+            "Error no controlado en %s %s",
+            request.method,
+            request.url.path,
+        )
         return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
     @app.get("/health", tags=["health"])

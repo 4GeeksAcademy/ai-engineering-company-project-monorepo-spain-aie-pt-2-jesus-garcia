@@ -6,6 +6,7 @@ import {
   fetchIncidentSummary,
   createIncident,
   updateIncidentStatus,
+  friendlyError,
 } from "@/lib/api";
 import type { Incident, IncidentCreate } from "@/lib/types";
 import {
@@ -42,20 +43,28 @@ export default function IncidentsPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [flowTarget, setFlowTarget] = useState<Incident | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   async function refresh() {
-    const fresh = await fetchIncidents(
-      {
-        status: statusFilter || undefined,
-        origin: originFilter || undefined,
-        branch: branchFilter || undefined,
-        category: categoryFilter || undefined,
-      },
-      token,
-    );
-    setIncidents(fresh);
-    const s = await fetchIncidentSummary(token);
-    setSummary(s.by_status);
+    try {
+      const [fresh, s] = await Promise.all([
+        fetchIncidents(
+          {
+            status: statusFilter || undefined,
+            origin: originFilter || undefined,
+            branch: branchFilter || undefined,
+            category: categoryFilter || undefined,
+          },
+          token,
+        ),
+        fetchIncidentSummary(token),
+      ]);
+      setIncidents(fresh);
+      setSummary(s.by_status);
+      setError(null);
+    } catch (err) {
+      setError(friendlyError(err));
+    }
   }
 
   useEffect(() => {
@@ -79,7 +88,7 @@ export default function IncidentsPage() {
         setSummary(s.by_status);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Error al cargar incidencias");
+          setError(friendlyError(err));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -89,7 +98,7 @@ export default function IncidentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [statusFilter, originFilter, branchFilter, categoryFilter, token]);
+  }, [statusFilter, originFilter, branchFilter, categoryFilter, token, reloadKey]);
 
   async function handleCreate(data: IncidentCreate) {
     await createIncident(data, token);
@@ -108,7 +117,7 @@ export default function IncidentsPage() {
       setFlowTarget(updated);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cambiar el estado");
+      setError(friendlyError(err));
     } 
   }
 
@@ -186,6 +195,12 @@ export default function IncidentsPage() {
       {error && (
         <div className="mb-6 rounded-xl border border-rose-400/20 bg-rose-500/10 p-5">
           <p className="text-sm font-medium text-rose-300">Error: {error}</p>
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="mt-3 rounded-lg bg-rose-500/20 px-4 py-2 text-sm font-medium text-rose-200 transition hover:bg-rose-500/30"
+          >
+            Reintentar
+          </button>
         </div>
       )}
 

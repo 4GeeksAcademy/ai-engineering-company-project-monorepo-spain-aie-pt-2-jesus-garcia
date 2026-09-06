@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from database import get_db
 from models import (
@@ -55,7 +59,12 @@ def forgot_password(payload: ForgotPasswordRequest):
         if doc.get("email") == payload.email:
             if doc.get("is_active", True):
                 token = create_password_reset_token(str(doc.doc_id))
-                send_password_reset_email(doc["email"], token)
+                try:
+                    send_password_reset_email(doc["email"], token)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Fallo al enviar el correo de restablecimiento"
+                    )
             break
 
     db.close()
@@ -89,7 +98,11 @@ def reset_password(payload: ResetPasswordRequest):
     issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
     changed_at_raw = doc.get("password_changed_at")
     if changed_at_raw:
-        changed_at = datetime.fromisoformat(changed_at_raw)
+        try:
+            changed_at = datetime.fromisoformat(changed_at_raw)
+        except ValueError:
+            db.close()
+            raise HTTPException(status_code=400, detail="Invalid or expired token")
         if issued_at < changed_at:
             db.close()
             raise HTTPException(status_code=400, detail="Invalid or expired token")
