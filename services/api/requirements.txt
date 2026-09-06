@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+python-dotenv
 python-multipart
 pandas
 pydantic
@@ -8,3 +9,4 @@ pytest
 tinydb
 passlib[bcrypt]
 python-jose[cryptography]
+resend

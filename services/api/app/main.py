@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,7 +9,7 @@ from .api.incidents import router as incidents_router
 from .api.suppliers import router as suppliers_router
 from .api.auth import router as auth_router
 
-ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:3000"
+ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:3000,http://localhost:3001"
 
 
 def create_app() -> FastAPI:

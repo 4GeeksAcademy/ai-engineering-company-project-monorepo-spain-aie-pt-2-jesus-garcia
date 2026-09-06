@@ -61,12 +61,64 @@
   - `incidents.py` — Todos los endpoints requieren role admin/manager (401 sin token, 403 si role user)
   - Tests actualizados con fixture `auth_headers` que genera token admin + seed automático
 
+## Auth — Login & Register (uis/backoffice)
+
+- `/login` — formulario email + contraseña en `uis/backoffice`. Llama a `POST /api/auth/login`, almacena token en localStorage, redirige a `/`. Muestra error "Credenciales inválidas" en 401.
+- `/register` — formulario email + contraseña + confirmar. Llama a `POST /api/users`, luego `POST /api/auth/login`, almacena token y redirige a `/`. Muestra errores de validación a nivel de campo (422/409).
+- Layout minimalista centrado (sin Sidebar) con logo TrackFlow + fondo degradado.
+- `AuthProvider` en `uis/backoffice/contexts/AuthContext.tsx` — envuelve toda la app desde el root layout.
+- En mount: lee token de localStorage, lo valida con `GET /api/auth/me`.
+- Rutas protegidas en `(protected)/layout.tsx`: redirige a `/login` si no hay sesión.
+- Sidebar tiene botón "Cerrar sesión" con icono de logout.
+- Loader animado con logo: capa gris se recorta desde abajo hacia arriba revelando el color (clip-path, 800ms + fade 500ms).
+- Rewrites en `next.config.ts` para `/api/auth/*` y `/api/users` hacia el backend.
+- `lib/api.ts` añadido `apiRequest<T>()` genérico con soporte para token Bearer.
+- `uis/website` revertido a estado original (sin auth).
+- Type-check, lint, build — todo OK en ambos proyectos.
+
+## Auth — Conexión Bearer token con endpoints protegidos (uis/backoffice)
+
+- Tras el merge del backend auth en `main`, `suppliers.py` e `incidents.py` exigen token Bearer (`require_manager`, role ≥ manager).
+- Todos los helpers de `lib/api.ts` ahora aceptan opcional `token?: string | null` y envían `Authorization: Bearer <token>` cuando se proporciona: `analyzeCsv`, `fetchExportCsv`, `fetchSuppliers`, `fetchSupplier`, `createSupplier`, `updateSupplier`, `deleteSupplier` (helper interno `authHeaders`).
+- Los callers pasan el token desde `useAuth()`:
+  - `app/(protected)/suppliers/page.tsx` — todas las llamadas CRUD de proveedores.
+  - `app/(protected)/page.tsx` — `analyzeCsv`.
+  - `components/ExportLink.tsx` — `fetchExportCsv`.
+- Registro crea role `user`, por lo que un usuario recién registrado recibe 403 en suppliers/incidents (diseño intencional; admin/manager acceden).
+- `feature/auth-frontend` rebaseado sobre `origin/main` (incluye merge de auth #7).
+
+## UI — ConfirmDialog reutilizable (uis/backoffice)
+
+- Nuevo `components/ui/ConfirmDialog.tsx` reutilizable (overlay oscuro + panel slate). Props: `open`, `title`, `message`, `confirmLabel`, `cancelLabel`, `loading`, `danger`, `onConfirm`, `onCancel`. Estilo `danger` (rose) para acciones destructivas, por defecto cyan.
+- `SupplierForm.tsx`: al guardar valida primero y muestra ConfirmDialog → confirmar ejecuta `onSubmit` (vía estado `pendingSubmit`).
+- `Sidebar.tsx`: el botón "Cerrar sesión" abre ConfirmDialog (`danger`) antes de llamar a `logout()`. `AuthContext.logout()` sin cambios.
+- `suppliers/page.tsx`: modal de eliminación inline refactorizado a `ConfirmDialog`.
+- Type-check (raíz), lint y build (`uis/backoffice`) — todo OK.
+
+## Auth — Recuperación y cambio de contraseña (services/api)
+
+- `POST /api/auth/forgot-password` — busca por email; respuesta genérica (202) para no filtrar si el email existe; si existe y está activo genera reset-token (`type=password_reset`, duración `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` por defecto 30) y envía enlace construido con `FRONTEND_URL` (por defecto `http://localhost:3000`, backoffice).
+- `POST /api/auth/reset-password` — valida firma + exp + `type=="password_reset"` + token NO anterior a `password_changed_at` del usuario; hashea la nueva y actualiza `hashed_password` + `password_changed_at` (invalida el token y todos los emitidos antes).
+- `POST /api/auth/change-password` — autenticado (`get_current_user`); verifica la contraseña actual, hashea la nueva y actualiza `hashed_password` + `password_changed_at`.
+- Invalidación por estado en servidor: campo `password_changed_at` en el documento del usuario; se rechaza cualquier token-reset con `iat` anterior a ese momento. No se expone en el response `User`.
+- `app/email_service.py` (nuevo) — Resend real si `RESEND_API_KEY` configurada; en desarrollo sin credenciales loguea el enlace (stub) para no romper el flujo.
+- Env nuevas: `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`, `RESEND_API_KEY`, `RESEND_FROM`, `FRONTEND_URL`. Dep `resend` añadida al venv y a `requirements.txt`.
+- Config de email: `python-dotenv` + `load_dotenv()` en `app/main.py`; env se cargan de `services/api/.env` (ignorado por git). Sin `RESEND_API_KEY` → stub por consola (captura dev); con clave → modo test de Resend (envío a email verificado propio, sin dominio). Documentado en `techContext.md`.
+- Tests: `pytest` (10 OK) y typecheck raíz OK.
+
+## Auth — Frontend recuperación y cambio de contraseña (uis/backoffice)
+
+- `/forgot-password` + `components/auth/ForgotPasswordForm.tsx` — email; muestra SIEMPRE mensaje genérico tras el envío (ignora errores) para evitar enumeración. API devuelve 202. Link en `/login` ("¿Olvidaste tu contraseña?").
+- `/reset-password` + `components/auth/ResetPasswordForm.tsx` — página server awaiteando `searchParams` (Next 16) pasa `initialToken`; campos nueva + confirmar con validación de coincidencia; envía `{token,new_password}`; token inválido falla al enviar ("el enlace no es válido o ha expirado"); éxito → `router.push("/login")`.
+- `/account/change-password` (bajo layout protegido) + `components/auth/ChangePasswordForm.tsx` — actual + nueva + confirmación; valida coincidencia; envía con Bearer (`useAuth().token`); 400 → "La contraseña actual es incorrecta"; éxito → mensaje y `router.push("/")`.
+- `lib/auth-api.ts` — `forgotPasswordRequest`, `resetPasswordRequest`, `changePasswordRequest` (con token).
+- `components/Sidebar.tsx` — link "Cambiar contraseña" junto a "Cerrar sesión".
+- Rutas nuevas en build: `/forgot-password`, `/reset-password` (ƒ dinámica), `/account/change-password`. Type-check (raíz), lint y build (`uis/backoffice`) — todo OK.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
 - [ ] Implementar ruta dinámica `/candidates/[id]`
 - [ ] Añadir paginación en `CandidateList`
-- [ ] Implementar `ConfirmDialog` para eliminación
 - [ ] Pruebas end-to-end del flujo completo
-- [ ] Conectar autenticación al backoffice (login UI + token storage)
 - [ ] Conectar formulario de aplicación con API real

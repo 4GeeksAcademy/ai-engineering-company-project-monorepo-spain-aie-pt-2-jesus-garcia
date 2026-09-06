@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { ApiRequestError, fetchExportCsv } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function ExportLink() {
+  const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -11,7 +13,7 @@ export function ExportLink() {
     setLoading(true);
     setError(null);
     try {
-      const blob = await fetchExportCsv();
+      const blob = await fetchExportCsv(token);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
