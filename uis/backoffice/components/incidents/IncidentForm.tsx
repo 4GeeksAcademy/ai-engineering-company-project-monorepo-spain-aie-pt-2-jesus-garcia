@@ -7,6 +7,7 @@ import {
   INCIDENT_ORIGINS,
   INCIDENT_BRANCHES,
 } from "@/lib/types";
+import { friendlyError } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface IncidentFormProps {
@@ -54,8 +55,8 @@ export function IncidentForm({ onSubmit, onClose }: IncidentFormProps) {
     try {
       await onSubmit(pendingSubmit);
       onClose();
-    } catch {
-      setErrors({ submit: "Error al crear la incidencia" });
+    } catch (err) {
+      setErrors({ submit: friendlyError(err) });
     } finally {
       setLoading(false);
     }

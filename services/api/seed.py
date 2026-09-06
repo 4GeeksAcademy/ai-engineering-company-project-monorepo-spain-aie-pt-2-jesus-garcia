@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
-from database import get_db
+import sys
+
+from database import get_tinydb
 from models import SupplierCreate, CURRENCY_BY_COUNTRY
 
 SUPPLIERS_SEED = [
@@ -149,7 +151,7 @@ SUPPLIERS_SEED = [
 
 
 def seed():
-    db = get_db()
+    db = get_tinydb()
     table = db.table("suppliers")
     table.truncate()
 
@@ -173,5 +175,14 @@ def seed():
     print(f"Seeded {len(SUPPLIERS_SEED)} suppliers.")
 
 
+def main():
+    try:
+        seed()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error al seedear proveedores: {exc}")
+        sys.exit(1)
+    sys.exit(0)
+
+
 if __name__ == "__main__":
-    seed()
+    main()

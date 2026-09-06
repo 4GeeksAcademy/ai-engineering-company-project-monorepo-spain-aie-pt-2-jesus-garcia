@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from database import get_db
+from database import get_tinydb
 
 from ..core.security import decode_token
 from models import UserRole
@@ -27,7 +27,7 @@ def get_current_user(
             detail="Invalid token payload",
         )
 
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
     for doc in table.all():
         if str(doc.doc_id) == str(user_id):

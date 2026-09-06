@@ -1,16 +1,16 @@
 import pytest
 
-from database import get_db
+from database import get_tinydb
 
 
 @pytest.fixture(autouse=True)
 def _clean_incidents():
-    db = get_db()
+    db = get_tinydb()
     table = db.table("incidents")
     table.truncate()
     db.close()
     yield
-    db = get_db()
+    db = get_tinydb()
     db.table("incidents").truncate()
     db.close()
 

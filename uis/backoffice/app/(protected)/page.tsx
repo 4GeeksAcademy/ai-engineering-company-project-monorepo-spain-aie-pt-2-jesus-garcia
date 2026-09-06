@@ -6,7 +6,7 @@ import { InvalidReasonsList } from "@/components/InvalidReasonsList";
 import { ExportLink } from "@/components/ExportLink";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { BreakdownCard } from "@/components/ui/BreakdownCard";
-import { analyzeCsv, ApiRequestError } from "@/lib/api";
+import { analyzeCsv, friendlyError } from "@/lib/api";
 import type { AnalysisResponse } from "@/lib/types";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,11 +27,7 @@ export default function BackofficePage() {
       const data = await analyzeCsv(file, token);
       setResult(data);
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        setError(err.message);
-      } else {
-        setError("No se pudo analizar el archivo.");
-      }
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

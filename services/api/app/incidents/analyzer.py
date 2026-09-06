@@ -9,6 +9,8 @@ from typing import IO
 
 import pandas as pd
 
+from .exceptions import InvalidFormatError
+
 CHUNK_SIZE = 10_000
 
 REQUIRED_COLUMNS = [
@@ -88,37 +90,40 @@ def analyze_file(
         "invalid_rows": [],
     }
 
-    reader = pd.read_csv(
-        source,
-        chunksize=chunk_size,
-        dtype=str,
-        keep_default_na=False,
-    )
+    try:
+        reader = pd.read_csv(
+            source,
+            chunksize=chunk_size,
+            dtype=str,
+            keep_default_na=False,
+        )
 
-    for chunk in reader:
-        for _, row in chunk.iterrows():
-            stats["total"] += 1
-            record = row.to_dict()
-            is_valid, errors = validate_record(record)
+        for chunk in reader:
+            for _, row in chunk.iterrows():
+                stats["total"] += 1
+                record = row.to_dict()
+                is_valid, errors = validate_record(record)
 
-            if not is_valid:
-                stats["invalid"] += 1
-                for error in errors:
-                    stats["invalid_reasons"][error] = stats["invalid_reasons"].get(error, 0) + 1
-                if collect_invalid:
-                    stats["invalid_rows"].append({**record, "errors": ";".join(errors)})
-                continue
+                if not is_valid:
+                    stats["invalid"] += 1
+                    for error in errors:
+                        stats["invalid_reasons"][error] = stats["invalid_reasons"].get(error, 0) + 1
+                    if collect_invalid:
+                        stats["invalid_rows"].append({**record, "errors": ";".join(errors)})
+                    continue
 
-            stats["valid"] += 1
-            status = str(record.get("status", "")).strip()
-            stats["by_status"][status] += 1
+                stats["valid"] += 1
+                status = str(record.get("status", "")).strip()
+                stats["by_status"][status] += 1
 
-            category = str(record.get("category", "")).strip()
-            stats["by_category"][category] += 1
+                category = str(record.get("category", "")).strip()
+                stats["by_category"][category] += 1
 
-            satisfaction = str(record.get("satisfaction_score", "")).strip()
-            if status == "cerrado" and satisfaction:
-                stats["satisfaction_scores"].append(float(satisfaction))
+                satisfaction = str(record.get("satisfaction_score", "")).strip()
+                if status == "cerrado" and satisfaction:
+                    stats["satisfaction_scores"].append(float(satisfaction))
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise InvalidFormatError("El CSV no es válido.") from exc
 
     scores = stats.pop("satisfaction_scores")
     stats["avg_satisfaction_cerrados"] = round(sum(scores) / len(scores), 2) if scores else None
