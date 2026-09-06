@@ -8,7 +8,7 @@
 | MILESTONE_2 — Modelado + Colecciones | ✅ Completado | `src/types/models.ts`, `src/utils/*.ts` |
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
-| MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — pendiente frontend/UI |
+| MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 
 ## Últimas decisiones
 
@@ -181,10 +181,25 @@ Backend del módulo de inventario con **doble conexión a BD**: TinyDB sigue sie
 - **Driver fallback**: se usa `psycopg2-binary` para el engine PostgreSQL; si faltara wheel para el Python del entorno, el fallback documentado es `psycopg[binary]` (mismo `DATABASE_URL`).
 - **`current_stock` siempre calculado** desde las órdenes (inbound − outbound por almacén), nunca almacenado en `sku`. Outbound excedente → `400` con check-then-write (sin insert).
 
+## UI de inventario (uis/backoffice) — MILESTONE_5 (TDD con Vitest)
+
+Frontend de la página `/inventory` construido con **TDD (red → verde)** con Vitest + Testing Library. Se montó por primera vez infraestructura de tests en el backoffice (`vitest`, `@vitejs/plugin-react`, `jsdom`, `@testing-library/react`, `user-event`, `jest-dom`).
+
+- Scripts nuevos: `test` (`vitest run`) y `test:watch`. Config en `vitest.config.ts` (jsdom + alias `@`→`.` + setup `vitest.setup.ts` con jest-dom).
+- Commits por pieza (uno por unidad, cada uno con red→verde):
+  - Infraestructura de tests + smoke test.
+  - `lib/types.ts` — `SKU`, `SKUCreate`, `InventoryOrderCreate`, `InventoryOrderItem`, `WAREHOUSE_LABELS`, `INVENTORY_ORDER_TYPES`, `computeInventoryTotals` (total SKUs + stock por almacén).
+  - `lib/api.ts` — `fetchInventoryProducts`, `fetchInventoryProduct`, `createInventoryProduct`, `fetchInventoryOrders`, `createInboundOrder`, `createOutboundOrder`. Outbound 400 **propaga el `detail` del backend** (`ApiRequestError.detail`), no `friendlyError` genérico.
+  - `components/inventory/ProductForm.tsx` — modal alta de producto (name, sku_code, warehouse) validado + ConfirmDialog.
+  - `components/inventory/OrderForm.tsx` — modal de órdenes inbound/outbound (sku_id, quantity, warehouse); inbound se envía directo, outbound pide ConfirmDialog; en error muestra el `detail` del backend (requisito clave del milestone).
+  - `app/(protected)/inventory/page.tsx` — cabecera "Inventario", `MetricCard`/`BreakdownCard` (SKUs totales, stock total, desglose por almacén), filtro por almacén, tabla de productos con badges de stock y accions Entrada/Salida, historial de órdenes con `user_uuid`. Botones de crear/ordenar solo para admin/manager (`user.role`).
+  - Wiring — rewrite `/api/inventory/:path*` en `next.config.ts` y entrada "Inventario" en `Sidebar`.
+- **29 tests** en verde en `uis/backoffice` (`npm test`); typecheck raíz, lint y build OK. Ruta `/inventory` presente en el build.
+- Las pruebas mockean `fetch`/`useAuth`/`lib/api`; **no requieren** Supabase ni backend corriendo.
+
 ## Siguientes pasos
 
-- [ ] UI de inventario en `uis/backoffice` (pantalla de productos/stock y registro de órdenes inbound/outbound)
-- [ ] Conectar frontend a rutas `/inventory` (Bearer token) y reflejar `current_stock`/`current_stock_by_warehouse`
+- [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
 - [ ] Implementar ruta dinámica `/candidates/[id]`
 - [ ] Añadir paginación en `CandidateList`
