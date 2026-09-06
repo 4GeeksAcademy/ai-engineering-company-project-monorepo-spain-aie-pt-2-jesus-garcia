@@ -44,8 +44,9 @@ Requisito de la asignatura: **≥ 70 % de cobertura en el módulo de autenticaci
 | `tests/test_profiles.py` | `GET/PUT /api/profiles/me` | 5 |
 | `tests/test_incidents.py` | `POST /api/incidents/analyze` + export CSV (analizador de la Experiencia del cliente) | 10 |
 | `tests/test_incident_manager.py` | CRUD + máquina de estados de incidencias | 24 |
+| `tests/test_inventory.py` | API de inventario: stock por almacén, inbound/outbound, validaciones, auth, `GET /orders` | 15 |
 
-Total: **79** pruebas (45 de auth/usuario + 34 de incidentes).
+Total: **94** pruebas (45 de auth/usuario + 34 de incidentes + 15 de inventario).
 
 ## 3. Plan de casos (endpoint × happy / edge / failure) y por qué
 
@@ -118,26 +119,41 @@ Cada endpoint se prueba en tres niveles (camino feliz, caso límite, modo de fal
 | Failure | `forgot-password` sobre email inexistente → `202` genérico | Anti-enumeración (misma respuesta siempre) |
 | Failure | `change-password` sin token → `401` | Protección |
 
+### API de inventario (`/inventory`)
+
+El módulo (MILESTONE_5) corre sobre SQLModel contra `DATABASE_URL` (en tests, sqlite `test_inventory.db`). El stock es **siempre calculado** de las órdenes (inbound − outbound por almacén); las rutas de escritura exigen admin/manager y las de lectura solo sesión válida.
+
+| Nivel | Caso | Por qué se incluye |
+|---|---|---|
+| Happy | Inbound incrementa / outbound decrementa el stock **del almacén de la orden** | La unidad de stock de TrackFlow es el almacén; `current_stock_by_warehouse` debe reflejarlo |
+| Happy | Mismo SKU en ambos almacenes con stock distinto → `compute_stock` distinto por almacén | Aislamiento de stock entre sedes |
+| Edge | Inbound en `zaragoza` no altera el stock de `los_angeles` | El filtrado por `warehouse` en los agregados es correcto |
+| Failure | Outbound > disponible → `400` **sin insertar fila** (contadas antes/después) | Check-then-write: orden rechazada no deja rastro |
+| Failure | `quantity <= 0` → `422` (validador Pydantic `gt=0`) | Mínimos de negocio en el schema |
+| Failure | `warehouse` fuera de `WAREHOUSES` → `400` | Validación de dominio en el service |
+| Failure | `sku_id` inexistente → `404` | Resolución clara de recurso |
+| Failure | Sin token en lecturas → `401`; POST con role `user` → `403`; GET con usuario normal → `200` | Matriz de auth del módulo (escribir manager, leer sesión) |
+| Happy | `GET /orders` devuelve solo campos mapeados (`order_type`, `sku_id`, `product_name`, `warehouse`, `quantity`, `user_uuid`, `created_at`) | Mapeo explícito ORM → schema, sin atributos raw del modelo |
+
 ## 4. Resultado de cobertura
 
 Objetivo: ≥ 70 % en el módulo de autenticación. Ejecución con `python -m pytest --cov=app --cov-report=term-missing`:
 
 ```
-Name                              Stmts   Miss  Cover   Missing
+Name                                Stmts   Miss  Cover   Missing
 ---------------------------------------------------------------
-app/core/dependencies.py             32      2    94%   25, 49
+app/core/dependencies.py             32      1    97%   49
 app/core/security.py                 26      0   100%
 app/routes/auth.py                   43      3    93%   43-44, 57
 app/routes/profiles.py               11      0   100%
 app/routes/users.py                  25      0   100%
 app/services/user_service.py        189     11    94%   123-124, 162-163, 229-230, 241-242, 277-279
 ---------------------------------------------------------------
-
-TOTAL                               716    120    83%
-79 passed
+TOTAL                               808    121    85%
+94 passed
 ```
 
-El módulo de autenticación queda **≥ 93 %** en todos sus archivos; el total del `app` es **83 %**. (El resto de archivos con coberturas propias: `incidents`/`main`/etc. se reportan en la salida completa; `suppliers.py` queda sin suite propia — bonus fuera del requisito.)
+El módulo de autenticación queda **≥ 93 %** en todos sus archivos; el total del `app` es **85 %**. El módulo de inventario aporta cobertura propia: `app/routes/inventory.py` **98 %** y `app/services/inventory_service.py` **97 %**. (El resto de archivos con coberturas propias: `incidents`/`main`/etc. se reportan en la salida completa; `suppliers.py` queda sin suite propia — bonus fuera del requisito.)
 
 ## 5. Hallazgo con ayuda de IA / bug detectado por los tests
 

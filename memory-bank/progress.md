@@ -8,6 +8,7 @@
 | MILESTONE_2 — Modelado + Colecciones | ✅ Completado | `src/types/models.ts`, `src/utils/*.ts` |
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
+| MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — pendiente frontend/UI |
 
 ## Últimas decisiones
 
@@ -160,8 +161,23 @@ Type-check (raíz), lint y build (`uis/backoffice`) OK. Ruta `/incidents` añadi
 - Resultado: **79 passed**; cobertura total `app` **83 %**, módulo de auth ≥ 93 % (rúbrica pide ≥ 70 %).
 - `TESTING.md` creado en `services/api/` (cómo ejecutar, qué cubre cada suite, plan de casos y por qué, snapshot de cobertura, hallazgo con IA). Frontends: jest en backoffice / website sin tests → bonus/no aplica ahora.
 
+## Inventario (services/api) — MILESTONE_5
+
+Backend del módulo de inventario con **doble conexión a BD**: TinyDB sigue siendo fuente de verdad de auth; Supabase/PostgreSQL (SQLModel) para inventario.
+
+- `database.py` — punto único de ambas conexiones: `get_tinydb()` (data/suppliers.json) y SQLModel `engine` desde `DATABASE_URL` + `get_db()` generador (`with Session(engine)`). `load_dotenv()` al import. Deps nuevas: `sqlmodel`, `psycopg2-binary`. `DATABASE_URL=` vacía en `.env.example` (y `SUPABASE_SHARED_POOLER` como referencia del Transaction pooler).
+- `models.py` — ORM `SKU` (`sku`), `StockEntry` (`stock_entry`), `StockExit` (`stock_exit`): FK `sku_id → sku.id`, `quantity: int`, `user_uuid: str` sin FK, relación `product`, sin columna `current_stock` (siempre calculado).
+- `schemas.py` (nuevo) — `SKUCreate/SKURead` (con `current_stock` y `current_stock_by_warehouse`), `StockEntry/ExitCreate/Read`, `InventoryOrderItem` (item combinado de `GET /orders`). Endpoints mapean ORM → schema explícitamente.
+- `app/services/inventory_service.py` — `WAREHOUSES = ("los_angeles", "zaragoza")`, `compute_stock(session, sku_id, warehouse)` con `func.coalesce(func.sum(...))`, `compute_stock_by_warehouse`, y `create_inbound/create_outbound` con validaciones antes de `session.add`: `quantity>0`, warehouse válido, SKU existe (**404**) y **check-then-write** de outbound (400 "Stock insuficiente…" sin escritura).
+- `app/routes/inventory.py` — `APIRouter(prefix="/inventory")`: `GET /products`, `GET /products/{id}`, `POST /products`, `POST /orders/inbound`, `POST /orders/outbound`, `GET /orders` (con `selectinload` para evitar N+1). Escrituras exigen `require_manager`; lecturas solo `get_current_user`. `user_uuid` = id del usuario autenticado.
+- `app/main.py` — incluye `inventory_router` y **lifespan** con `SQLModel.metadata.create_all(engine)` (solo si `engine` no es None).
+- `seed_inventory.py` (nuevo) — seed determinista e idempotente (truncate + repoblado): 4 SKUs de sneakers y 5 entradas + 4 salidas fijas; `CLT-SNK-W-42` → stock neto **47** en Los Ángeles (coincide con la muestra del milestone). `user_uuid` fijo.
+- Tests: `tests/test_inventory.py` (15 casos; fixture autouse `_clean_inventory` trunca `stock_exit/stock_entry/sku` vía sesión SQLModel). Suites: **94 passed**; cobertura total `app` **85 %**, auth ≥ 93 %, inventario ≥ 97 %.
+
 ## Siguientes pasos
 
+- [ ] UI de inventario en `uis/backoffice` (pantalla de productos/stock y registro de órdenes inbound/outbound)
+- [ ] Conectar frontend a rutas `/inventory` (Bearer token) y reflejar `current_stock`/`current_stock_by_warehouse`
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
 - [ ] Implementar ruta dinámica `/candidates/[id]`
 - [ ] Añadir paginación en `CandidateList`
