@@ -4,6 +4,10 @@ import type {
   IncidentCreate,
   IncidentStatusUpdate,
   IncidentSummary,
+  InventoryOrderCreate,
+  InventoryOrderItem,
+  SKU,
+  SKUCreate,
   Supplier,
   SupplierCreate,
   SupplierUpdate,
@@ -247,5 +251,59 @@ export async function updateIncidentStatus(
 export async function fetchIncidentSummary(token?: string | null): Promise<IncidentSummary> {
   return request<IncidentSummary>("/api/incidents/summary", {
     headers: authHeaders(token),
+  });
+}
+
+export async function fetchInventoryProducts(token?: string | null): Promise<SKU[]> {
+  return request<SKU[]>("/api/inventory/products", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function fetchInventoryProduct(
+  id: number,
+  token?: string | null,
+): Promise<SKU> {
+  return request<SKU>(`/api/inventory/products/${id}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createInventoryProduct(
+  data: SKUCreate,
+  token?: string | null,
+): Promise<SKU> {
+  return request<SKU>("/api/inventory/products", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchInventoryOrders(token?: string | null): Promise<InventoryOrderItem[]> {
+  return request<InventoryOrderItem[]>("/api/inventory/orders", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createInboundOrder(
+  data: Omit<InventoryOrderCreate, "order_type">,
+  token?: string | null,
+): Promise<InventoryOrderItem> {
+  return request<InventoryOrderItem>("/api/inventory/orders/inbound", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createOutboundOrder(
+  data: Omit<InventoryOrderCreate, "order_type">,
+  token?: string | null,
+): Promise<InventoryOrderItem> {
+  return request<InventoryOrderItem>("/api/inventory/orders/outbound", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data),
   });
 }
