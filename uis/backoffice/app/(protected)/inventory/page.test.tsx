@@ -174,4 +174,43 @@ describe("InventoryPage", () => {
       "test-token",
     );
   });
+
+  it("usa claves únicas cuando entradas y salidas comparten id numérico", async () => {
+    mockRole("manager");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFetchOrders.mockResolvedValue([
+      {
+        id: 6,
+        order_type: "inbound",
+        sku_id: 1,
+        product_name: sku1.name,
+        warehouse: "los_angeles",
+        quantity: 10,
+        user_uuid: "u-in",
+        created_at: "2025-06-01T10:00:00Z",
+      },
+      {
+        id: 6,
+        order_type: "outbound",
+        sku_id: 2,
+        product_name: sku2.name,
+        warehouse: "zaragoza",
+        quantity: 3,
+        user_uuid: "u-out",
+        created_at: "2025-06-01T11:00:00Z",
+      },
+    ]);
+    render(<InventoryPage />);
+
+    const orders = await screen.findByRole("region", { name: "Órdenes registradas" });
+    expect(within(orders).getByText(sku1.name)).toBeInTheDocument();
+    expect(within(orders).getByText(sku2.name)).toBeInTheDocument();
+
+    const hasDuplicateKeyWarning = errorSpy.mock.calls.some((call) =>
+      String(call[0]).includes("two children with the same key"),
+    );
+    expect(hasDuplicateKeyWarning).toBe(false);
+
+    errorSpy.mockRestore();
+  });
 });

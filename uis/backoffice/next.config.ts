@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/inventory/:path*",
-        destination: `${backend}/api/inventory/:path*`,
+        destination: `${backend}/inventory/:path*`,
       },
       {
         source: "/api/auth/:path*",

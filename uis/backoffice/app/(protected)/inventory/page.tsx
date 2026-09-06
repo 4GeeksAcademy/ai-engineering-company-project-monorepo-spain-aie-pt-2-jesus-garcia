@@ -263,7 +263,10 @@ export default function InventoryPage() {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {orders.map((item) => (
-                    <tr key={item.id} className="transition hover:bg-white/5">
+                    <tr
+                      key={`${item.order_type}-${item.id}`}
+                      className="transition hover:bg-white/5"
+                    >
                       <td className="px-4 py-3">
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
