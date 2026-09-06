@@ -101,3 +101,81 @@ export const COUNTRY_FLAGS: Record<string, string> = {
   USA: "🇺🇸",
   Spain: "🇪🇸",
 };
+
+export interface Incident {
+  id: string;
+  title: string;
+  description: string;
+  origin: string;
+  branch: string;
+  category: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IncidentCreate {
+  title: string;
+  description: string;
+  origin: string;
+  branch: string;
+  category: string;
+  status?: string;
+}
+
+export interface IncidentStatusUpdate {
+  status: string;
+}
+
+export interface IncidentSummary {
+  by_status: Record<string, number>;
+  by_category: Record<string, number>;
+  by_origin: Record<string, number>;
+  by_branch: Record<string, number>;
+}
+
+export const INCIDENT_STATUSES: Record<string, string> = {
+  open: "Abierto",
+  in_progress: "En curso",
+  resolved: "Resuelto",
+  discarded: "Descartado",
+};
+
+export const INCIDENT_CATEGORIES: Record<string, string> = {
+  lost_parcel: "Paquete extraviado",
+  delivery_failure: "Fallo de entrega",
+  inventory_discrepancy: "Discrepancia de inventario",
+  carrier_issue: "Problema con carrier",
+  returns_issue: "Problema de devolución",
+  warehouse_incident: "Incidente de almacén",
+  system_failure: "Fallo de sistema",
+  client_complaint: "Queja de cliente",
+  other: "Otro",
+};
+
+export const INCIDENT_ORIGINS: Record<string, string> = {
+  customer: "Cliente",
+  branch: "Sucursal",
+  internal: "Interno",
+};
+
+export const INCIDENT_BRANCHES: Record<string, string> = {
+  central: "Central",
+  la_warehouse: "Los Ángeles — Almacén",
+  la_office: "Los Ángeles — Oficina",
+  zaragoza_warehouse: "Zaragoza — Almacén",
+  zaragoza_office: "Zaragoza — Oficina",
+};
+
+export const INCIDENT_STATUS_ORDER = ["open", "in_progress", "resolved", "discarded"];
+
+export const INCIDENT_TRANSITIONS: Record<string, string[]> = {
+  open: ["in_progress", "discarded"],
+  in_progress: ["resolved", "discarded", "open"],
+  resolved: ["in_progress"],
+  discarded: [],
+};
+
+export function nextStatuses(status: string): string[] {
+  return INCIDENT_TRANSITIONS[status] ?? [];
+}

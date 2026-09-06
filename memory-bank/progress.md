@@ -115,6 +115,38 @@
 - `components/Sidebar.tsx` — link "Cambiar contraseña" junto a "Cerrar sesión".
 - Rutas nuevas en build: `/forgot-password`, `/reset-password` (ƒ dinámica), `/account/change-password`. Type-check (raíz), lint y build (`uis/backoffice`) — todo OK.
 
+## Gestor de Incidencias Centralizado (feature/incident-manager)
+
+Feature completa (backend + frontend) para registrar y trazar incidencias operativas de TrackFlow (paquetes perdidos, fallos de carrier, discrepancia de inventario, devoluciones, etc.).
+
+`docs/CONTEXT_centralized_incident_manager.md` define el dominio: sedes (`central`, `la_warehouse`, `la_office`, `zaragoza_warehouse`, `zaragoza_office`), categorías (9), estados (`open`, `in_progress`, `resolved`, `discarded`), orígenes (`customer`, `branch`, `internal`) y transiciones de estado.
+
+### Backend (`services/api`)
+- `models.py` — constantes del dominio (`INCIDENT_ORIGINS`, `INCIDENT_BRANCHES`, `INCIDENT_CATEGORIES`, `INCIDENT_STATUSES`, `INCIDENT_STATUS_TRANSITIONS`, `FINAL_INCIDENT_STATUSES`) y modelos Pydantic `Incident`, `IncidentCreate`, `IncidentStatusUpdate`, `IncidentSummary`. Los enum se validan a mano (400), no vía field_validator (evita 422).
+- `seed_incidents.py` — seed determinista idempotente (trunca tabla `incidents` y la repuebla) que produce los **95** registros esperados: `open` 29 / `resolved` 52 / `discarded` 14; categorías `lost_parcel` 14 / `carrier_issue` 45 / `delivery_failure` 19 / `returns_issue` 17. `origin: "customer"`.
+- `app/api/incidents_manager.py` — router CRUD bajo `/api/incidents` (comparte prefijo con el analizador existente sin colisión de rutas):
+  - `POST /api/incidents` → crea (status default `open`); 400 descriptivo si falta campo o valor no permitido.
+  - `GET /api/incidents` → lista con filtros `status`, `origin`, `branch`, `category`; `[]` con BD vacía.
+  - `GET /api/incidents/{id}` → 404 si no existe.
+  - `PATCH /api/incidents/{id}/status` → valida transición; `resolved`/`discarded` finales; inválida → 400.
+  - `GET /api/incidents/summary` → agregados por `status`/`category`/`origin`/`branch`.
+  - Todo protegido con `require_manager` (admin/manager). Ruta `/summary` declarada antes de `/{id}`.
+- `app/main.py` — registra `incidents_manager_router` y añade handler global de excepción → **500** `{detail: "Internal Server Error"}`.
+- Tests: `tests/test_incident_manager.py` (25 casos; fixture `_clean_incidents` trunca la tabla). Suites: **34 passed**.
+
+**Máquina de estados (actualizada)** — `INCIDENT_STATUS_TRANSITIONS` / `FINAL_INCIDENT_STATUSES`:
+`open → {in_progress, discarded}`, `in_progress → {resolved, discarded, open}`, `resolved → {in_progress}`, `discarded → {}`. Solo `discarded` es final (`resolved` puede volver a `in_progress`).
+
+### Frontend (`uis/backoffice`)
+- `lib/types.ts` — tipos `Incident`, `IncidentCreate`, `IncidentStatusUpdate`, `IncidentSummary` + mapas de etiquetas (`INCIDENT_STATUSES`, `INCIDENT_CATEGORIES`, `INCIDENT_ORIGINS`, `INCIDENT_BRANCHES`, `INCIDENT_STATUS_ORDER`) + `INCIDENT_TRANSITIONS` y helper `nextStatuses()` (mismo mapa que backend).
+- `lib/api.ts` — helpers `fetchIncidents`, `fetchIncident`, `createIncident`, `updateIncidentStatus`, `fetchIncidentSummary` (Bearer token).
+- `app/(protected)/incidents/page.tsx` — dashboard: 4 tarjetas de resumen por estado, filtros (status/origen/sede/categoría), tabla con badge de estado, botón "Cambiar estado" que abre el modal de flujo, y "+ Nueva incidencia".
+- `components/incidents/StatusFlowModal.tsx` — modal esquemático de transición: muestra los 4 estados (Abierto → En curso → Resuelto | Descartado) con conectores; solo pulsables los estados de transición válida según `nextStatuses()`; el estado actual se destaca; al seleccionar destino se pide confirmación (`ConfirmDialog`) antes del `PATCH`.
+- `components/incidents/IncidentForm.tsx` — modal de creación (solo create; la API sin actualizar campos) con selects grandes para uso táctil y confirmación.
+- `components/Sidebar.tsx` — entrada "Gestor de incidencias" → `/incidents`.
+
+Type-check (raíz), lint y build (`uis/backoffice`) OK. Ruta `/incidents` añadida al build.
+
 ## Siguientes pasos
 
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo

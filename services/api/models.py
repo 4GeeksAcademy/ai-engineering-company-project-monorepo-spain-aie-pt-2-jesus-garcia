@@ -192,3 +192,69 @@ class SupplierUpdate(BaseModel):
         if v not in VALID_STATUSES:
             raise ValueError(f"status must be one of {VALID_STATUSES}")
         return v
+
+
+INCIDENT_ORIGINS = ["customer", "branch", "internal"]
+
+INCIDENT_BRANCHES = [
+    "central",
+    "la_warehouse",
+    "la_office",
+    "zaragoza_warehouse",
+    "zaragoza_office",
+]
+
+INCIDENT_CATEGORIES = [
+    "lost_parcel",
+    "delivery_failure",
+    "inventory_discrepancy",
+    "carrier_issue",
+    "returns_issue",
+    "warehouse_incident",
+    "system_failure",
+    "client_complaint",
+    "other",
+]
+
+INCIDENT_STATUSES = ["open", "in_progress", "resolved", "discarded"]
+
+INCIDENT_STATUS_TRANSITIONS = {
+    "open": {"in_progress", "discarded"},
+    "in_progress": {"resolved", "discarded", "open"},
+    "resolved": {"in_progress"},
+    "discarded": set(),
+}
+
+FINAL_INCIDENT_STATUSES = {"discarded"}
+
+
+class Incident(BaseModel):
+    id: str
+    title: str
+    description: str
+    origin: str
+    branch: str
+    category: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+class IncidentCreate(BaseModel):
+    title: str
+    description: str
+    origin: str
+    branch: str
+    category: str
+    status: str = "open"
+
+
+class IncidentStatusUpdate(BaseModel):
+    status: str
+
+
+class IncidentSummary(BaseModel):
+    by_status: dict[str, int]
+    by_category: dict[str, int]
+    by_origin: dict[str, int]
+    by_branch: dict[str, int]

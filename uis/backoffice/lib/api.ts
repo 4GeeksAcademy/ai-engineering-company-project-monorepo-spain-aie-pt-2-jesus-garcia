@@ -1,4 +1,13 @@
-import type { AnalysisResponse, Supplier, SupplierCreate, SupplierUpdate } from "./types";
+import type {
+  AnalysisResponse,
+  Incident,
+  IncidentCreate,
+  IncidentStatusUpdate,
+  IncidentSummary,
+  Supplier,
+  SupplierCreate,
+  SupplierUpdate,
+} from "./types";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -201,4 +210,111 @@ export async function deleteSupplier(id: string, token?: string | null): Promise
     } catch {}
     throw new ApiRequestError(response.status, detail);
   }
+}
+
+export async function fetchIncidents(params?: {
+  status?: string;
+  origin?: string;
+  branch?: string;
+  category?: string;
+}, token?: string | null): Promise<Incident[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set("status", params.status);
+  if (params?.origin) searchParams.set("origin", params.origin);
+  if (params?.branch) searchParams.set("branch", params.branch);
+  if (params?.category) searchParams.set("category", params.category);
+
+  const query = searchParams.toString();
+  const url = `/api/incidents${query ? `?${query}` : ""}`;
+  const response = await fetch(url, { headers: { ...authHeaders(token) } });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {}
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return response.json() as Promise<Incident[]>;
+}
+
+export async function fetchIncident(id: string, token?: string | null): Promise<Incident> {
+  const response = await fetch(`/api/incidents/${id}`, {
+    headers: { ...authHeaders(token) },
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {}
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return response.json() as Promise<Incident>;
+}
+
+export async function createIncident(
+  data: IncidentCreate,
+  token?: string | null,
+): Promise<Incident> {
+  const response = await fetch("/api/incidents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {}
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return response.json() as Promise<Incident>;
+}
+
+export async function updateIncidentStatus(
+  id: string,
+  data: IncidentStatusUpdate,
+  token?: string | null,
+): Promise<Incident> {
+  const response = await fetch(`/api/incidents/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {}
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return response.json() as Promise<Incident>;
+}
+
+export async function fetchIncidentSummary(token?: string | null): Promise<IncidentSummary> {
+  const response = await fetch("/api/incidents/summary", {
+    headers: { ...authHeaders(token) },
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {}
+    throw new ApiRequestError(response.status, detail);
+  }
+
+  return response.json() as Promise<IncidentSummary>;
 }
