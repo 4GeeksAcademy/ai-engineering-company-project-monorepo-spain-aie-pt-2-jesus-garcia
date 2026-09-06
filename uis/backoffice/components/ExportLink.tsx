@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ApiRequestError, fetchExportCsv } from "@/lib/api";
+import { fetchExportCsv, friendlyError } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function ExportLink() {
@@ -23,11 +23,7 @@ export function ExportLink() {
       anchor.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        setError(err.message);
-      } else {
-        setError("No se pudo descargar el CSV.");
-      }
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

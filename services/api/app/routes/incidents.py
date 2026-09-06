@@ -6,11 +6,11 @@ from ..incidents.exceptions import EmptyFileError, InvalidFormatError, NoAnalysi
 from ..incidents.schemas import AnalysisResponse
 from ..core.dependencies import require_manager
 
-router = APIRouter(prefix="/incidents", tags=["incidents"])
+router = APIRouter(prefix="/api", tags=["incidents"])
 
 
 @router.post(
-    "/analyze",
+    "/incidents/analyze",
     response_model=AnalysisResponse,
     summary="Analiza un CSV de incidentes y devuelve el resumen en JSON",
 )
@@ -18,7 +18,14 @@ async def analyze_incidents(file: UploadFile = File(...), _=Depends(require_mana
     if file is None or file.filename is None or file.filename == "":
         raise HTTPException(status_code=400, detail="Falta el archivo CSV en el campo 'file'.")
 
-    raw = await file.read()
+    try:
+        raw = await file.read()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo leer el archivo subido. Inténtalo de nuevo.",
+        ) from exc
+
     try:
         return service.analyze_upload(raw)
     except (EmptyFileError, InvalidFormatError) as exc:
@@ -26,7 +33,7 @@ async def analyze_incidents(file: UploadFile = File(...), _=Depends(require_mana
 
 
 @router.get(
-    "/results/export",
+    "/incidents/results/export",
     summary="Devuelve el último análisis en formato CSV descargable",
 )
 async def export_results(_=Depends(require_manager)) -> Response:

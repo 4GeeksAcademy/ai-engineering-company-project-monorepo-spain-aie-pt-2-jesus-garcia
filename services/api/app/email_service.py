@@ -1,4 +1,7 @@
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RESEND_FROM = os.getenv("RESEND_FROM", "TrackFlow <onboarding@resend.dev>")
@@ -9,9 +12,9 @@ def send_password_reset_email(to_email: str, token: str) -> None:
     link = f"{FRONTEND_URL}/reset-password?token={token}"
 
     if not RESEND_API_KEY:
-        print(
-            "[email_service] RESEND_API_KEY no configurada. "
-            f"Enlace de restablecimiento para {to_email}: {link}"
+        logger.warning(
+            "RESEND_API_KEY no configurada; no se envió el correo de restablecimiento a %s",
+            to_email,
         )
         return
 
@@ -30,7 +33,10 @@ def send_password_reset_email(to_email: str, token: str) -> None:
             ),
         })
     except Exception as exc:  # noqa: BLE001
-        print(
-            f"[email_service] Error enviando email a {to_email}: {exc}. "
-            f"Enlace: {link}"
+        logger.error(
+            "Error al enviar el correo de restablecimiento a %s: %s",
+            to_email,
+            exc,
+            exc_info=True,
         )
+        raise
