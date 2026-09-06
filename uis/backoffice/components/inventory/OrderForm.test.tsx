@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { OrderForm } from "@/components/inventory/OrderForm";
+import { ApiRequestError } from "@/lib/api";
 import type { InventoryOrderCreate, SKU } from "@/lib/types";
 
 const sneaker: Pick<SKU, "id" | "name"> = {
@@ -98,5 +99,34 @@ describe("OrderForm", () => {
     await user.click(dialog.getByRole("button", { name: "Cancelar" }));
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("muestra el detail del backend cuando el outbound es rechazado (400)", async () => {
+    const onSubmit = vi.fn<(_data: InventoryOrderCreate) => Promise<void>>(() =>
+      Promise.reject(
+        new ApiRequestError(
+          400,
+          "Stock insuficiente. Disponible: 3, solicitado: 5.",
+          "Stock insuficiente. Disponible: 3, solicitado: 5.",
+        ),
+      ),
+    );
+    render(
+      <OrderForm
+        orderType="outbound"
+        sku={sneaker}
+        onSubmit={onSubmit}
+        onClose={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/Cantidad/i), "5");
+    await user.click(screen.getByRole("button", { name: "Registrar" }));
+    await user.click(screen.getByRole("button", { name: "Confirmar salida" }));
+
+    expect(
+      await screen.findByText(/Stock insuficiente\. Disponible: 3, solicitado: 5/),
+    ).toBeInTheDocument();
   });
 });

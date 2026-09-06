@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { InventoryOrderCreate, SKU } from "@/lib/types";
 import { WAREHOUSE_LABELS } from "@/lib/types";
-import { friendlyError } from "@/lib/api";
+import { ApiRequestError, friendlyError } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface OrderFormProps {
@@ -54,7 +54,12 @@ export function OrderForm({ orderType, sku, onSubmit, onClose }: OrderFormProps)
       await onSubmit(payload);
       onClose();
     } catch (err) {
-      setErrors({ submit: friendlyError(err) });
+      setErrors({
+        submit:
+          err instanceof ApiRequestError && typeof err.detail === "string"
+            ? err.detail
+            : friendlyError(err),
+      });
     } finally {
       setLoading(false);
     }
