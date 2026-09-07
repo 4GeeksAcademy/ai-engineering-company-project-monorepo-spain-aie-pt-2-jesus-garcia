@@ -19,12 +19,12 @@ Python 3.12+ y `pandas`. Las dependencias se listan en `requirements.txt`.
 ## Instalación
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> En este monorepo existe un entorno virtual en la raíz (`.venv/`) con `pandas` ya instalado.
+> El entorno virtual del backend vive en `services/api/venv/` — usar SIEMPRE este (el `.venv` raíz del monorepo no tiene las deps de la API).
 
 ## Ejecución
 

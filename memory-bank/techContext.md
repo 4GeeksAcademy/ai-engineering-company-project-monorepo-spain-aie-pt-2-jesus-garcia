@@ -12,6 +12,8 @@
 | FastAPI + uvicorn | — | Backend API (`services/api`) |
 | Python | 3.14 | Backend API (`services/api/venv`) |
 | TinyDB | — | Base de datos (usuarios, proveedores) |
+| sqlmodel / sqlalchemy | sqlmodel 0.0.42 | ORM de inventario (MILESTONE_5) — PostgreSQL/Supabase, en tests SQLite |
+| psycopg2-binary | 2.9.12 | Driver PostgreSQL del engine SQLModel (fallback: `psycopg[binary]`) |
 | pandas / bcrypt / python-jose | — | Análisis CSV / auth (bcrypt + JWT) |
 
 ## Configuración TypeScript (raíz)
@@ -27,11 +29,12 @@
 ```bash
 cd services/api
 source venv/bin/activate        # venv propio del backend (NO el `.venv` raíz)
-pip install -r requirements.txt # deps: fastapi, uvicorn, bcrypt, jose, pandas, tinydb...
+pip install -r requirements.txt # deps: fastapi, uvicorn, bcrypt, jose, pandas, tinydb, sqlmodel, psycopg2-binary...
 uvicorn app.main:app --port 8000
 ```
 
 - Seed opcional (crea admin@trackflow.com / admin123): `python seed_users.py`
+- Seed de inventario (SQL, requiere `DATABASE_URL`): `python seed_inventory.py`
 - Usar SIEMPRE `services/api/venv`. El `.venv` raíz no tiene las deps de la API.
 
 ### Frontend `uis/backoffice` (puerto 3000)
@@ -76,6 +79,22 @@ cd uis/website && npm run dev -- -p 3001
 - `RESEND_API_KEY`: clave de Resend para envío de emails reales. Si NO está configurada, el flujo de reset queda en modo stub (loguea el enlace) para desarrollo.
 - `RESEND_FROM`: remitente de los emails (por defecto `onboarding@resend.dev`).
 - `FRONTEND_URL`: base del backoffice (por defecto `http://localhost:3000`); se usa para construir el enlace de restablecimiento.
+- `DATABASE_URL`: cadena de conexión del engine SQLModel (MILESTONE_5). En producción, la URI del **Transaction pooler** de Supabase (`postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`). **Vacía** → `engine = None` y las rutas `/inventory` devuelven un 500 explícito *"DATABASE_URL no está configurada"*.
+- `SUPABASE_SHARED_POOLER`: en `.env.example` como referencia de la URI del pooler (el código solo lee `DATABASE_URL`).
+
+## Doble base de datos (TinyDB + SQLModel) — `database.py`
+
+`services/api/database.py` es el punto único de ambas conexiones:
+
+- **TinyDB** (auth, proveedores, incidentes): `get_tinydb()` → `TinyDB(data/suppliers.json)`.
+- **SQLModel** (inventario): `engine` creado desde `DATABASE_URL` (o `None` si vacía) y `get_db()` que cede una sesión por request:
+  ```python
+  def get_db():
+      with Session(engine) as session:
+          yield session
+  ```
+  Se inyecta con `session: Session = Depends(get_db)`. Nota: el **commit es explícito** (los services hacen `add → commit → refresh`), porque el teardown del `with` ocurre tras serializar la respuesta.
+- En tests, `tests/conftest.py` fija `DATABASE_URL="sqlite:///./test_inventory.db"` (antes de importar la app; `load_dotenv` no la sobreescribe) — la suite nunca toca Supabase. Tablas por `SQLModel.metadata.create_all(engine)` en el lifespan de `app/main.py`.
 
 ## Configuración de email (Recuperación de contraseña)
 
