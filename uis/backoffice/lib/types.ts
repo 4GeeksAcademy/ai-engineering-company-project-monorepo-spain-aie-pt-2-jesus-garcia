@@ -179,3 +179,74 @@ export const INCIDENT_TRANSITIONS: Record<string, string[]> = {
 export function nextStatuses(status: string): string[] {
   return INCIDENT_TRANSITIONS[status] ?? [];
 }
+
+export interface SKU {
+  id: number;
+  name: string;
+  sku_code: string;
+  warehouse: string;
+  current_stock: number;
+  current_stock_by_warehouse: Record<string, number>;
+}
+
+export interface SKUCreate {
+  name: string;
+  sku_code: string;
+  warehouse: string;
+}
+
+export interface InventoryOrderCreate {
+  sku_id: number;
+  quantity: number;
+  warehouse: string;
+  order_type: "inbound" | "outbound";
+}
+
+export interface InventoryOrderItem {
+  id: number;
+  order_type: "inbound" | "outbound";
+  sku_id: number;
+  product_name: string;
+  warehouse: string;
+  quantity: number;
+  user_uuid: string;
+  created_at: string;
+}
+
+export const WAREHOUSE_LABELS: Record<string, string> = {
+  los_angeles: "Los Ángeles",
+  zaragoza: "Zaragoza",
+};
+
+export const INVENTORY_ORDER_TYPES: Record<string, string> = {
+  inbound: "Entrada",
+  outbound: "Salida",
+};
+
+export interface InventoryTotals {
+  totalSkus: number;
+  totalStock: number;
+  stockByWarehouse: Record<string, number>;
+}
+
+export function computeInventoryTotals(
+  products: Pick<SKU, "current_stock" | "current_stock_by_warehouse">[],
+): InventoryTotals {
+  const stockByWarehouse: Record<string, number> = {};
+  let totalStock = 0;
+
+  for (const product of products) {
+    totalStock += product.current_stock;
+    for (const [warehouse, amount] of Object.entries(
+      product.current_stock_by_warehouse,
+    )) {
+      stockByWarehouse[warehouse] = (stockByWarehouse[warehouse] ?? 0) + amount;
+    }
+  }
+
+  return {
+    totalSkus: products.length,
+    totalStock,
+    stockByWarehouse,
+  };
+}

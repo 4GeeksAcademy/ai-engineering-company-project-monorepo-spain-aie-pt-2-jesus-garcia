@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 import sys
 
-from database import get_db
+from database import get_tinydb
 from app.core.security import hash_password
 
 
 def seed_users():
-    db = get_db()
+    db = get_tinydb()
     table = db.table("users")
     profiles_table = db.table("profiles")
 
