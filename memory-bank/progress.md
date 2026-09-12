@@ -197,6 +197,21 @@ Frontend de la página `/inventory` construido con **TDD (red → verde)** con V
 - **29 tests** en verde en `uis/backoffice` (`npm test`); typecheck raíz, lint y build OK. Ruta `/inventory` presente en el build.
 - Las pruebas mockean `fetch`/`useAuth`/`lib/api`; **no requieren** Supabase ni backend corriendo.
 
+## Contenedorización (Docker Compose)
+
+Plataforma completa orquestada con Docker Compose y red Docker (`monorepo-dev`); los servicios se referencian por **nombre de servicio Docker** (server-side) y por puerto de host (client-side).
+
+- `uis/Dockerfile` — `node:22-alpine`; instala deps de `website` y `backoffice` por separado (`npm ci` + clean); `CMD` ejecuta `start.sh` que lanza **website en 3000** y **backoffice en 3001** (`next dev -- -p ...`). Cambio de puertos: el backoffice pasa de 3000 → 3001 y el website de 3001 → 3000 (alineado con la referencia).
+- `uis/start.sh` (nuevo) — arranca ambas apps en background y hace `wait`.
+- `uis/.dockerignore` — `node_modules`, `.next`, `.env*`, `*.log`.
+- `services/Dockerfile` — `uv` (multi-stage desde `ghcr.io/astral-sh/uv`) + `python:3.14-slim`; `uv pip install --system -r requirements.txt`; workdir `/app` ← `api/`; `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`.
+- `services/.dockerignore` — `venv`, `__pycache__`, `*.pyc`, `.env*`, `tests`, `*.log`.
+- `docker-compose.yml` (raíz) — servicios `uis` (3000:3000, 3001:3001) y `services` (8000:8000); `env_file: .env`; bind-mount de código fuente (`./uis/website`, `./uis/backoffice`, `./services/api`) y **named volumes** para `node_modules`/`.next` de ambas apps (deps Linux del contenedor; no depende del `node_modules` del host macOS). Docker es el **único método de ejecución** de la plataforma.
+- URLs: `BACKEND_URL=http://services:8000` (server-side, backoffice) y `NEXT_PUBLIC_API_URL=http://localhost:8000` (client-side, website — el navegador no resuelve `services`). Mismo `.env` raíz en ambos contenedores.
+- `.env` (raíz, gitignored por `.gitignore` existente) + `.env.example` (committeado): fusionan las variables de API + frontends + variables de servicio. `FRONTEND_URL` → `http://localhost:3001` (el flujo de reset vive en backoffice).
+- `services/api/app/email_service.py` — default de `FRONTEND_URL` actualizado a `localhost:3001`.
+- Validado: `docker compose up --build` desde la raíz; `:3000` web → "TrackFlow | Logística de última milla", `:3001` → "Backoffice | TrackFlow", `:8000/health` → ok; `services:8000` resoluble desde el contenedor `uis`; proxy `/api/auth/me` del backoffice responde 401 con detail del backend (rewrite `BACKEND_URL` funcionando).
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
