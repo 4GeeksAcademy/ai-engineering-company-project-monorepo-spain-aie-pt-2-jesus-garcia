@@ -220,3 +220,19 @@ Plataforma completa orquestada con Docker Compose y red Docker (`monorepo-dev`);
 - [ ] Añadir paginación en `CandidateList`
 - [ ] Pruebas end-to-end del flujo completo
 - [ ] Conectar formulario de aplicación con API real
+
+## Auditoría de rendimiento (Lighthouse, ambos frontends)
+
+- Para el audit se detuvo el stack Docker (`docker compose stop`) y se corrieron builds de producción locales: website :3000, backoffice :3001, backend uvicorn :8000 (con docker compose start se restaura el entorno dev).
+- `scripts/perf-audit/` — runner reproducible con **Chrome real** + Lighthouse 12.3 (programático): login admin → inyecta `trackflow_token` en localStorage para las rutas protegidas (`disableStorageReset`), emulación desktop/mobile, guarda PNG + JSON.gz + HTML.
+- `audit/before/` y `audit/after/`: 5 URLs/modos (website home desktop+mobile, /application, backoffice /incidents e /inventory).
+- `AUDIT.md` (raíz) — scores baseline, causes raíz, refactor candidates y log de skills. `REPORT.md` (raíz) — delta antes/después.
+- Baseline: web 100/100/100/100 (LCP desktop 0.30 s); backoffice Performance 100 pero **A11y 91 (incidents) / 94 (inventory)**.
+- Fixes aplicados:
+  - Hero: `next/image` con `priority` + `sizes` + `quality` (resuelve `lcp-lazy-loaded`); LCP home desktop 0.30 → 0.20 s.
+  - Assets re-comprimidos con `sips`: `logo.png` 213→46 KB (ambas apps), `truck-hero.jpg` 326→186 KB (mismos filenames, cero-cambio de código).
+  - Contraste AA (textos → `text-slate-300`, CTAs → `bg-cyan-700`), `aria-label` en 4 selects de `/incidents`, `BreakdownCard` h3→h2.
+  - **`hooks/useAsyncData.ts`** (nuevo): Custom Hook que extrae el patrón `data/loading/error`+`useEffect` duplicado en inventory/incidents/suppliers; integrado en `/inventory` (doble fetch paralelo).
+  - **`shared/components/LoadingSpinner.ts`** (nuevo, código compartido raíz `@shared/*`): reemplaza el spinner duplicado entre `website/app/loading.tsx` y `backoffice/(protected)/layout.tsx`.
+  - Config: `turbopack.root` → raíz del monorepo en ambos `next.config.ts`; `@source` Tailwind v4 hacia `shared/` en ambos `globals.css`; tsconfigs mapean `react` → `@types` locales (Turbopack no transpila `.tsx` fuera de la raíz de app).
+- Resultado `after`: **5/5 ejecuciones 100/100/100/100** (A11y incidents 91→100, inventory 94→100). Validation: typecheck raíz OK, lint+build ambos OK, 32 tests Vitest OK.

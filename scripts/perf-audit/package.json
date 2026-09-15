@@ -1,0 +1,17 @@
+{
+  "name": "perf-audit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lighthouse runner (Chrome real) para el audit de rendimiento de TrackFlow",
+  "scripts": {
+    "audit": "node run.mjs",
+    "audit:before": "node run.mjs before",
+    "audit:after": "node run.mjs after"
+  },
+  "dependencies": {
+    "chrome-launcher": "^1.1.2",
+    "lighthouse": "^12.3.0",
+    "puppeteer-core": "^23.11.1"
+  }
+}
