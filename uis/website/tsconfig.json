@@ -20,7 +20,9 @@
     ],
     "paths": {
       "@/*": ["./*"],
-      "@repo/*": ["../../src/*"]
+      "@repo/*": ["../../src/*"],
+      "@shared/*": ["../../shared/*"],
+      "react": ["./node_modules/@types/react"]
     }
   },
   "include": [
@@ -30,7 +32,9 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts",
-    "../../src/**/*.ts"
+    "../../src/**/*.ts",
+    "../../shared/**/*.ts",
+    "../../shared/**/*.tsx"
   ],
   "exclude": ["node_modules"]
 }
