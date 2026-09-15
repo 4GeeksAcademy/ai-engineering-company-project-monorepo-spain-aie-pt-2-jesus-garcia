@@ -135,7 +135,7 @@ export default function IncidentsPage() {
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
+          className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-600"
         >
           + Nueva incidencia
         </button>
@@ -147,7 +147,7 @@ export default function IncidentsPage() {
             key={status}
             className="rounded-xl border border-white/10 bg-slate-900/60 p-4"
           >
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-300">
               {INCIDENT_STATUSES[status]}
             </p>
             <p className="mt-1 text-2xl font-bold text-white">
@@ -158,7 +158,7 @@ export default function IncidentsPage() {
       </div>
 
       <div className="mb-6 flex flex-wrap gap-4">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectClass}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filtrar por estado" className={selectClass}>
           <option value="">Todos los estados</option>
           {INCIDENT_STATUS_ORDER.map((s) => (
             <option key={s} value={s}>
@@ -166,7 +166,7 @@ export default function IncidentsPage() {
             </option>
           ))}
         </select>
-        <select value={originFilter} onChange={(e) => setOriginFilter(e.target.value)} className={selectClass}>
+        <select value={originFilter} onChange={(e) => setOriginFilter(e.target.value)} aria-label="Filtrar por origen" className={selectClass}>
           <option value="">Todos los orígenes</option>
           {Object.entries(INCIDENT_ORIGINS).map(([key, label]) => (
             <option key={key} value={key}>
@@ -174,7 +174,7 @@ export default function IncidentsPage() {
             </option>
           ))}
         </select>
-        <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className={selectClass}>
+        <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} aria-label="Filtrar por sede" className={selectClass}>
           <option value="">Todas las sedes</option>
           {Object.entries(INCIDENT_BRANCHES).map(([key, label]) => (
             <option key={key} value={key}>
@@ -182,7 +182,7 @@ export default function IncidentsPage() {
             </option>
           ))}
         </select>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={selectClass}>
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} aria-label="Filtrar por categoría" className={selectClass}>
           <option value="">Todas las categorías</option>
           {Object.entries(INCIDENT_CATEGORIES).map(([key, label]) => (
             <option key={key} value={key}>
@@ -226,7 +226,7 @@ export default function IncidentsPage() {
                 <tr key={incident.id} className="transition hover:bg-white/5">
                   <td className="px-4 py-3">
                     <div className="font-medium text-white">{incident.title}</div>
-                    <div className="line-clamp-1 max-w-xs text-xs text-slate-500">
+                    <div className="line-clamp-1 max-w-xs text-xs text-slate-300">
                       {incident.description}
                     </div>
                   </td>
@@ -266,7 +266,7 @@ export default function IncidentsPage() {
               ))}
               {incidents.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-300">
                     No se encontraron incidencias
                   </td>
                 </tr>
@@ -277,7 +277,7 @@ export default function IncidentsPage() {
       )}
 
       {!loading && incidents.length > 0 && (
-        <p className="mt-4 text-sm text-slate-500">
+        <p className="mt-4 text-sm text-slate-300">
           {incidents.length} incidencia{incidents.length !== 1 ? "s" : ""}
         </p>
       )}
