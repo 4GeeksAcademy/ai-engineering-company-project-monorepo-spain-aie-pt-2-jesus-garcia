@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   createInboundOrder,
   createInventoryProduct,
@@ -11,7 +11,6 @@ import {
 } from "@/lib/api";
 import type {
   InventoryOrderCreate,
-  InventoryOrderItem,
   SKU,
   SKUCreate,
 } from "@/lib/types";
@@ -20,6 +19,7 @@ import {
   WAREHOUSE_LABELS,
   computeInventoryTotals,
 } from "@/lib/types";
+import { useAsyncData } from "@/hooks/useAsyncData";
 import { ProductForm } from "@/components/inventory/ProductForm";
 import { OrderForm } from "@/components/inventory/OrderForm";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -35,49 +35,24 @@ export default function InventoryPage() {
   const { token, user } = useAuth();
   const isManager = user?.role === "admin" || user?.role === "manager";
 
-  const [products, setProducts] = useState<SKU[]>([]);
-  const [orders, setOrders] = useState<InventoryOrderItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const [warehouseFilter, setWarehouseFilter] = useState("");
   const [showProductForm, setShowProductForm] = useState(false);
   const [orderTarget, setOrderTarget] = useState<OrderTarget | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  async function refresh() {
-    const [freshProducts, freshOrders] = await Promise.all([
-      fetchInventoryProducts(token),
-      fetchInventoryOrders(token),
-    ]);
-    setProducts(freshProducts);
-    setOrders(freshOrders);
-  }
+  const { data, loading, error, reload } = useAsyncData(
+    async () => {
+      const [freshProducts, freshOrders] = await Promise.all([
+        fetchInventoryProducts(token),
+        fetchInventoryOrders(token),
+      ]);
+      return { products: freshProducts, orders: freshOrders };
+    },
+    [token],
+    friendlyError,
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [freshProducts, freshOrders] = await Promise.all([
-          fetchInventoryProducts(token),
-          fetchInventoryOrders(token),
-        ]);
-        if (cancelled) return;
-        setProducts(freshProducts);
-        setOrders(freshOrders);
-      } catch (err) {
-        if (!cancelled) setError(friendlyError(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, reloadKey]);
+  const products = data?.products ?? [];
+  const orders = data?.orders ?? [];
 
   const totals = computeInventoryTotals(products);
   const stockByWarehouse: Record<string, number> = {
@@ -92,7 +67,7 @@ export default function InventoryPage() {
 
   async function handleCreateProduct(data: SKUCreate) {
     await createInventoryProduct(data, token);
-    await refresh();
+    await reload();
   }
 
   async function handleOrder(data: InventoryOrderCreate) {
@@ -102,7 +77,7 @@ export default function InventoryPage() {
     } else {
       await createOutboundOrder({ sku_id, quantity, warehouse }, token);
     }
-    await refresh();
+    await reload();
   }
 
   const selectClass =
@@ -120,7 +95,7 @@ export default function InventoryPage() {
         {isManager && (
           <button
             onClick={() => setShowProductForm(true)}
-            className="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
+            className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-600"
           >
             + Nuevo producto
           </button>
@@ -159,7 +134,7 @@ export default function InventoryPage() {
         <div className="mb-6 rounded-xl border border-rose-400/20 bg-rose-500/10 p-5">
           <p className="text-sm font-medium text-rose-300">Error: {error}</p>
           <button
-            onClick={() => setReloadKey((k) => k + 1)}
+            onClick={reload}
             className="mt-3 rounded-lg bg-rose-500/20 px-4 py-2 text-sm font-medium text-rose-200 transition hover:bg-rose-500/30"
           >
             Reintentar
@@ -236,7 +211,7 @@ export default function InventoryPage() {
                     <tr>
                       <td
                         colSpan={isManager ? 6 : 5}
-                        className="px-4 py-12 text-center text-slate-500"
+                        className="px-4 py-12 text-center text-slate-300"
                       >
                         No se encontraron productos
                       </td>
@@ -283,15 +258,15 @@ export default function InventoryPage() {
                         {WAREHOUSE_LABELS[item.warehouse] ?? item.warehouse}
                       </td>
                       <td className="px-4 py-3 text-slate-300">{item.quantity}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{item.user_uuid}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
+                      <td className="px-4 py-3 text-xs text-slate-300">{item.user_uuid}</td>
+                      <td className="px-4 py-3 text-xs text-slate-300">
                         {new Date(item.created_at).toLocaleString("es-ES")}
                       </td>
                     </tr>
                   ))}
                   {orders.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                      <td colSpan={6} className="px-4 py-12 text-center text-slate-300">
                         Aún no hay órdenes registradas
                       </td>
                     </tr>
