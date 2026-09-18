@@ -269,6 +269,64 @@ Para `GET /inventory/orders`, usar **`selectinload`** para cargar los productos 
 ]
 ```
 
+### Frontend — UI de inventario (`uis/backoffice`)
+
+> **Rama de desarrollo:** `hito-5-inventory-management-interface` (backoffice). La rama del backend de este hito es `hito-5-orm-double-database`.
+
+Una vez el backend está listo, el backoffice (`uis/backoffice`, Next.js 16 + App Router) consume la API de inventario. La UI se construye replicando el patrón de las páginas CRUD ya existentes (`/suppliers`, `/incidents`) reutilizando `lib/api.ts`, `lib/types.ts`, los modales de formulario y `ConfirmDialog`.
+
+#### Descripción de la UI
+
+Página única `/inventory` con:
+
+- **Cabecera**: `h1` "Inventario" + botón "+ Nuevo producto".
+- **Tarjetas de resumen**: total de SKUs, stock total (suma de ambos almacenes) y desglose por almacén (`current_stock_by_warehouse`) usando `MetricCard`/`BreakdownCard`.
+- **Filtro por almacén**: `select` con `los_angeles` / `zaragoza` / "Todos".
+- **Tabla de productos**: `name`, `sku_code`, `warehouse`, badge `current_stock` por almacén y stock total.
+- **Registro de órdenes**: botones de acción por fila — "Entrada" (inbound) y "Salida" (outbound) — que abren modales para indicar `quantity` y almacén.
+- **Listado de órdenes**: tabla con `order_type`, producto, `warehouse`, `quantity`, `user_uuid` y `created_at`.
+
+#### Endpoints consumidos
+
+| Acción UI                         | Endpoint                        | Auth requerida      |
+| --------------------------------- | ------------------------------- | ------------------- |
+| Listar productos con stock        | `GET /inventory/products`       | sesión válida       |
+| Crear producto                    | `POST /inventory/products`      | admin/manager       |
+| Detalle de producto               | `GET /inventory/products/{id}`  | sesión válida       |
+| Registrar orden inbound           | `POST /inventory/orders/inbound`  | admin/manager       |
+| Registrar orden outbound          | `POST /inventory/orders/outbound` | admin/manager       |
+| Listar órdenes con datos producto | `GET /inventory/orders`         | sesión válida       |
+
+#### Archivos a crear / modificar
+
+| Archivo                                   | Operación | Detalle                                                                                          |
+| ----------------------------------------- | --------- | ------------------------------------------------------------------------------------------------ |
+| `lib/types.ts`                            | modificar | Tipos `SKU`, `SKUCreate`, `InventoryOrderItem`, `InventoryOrderCreate` (`order_type`, `warehouse`, `quantity`) y mapas de etiquetas: `INVENTORY_ORDER_TYPES`, `WAREHOUSE_LABELS`. |
+| `lib/api.ts`                              | modificar | Helpers `fetchInventoryProducts`, `fetchInventoryProduct`, `createInventoryProduct`, `fetchInventoryOrders`, `createInboundOrder`, `createOutboundOrder` (Bearer vía `authHeaders(token)`, `request<T>`). |
+| `app/(protected)/inventory/page.tsx`      | crear      | Página principal con tarjetas, filtro, tablas de productos y órdenes.                            |
+| `components/inventory/ProductForm.tsx`    | crear      | Modal de alta de producto (`name`, `sku_code`, `warehouse`).                                     |
+| `components/inventory/OrderForm.tsx`      | crear      | Modal de orden inbound/outbound (`sku_id`, `quantity`, `warehouse`) + `ConfirmDialog` en outbound. |
+| `next.config.ts`                          | modificar | Añadir rewrite `/api/inventory/:path*` → `BACKEND_URL`.                                          |
+| `components/Sidebar.tsx`                  | modificar | Añadir `{ href: "/inventory", label: "Inventario", icon: ... }` al array `navItems`.             |
+
+#### Notas de implementación (dudas resueltas en el desarrollo)
+
+- **Lectura vs escritura por rol**: los endpoints de lectura solo exigen sesión válida, pero los de escritura exigen `require_manager` (admin/manager). La UI obtiene el `role` de `useAuth()` y **oculta o deshabilita** los botones de crear producto y de registrar órdenes para roles `user`.
+- **`current_stock` nunca se edita**: es siempre calculado por el backend desde las órdenes (inbound − outbound por almacén). La UI solo registra órdenes; no existe ningún input de "stock".
+- **Mensaje de error de outbound**: cuando `POST /inventory/orders/outbound` devuelve `400`, el motivo llega en `detail` ("Stock insuficiente…"). El frontend debe mostrar ese `detail` del `ApiRequestError` (no el `friendlyError` genérico por código HTTP) para que el operario vea el stock disponible y el solicitado.
+- **Rewrite obligatorio**: sin la entrada en `next.config.ts`, las llamadas a `/api/inventory/*` fallan con 404 desde el frontend; es el primer paso a verificar.
+- **`user_uuid` es transparente**: cada orden registra el UUID del usuario autenticado desde TinyDB automáticamente; la UI no lo envía ni lo muestra como editable, solo se lista en el historial de órdenes.
+
+#### Checklist de validación (revisores de frontend)
+
+- [ ] Rewrite `/api/inventory/:path*` configurado y verificado en `next.config.ts`.
+- [ ] `/inventory` consumiendo `GET /inventory/products` muestra `current_stock` y `current_stock_by_warehouse`.
+- [ ] El alta de producto y las órdenes inbound/outbound solo aparecen para admin/manager.
+- [ ] Un outbound rechazado (400) muestra el `detail` del backend sin insertar nada.
+- [ ] `lib/types.ts` y `lib/api.ts` siguen el patrón de `Supplier`/`Incident` (tipos en español, `request<T>` con Bearer).
+- [ ] `Sidebar` incluye la entrada "Inventario".
+- [ ] Type-check (raíz), lint y build (`uis/backoffice`) en verde.
+
 ### Checklist de validación (revisores)
 
 - [ ] Dos conexiones a BD activas: TinyDB para auth, Supabase/SQLModel para inventario.
