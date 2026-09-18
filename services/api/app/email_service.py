@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RESEND_FROM = os.getenv("RESEND_FROM", "TrackFlow <onboarding@resend.dev>")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3001")
 
 
 def send_password_reset_email(to_email: str, token: str) -> None:

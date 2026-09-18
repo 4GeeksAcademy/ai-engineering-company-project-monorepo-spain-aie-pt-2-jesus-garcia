@@ -1,0 +1,37 @@
+services:
+  uis:
+    build: ./uis
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      BACKEND_URL: http://services:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    env_file: .env
+    volumes:
+      - ./uis/website:/uis/website
+      - ./uis/backoffice:/uis/backoffice
+      - ui-node-website:/uis/website/node_modules
+      - ui-node-backoffice:/uis/backoffice/node_modules
+      - ui-next-website:/uis/website/.next
+      - ui-next-backoffice:/uis/backoffice/.next
+    networks: [monorepo-dev]
+
+  services:
+    build: ./services
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./services/api:/app
+    networks: [monorepo-dev]
+
+networks:
+  monorepo-dev:
+    name: monorepo-dev
+
+volumes:
+  ui-node-website:
+  ui-node-backoffice:
+  ui-next-website:
+  ui-next-backoffice:
