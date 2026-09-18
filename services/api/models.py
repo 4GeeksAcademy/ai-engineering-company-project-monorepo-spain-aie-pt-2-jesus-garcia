@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from pydantic import BaseModel, Field, field_validator
+from sqlmodel import Field as ORMField, Relationship, SQLModel
 
 
 class UserRole(StrEnum):
@@ -258,3 +259,33 @@ class IncidentSummary(BaseModel):
     by_category: dict[str, int]
     by_origin: dict[str, int]
     by_branch: dict[str, int]
+
+
+class SKU(SQLModel, table=True):
+    __tablename__ = "sku"
+    id: int | None = ORMField(default=None, primary_key=True)
+    name: str
+    sku_code: str = ORMField(index=True)
+    warehouse: str
+
+
+class StockEntry(SQLModel, table=True):
+    __tablename__ = "stock_entry"
+    id: int | None = ORMField(default=None, primary_key=True)
+    sku_id: int = ORMField(foreign_key="sku.id")
+    quantity: int
+    warehouse: str
+    user_uuid: str
+    created_at: datetime = ORMField(default_factory=lambda: datetime.now(timezone.utc))
+    product: SKU = Relationship()
+
+
+class StockExit(SQLModel, table=True):
+    __tablename__ = "stock_exit"
+    id: int | None = ORMField(default=None, primary_key=True)
+    sku_id: int = ORMField(foreign_key="sku.id")
+    quantity: int
+    warehouse: str
+    user_uuid: str
+    created_at: datetime = ORMField(default_factory=lambda: datetime.now(timezone.utc))
+    product: SKU = Relationship()

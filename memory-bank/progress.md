@@ -8,6 +8,7 @@
 | MILESTONE_2 — Modelado + Colecciones | ✅ Completado | `src/types/models.ts`, `src/utils/*.ts` |
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
+| MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — pendiente frontend/UI |
 
 ## Últimas decisiones
 
@@ -147,8 +148,43 @@ Feature completa (backend + frontend) para registrar y trazar incidencias operat
 
 Type-check (raíz), lint y build (`uis/backoffice`) OK. Ruta `/incidents` añadida al build.
 
+## Test suite de autenticación + TESTING.md (services/api)
+
+- Refactor estructural de `app/api/` → `app/routes/` + `app/services/`:
+  - `app/routes/auth.py` (login, forgot/reset/change-password, `/auth/me`), `users.py` (registro + CRUD), `profiles.py` (`/profiles/me`), más los routers preexistentes movidos: `suppliers.py`, `incidents.py`, `incidents_manager.py`. `app/api/` eliminado.
+  - `app/services/user_service.py` — capa de servicios del dominio usuario (register/authenticate/CRUD/profile/password flows). `core/dependencies.py` y `core/security.py` intactos.
+  - URLs exactamente idénticas; `app/main.py` registra los routers `app.routes.*`.
+- `pyproject.toml` nuevo (deps + `[dependency-groups].dev` + `[tool.pytest.ini_options]`); `requirements.txt` conserva el flujo pip/venv y añade `pytest-cov`.
+- Tests nuevos por concern de auth en `tests/`: `test_register.py` (19), `test_login.py` (15), `test_token.py` (6), `test_profiles.py` (5). Cada endpoint con casos happy / edge / failure y asserts de lógica de negocio.
+- `conftest.py`: `SECRET_KEY` determinista para tests, fixture autouse `_clean_db` (trunca `users`, `profiles`, `incidents` + siembra admin) y fixtures `register_user`, `user_token`, `user_headers`.
+- Bug detectado al correr la suite: la tabla TinyDB `profiles` no se limpiaba entre tests → datos contaminados en 5 casos; resuelto con `_clean_db`. Documentado en TESTING.md (§5).
+- Resultado: **79 passed**; cobertura total `app` **83 %**, módulo de auth ≥ 93 % (rúbrica pide ≥ 70 %).
+- `TESTING.md` creado en `services/api/` (cómo ejecutar, qué cubre cada suite, plan de casos y por qué, snapshot de cobertura, hallazgo con IA). Frontends: jest en backoffice / website sin tests → bonus/no aplica ahora.
+
+## Inventario (services/api) — MILESTONE_5
+
+Backend del módulo de inventario con **doble conexión a BD**: TinyDB sigue siendo fuente de verdad de auth; Supabase/PostgreSQL (SQLModel) para inventario.
+
+- `database.py` — punto único de ambas conexiones: `get_tinydb()` (data/suppliers.json) y SQLModel `engine` desde `DATABASE_URL` + `get_db()` generador (`with Session(engine)`). `load_dotenv()` al import. Deps nuevas: `sqlmodel`, `psycopg2-binary`. `DATABASE_URL=` vacía en `.env.example` (y `SUPABASE_SHARED_POOLER` como referencia del Transaction pooler).
+- `models.py` — ORM `SKU` (`sku`), `StockEntry` (`stock_entry`), `StockExit` (`stock_exit`): FK `sku_id → sku.id`, `quantity: int`, `user_uuid: str` sin FK, relación `product`, sin columna `current_stock` (siempre calculado).
+- `schemas.py` (nuevo) — `SKUCreate/SKURead` (con `current_stock` y `current_stock_by_warehouse`), `StockEntry/ExitCreate/Read`, `InventoryOrderItem` (item combinado de `GET /orders`). Endpoints mapean ORM → schema explícitamente.
+- `app/services/inventory_service.py` — `WAREHOUSES = ("los_angeles", "zaragoza")`, `compute_stock(session, sku_id, warehouse)` con `func.coalesce(func.sum(...))`, `compute_stock_by_warehouse`, y `create_inbound/create_outbound` con validaciones antes de `session.add`: `quantity>0`, warehouse válido, SKU existe (**404**) y **check-then-write** de outbound (400 "Stock insuficiente…" sin escritura).
+- `app/routes/inventory.py` — `APIRouter(prefix="/inventory")`: `GET /products`, `GET /products/{id}`, `POST /products`, `POST /orders/inbound`, `POST /orders/outbound`, `GET /orders` (con `selectinload` para evitar N+1). Escrituras exigen `require_manager`; lecturas solo `get_current_user`. `user_uuid` = id del usuario autenticado.
+- `app/main.py` — incluye `inventory_router` y **lifespan** con `SQLModel.metadata.create_all(engine)` (solo si `engine` no es None).
+- `seed_inventory.py` (nuevo) — seed determinista e idempotente (truncate + repoblado): 4 SKUs de sneakers y 5 entradas + 4 salidas fijas; `CLT-SNK-W-42` → stock neto **47** en Los Ángeles (coincide con la muestra del milestone). `user_uuid` fijo.
+- Tests: `tests/test_inventory.py` (15 casos; fixture autouse `_clean_inventory` trunca `stock_exit/stock_entry/sku` vía sesión SQLModel). Suites: **94 passed**; cobertura total `app` **85 %**, auth ≥ 93 %, inventario ≥ 97 %.
+
+### Decisiones de diseño (MILESTONE_5)
+
+- **Rename `get_db()` → `get_tinydb()`**: el getter de TinyDB se renombró en `database.py`. `get_db` ahora es el generador SQLModel (`with Session(engine)`) que se inyecta por request. Todos los imports/llamadas legacy (routes de suppliers/incidents/auth, seeds, tests) usan `get_tinydb()`.
+- **SQLite en tests**: `tests/conftest.py` fija `DATABASE_URL = "sqlite:///./test_inventory.db"` **antes** de importar `app.main`. Como `load_dotenv()` no sobreescribe variables ya definidas (`override=False`), los tests corren contra un fichero sqlite local y **nunca tocan Supabase**. `test_inventory.db` es artefacto borrable tras cada corrida.
+- **Driver fallback**: se usa `psycopg2-binary` para el engine PostgreSQL; si faltara wheel para el Python del entorno, el fallback documentado es `psycopg[binary]` (mismo `DATABASE_URL`).
+- **`current_stock` siempre calculado** desde las órdenes (inbound − outbound por almacén), nunca almacenado en `sku`. Outbound excedente → `400` con check-then-write (sin insert).
+
 ## Siguientes pasos
 
+- [ ] UI de inventario en `uis/backoffice` (pantalla de productos/stock y registro de órdenes inbound/outbound)
+- [ ] Conectar frontend a rutas `/inventory` (Bearer token) y reflejar `current_stock`/`current_stock_by_warehouse`
 - [ ] Implementar componente `SidePanel` y `CandidateDetail` completo
 - [ ] Implementar ruta dinámica `/candidates/[id]`
 - [ ] Añadir paginación en `CandidateList`

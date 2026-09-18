@@ -1,0 +1,33 @@
+[project]
+name = "trackflow-api"
+version = "0.2.0"
+description = "TrackFlow API — autenticación, proveedores e incidentes (FastAPI)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-dotenv",
+    "python-multipart",
+    "pandas",
+    "pydantic",
+    "httpx",
+    "tinydb",
+    "sqlmodel",
+    "psycopg2-binary",
+    "passlib[bcrypt]",
+    "bcrypt",
+    "python-jose[cryptography]",
+    "resend",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
