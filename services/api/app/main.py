@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel
 
 from database import engine
+from models import HealthResponse
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
 from .routes.inventory import router as inventory_router
@@ -63,9 +64,9 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
-    @app.get("/health", tags=["health"])
-    async def health() -> dict:
-        return {"status": "ok"}
+    @app.get("/health", tags=["health"], response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        return HealthResponse(status="ok")
 
     return app
 

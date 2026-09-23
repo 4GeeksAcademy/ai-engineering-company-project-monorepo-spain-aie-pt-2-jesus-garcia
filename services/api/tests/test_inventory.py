@@ -190,7 +190,7 @@ class TestOrdersEndpoint:
 
         expected_keys = {
             "id", "order_type", "sku_id", "product_name",
-            "warehouse", "quantity", "user_uuid", "created_at",
+            "warehouse", "quantity", "user_email", "created_at",
         }
         by_type = {item["order_type"]: item for item in items}
         assert set(by_type) == {"inbound", "outbound"}
@@ -198,7 +198,7 @@ class TestOrdersEndpoint:
         for item in items:
             assert set(item.keys()) == expected_keys
             assert item["product_name"] == "Classic Sneaker"
-            assert item["user_uuid"] == "1"
+            assert item["user_email"] == "admin@test.com"
 
         assert by_type["inbound"]["quantity"] == 10
         assert by_type["inbound"]["warehouse"] == "los_angeles"

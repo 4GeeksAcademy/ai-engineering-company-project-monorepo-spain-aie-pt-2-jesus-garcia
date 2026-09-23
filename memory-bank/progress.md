@@ -212,6 +212,29 @@ Plataforma completa orquestada con Docker Compose y red Docker (`monorepo-dev`);
 - `services/api/app/email_service.py` — default de `FRONTEND_URL` actualizado a `localhost:3001`.
 - Validado: `docker compose up --build` desde la raíz; `:3000` web → "TrackFlow | Logística de última milla", `:3001` → "Backoffice | TrackFlow", `:8000/health` → ok; `services:8000` resoluble desde el contenedor `uis`; proxy `/api/auth/me` del backoffice responde 401 con detail del backend (rewrite `BACKEND_URL` funcionando).
 
+## Serialization Audit (backend + frontend coordinado)
+
+Auditoría y endurecimiento de serialización del backend. Documento de referencia: `docs/SERIALIZATION_AUDIT.md`.
+
+### Backend (`services/api`)
+- Todos los endpoints JSON declaran `response_model` explícito:
+  - `MessageResponse` en forgot/reset/change-password; `HealthResponse` en `/health`.
+- Optimización de payloads de listado (nuevos DTOs en `models.py`):
+  - `GET /api/suppliers` → `list[SupplierListItem]` (drop `notes`, `service_zone`, `updated_at`).
+  - `GET /api/incidents` → `list[IncidentListItem]` (`description` → `description_excerpt` ~120 chars; el detalle queda intacto).
+- `GET /inventory/orders` → `InventoryOrderItem.user_email` (resuelto contra TinyDB users; fallback `""`) en lugar de `user_uuid` crudo.
+- `get_current_user` devuelve whitelist segura (`id, email, is_active, role, created_at`) — ya no mete `hashed_password`/`password_changed_at` en el contexto del request.
+- Nuevo `tests/test_response_contract.py` (5 casos) como regresión del mínimo: toda ruta JSON con `response_model`, ningún response_model expone passwords/hash, whitelist de `get_current_user`, payloads slim de suppliers/incidents. Excepciones explícitas: DELETE 204 y export CSV (file-download).
+- Suites: **99 passed** (94 + 5 nuevos).
+
+### Frontend (`uis/backoffice` — cambios coordinados)
+- `lib/types.ts`: `SupplierListItem`, `IncidentListItem` (`description_excerpt`), `InventoryOrderItem.user_email`.
+- `lib/api.ts`: `fetchSuppliers` → `SupplierListItem[]`, `fetchIncidents` → `IncidentListItem[]`.
+- Suppliers: master-detail — el listado usa `SupplierListItem`; `handleEdit` hace `fetchSupplier(id)` (detail) antes de abrir el modal.
+- Incidents: la tabla usa `description_excerpt`; `StatusFlowModal` tipa `IncidentListItem`.
+- Inventory: la columna de órdenes muestra `user_email`.
+- Tests Vitest: **32 passed** (fixtures `user_uuid` → `user_email`). Typecheck raíz, lint y build OK.
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)

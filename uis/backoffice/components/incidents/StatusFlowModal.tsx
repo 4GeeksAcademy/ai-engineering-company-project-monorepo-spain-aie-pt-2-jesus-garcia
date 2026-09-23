@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { Incident } from "@/lib/types";
+import type { IncidentListItem } from "@/lib/types";
 import { INCIDENT_STATUSES, nextStatuses } from "@/lib/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface StatusFlowModalProps {
-  incident: Incident | null;
+  incident: IncidentListItem | null;
   onClose: () => void;
   onTransition: (id: string, target: string) => Promise<void>;
 }

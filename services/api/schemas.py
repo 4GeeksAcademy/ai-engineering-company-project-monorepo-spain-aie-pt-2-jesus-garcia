@@ -55,5 +55,5 @@ class InventoryOrderItem(BaseModel):
     product_name: str
     warehouse: str
     quantity: int
-    user_uuid: str
+    user_email: str = ""
     created_at: datetime

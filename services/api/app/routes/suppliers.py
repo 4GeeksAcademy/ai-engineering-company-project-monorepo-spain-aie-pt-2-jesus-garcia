@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_tinydb
-from models import Supplier, SupplierCreate, SupplierUpdate
+from models import Supplier, SupplierCreate, SupplierListItem, SupplierUpdate
 from app.core.dependencies import require_manager
 
 router = APIRouter(prefix="/api", tags=["suppliers"])
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api", tags=["suppliers"])
 
 @router.get(
     "/suppliers",
-    response_model=list[Supplier],
+    response_model=list[SupplierListItem],
     summary="Listar proveedores con filtros opcionales",
 )
 def list_suppliers(
@@ -20,7 +20,7 @@ def list_suppliers(
     status: str | None = Query(None, description="Filtrar por estado: active o suspended"),
     search: str | None = Query(None, description="Buscar por nombre"),
     _=Depends(require_manager),
-) -> list[Supplier]:
+) -> list[SupplierListItem]:
     db = get_tinydb()
     table = db.table("suppliers")
 
@@ -35,7 +35,18 @@ def list_suppliers(
         if search and search.lower() not in doc.get("name", "").lower():
             continue
 
-        results.append(Supplier(id=str(doc.doc_id), **doc))
+        results.append(
+            SupplierListItem(
+                id=str(doc.doc_id),
+                name=doc.get("name", ""),
+                country=doc.get("country", ""),
+                categories=doc.get("categories", []),
+                rate_per_shipment=doc.get("rate_per_shipment", 0),
+                currency=doc.get("currency", ""),
+                status=doc.get("status", ""),
+                contact_email=doc.get("contact_email"),
+            )
+        )
 
     db.close()
     return results

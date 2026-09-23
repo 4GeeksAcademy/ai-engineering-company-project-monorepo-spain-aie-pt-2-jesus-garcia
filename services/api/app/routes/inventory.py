@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from database import get_db
+from database import get_db, get_tinydb
 from models import SKU, StockEntry, StockExit
 from schemas import (
     InventoryOrderItem,
@@ -139,6 +139,12 @@ def list_orders(
     _=Depends(get_current_user),
     session: Session = Depends(get_db),
 ) -> list[InventoryOrderItem]:
+    db = get_tinydb()
+    users_by_id = {
+        str(doc.doc_id): doc.get("email", "") for doc in db.table("users").all()
+    }
+    db.close()
+
     entries = session.exec(
         select(StockEntry).options(selectinload(StockEntry.product))
     ).all()
@@ -154,7 +160,7 @@ def list_orders(
             product_name=entry.product.name if entry.product else "",
             warehouse=entry.warehouse,
             quantity=entry.quantity,
-            user_uuid=entry.user_uuid,
+            user_email=users_by_id.get(str(entry.user_uuid), ""),
             created_at=entry.created_at,
         )
         for entry in entries
@@ -167,7 +173,7 @@ def list_orders(
             product_name=exit_record.product.name if exit_record.product else "",
             warehouse=exit_record.warehouse,
             quantity=exit_record.quantity,
-            user_uuid=exit_record.user_uuid,
+            user_email=users_by_id.get(str(exit_record.user_uuid), ""),
             created_at=exit_record.created_at,
         )
         for exit_record in exits

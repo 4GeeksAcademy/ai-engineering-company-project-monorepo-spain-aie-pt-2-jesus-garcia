@@ -60,6 +60,17 @@ export interface Supplier {
   notes: string | null;
 }
 
+export interface SupplierListItem {
+  id: string;
+  name: string;
+  country: string;
+  categories: string[];
+  rate_per_shipment: number;
+  currency: string;
+  status: string;
+  contact_email: string | null;
+}
+
 export interface SupplierCreate {
   name: string;
   country: string;
@@ -112,6 +123,16 @@ export interface Incident {
   status: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface IncidentListItem {
+  id: string;
+  title: string;
+  description_excerpt: string;
+  origin: string;
+  branch: string;
+  category: string;
+  status: string;
 }
 
 export interface IncidentCreate {
@@ -209,7 +230,7 @@ export interface InventoryOrderItem {
   product_name: string;
   warehouse: string;
   quantity: number;
-  user_uuid: string;
+  user_email: string;
   created_at: string;
 }
 

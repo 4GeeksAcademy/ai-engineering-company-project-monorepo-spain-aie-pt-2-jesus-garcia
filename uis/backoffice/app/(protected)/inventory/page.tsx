@@ -258,7 +258,7 @@ export default function InventoryPage() {
                         {WAREHOUSE_LABELS[item.warehouse] ?? item.warehouse}
                       </td>
                       <td className="px-4 py-3 text-slate-300">{item.quantity}</td>
-                      <td className="px-4 py-3 text-xs text-slate-300">{item.user_uuid}</td>
+                      <td className="px-4 py-3 text-xs text-slate-300">{item.user_email}</td>
                       <td className="px-4 py-3 text-xs text-slate-300">
                         {new Date(item.created_at).toLocaleString("es-ES")}
                       </td>

@@ -8,7 +8,7 @@ import {
   updateIncidentStatus,
   friendlyError,
 } from "@/lib/api";
-import type { Incident, IncidentCreate } from "@/lib/types";
+import type { IncidentCreate, IncidentListItem } from "@/lib/types";
 import {
   INCIDENT_CATEGORIES,
   INCIDENT_ORIGINS,
@@ -31,7 +31,7 @@ const STATUS_BADGE: Record<string, string> = {
 export default function IncidentsPage() {
   const { token } = useAuth();
 
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [incidents, setIncidents] = useState<IncidentListItem[]>([]);
   const [summary, setSummary] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export default function IncidentsPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
 
   const [showForm, setShowForm] = useState(false);
-  const [flowTarget, setFlowTarget] = useState<Incident | null>(null);
+  const [flowTarget, setFlowTarget] = useState<IncidentListItem | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   async function refresh() {
@@ -113,8 +113,8 @@ export default function IncidentsPage() {
       return;
     }
     try {
-      const updated = await updateIncidentStatus(incident.id, { status }, token);
-      setFlowTarget(updated);
+      await updateIncidentStatus(incident.id, { status }, token);
+      setFlowTarget({ ...incident, status });
       await refresh();
     } catch (err) {
       setError(friendlyError(err));
@@ -227,7 +227,7 @@ export default function IncidentsPage() {
                   <td className="px-4 py-3">
                     <div className="font-medium text-white">{incident.title}</div>
                     <div className="line-clamp-1 max-w-xs text-xs text-slate-300">
-                      {incident.description}
+                      {incident.description_excerpt}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-300">
