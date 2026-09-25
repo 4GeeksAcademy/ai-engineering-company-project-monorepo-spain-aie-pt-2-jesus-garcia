@@ -235,6 +235,21 @@ Auditoría y endurecimiento de serialización del backend. Documento de referenc
 - Inventory: la columna de órdenes muestra `user_email`.
 - Tests Vitest: **32 passed** (fixtures `user_uuid` → `user_email`). Typecheck raíz, lint y build OK.
 
+## Fix Turbopack monorepo — Docker (uis)
+
+Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)/login` y `/(public)/page` con `Caused by: - Next.js package not found` (dos panics separados, uno por app), acompañado de loop de reload en :3000 y :3001. Aparecía por primera vez tras purgar los volúmenes `.next` (caché previa enmascaraba el fallo).
+
+**Causa raíz:** ambos `next.config.ts` fijan `turbopack.root = ../../` (→ `/uis`), y en `/uis` no hay `node_modules/next` (las deps viven en `/uis/website/node_modules` y `/uis/backoffice/node_modules`). Al reconstruir desde caché limpia, Turbopack no puede resolver `next` para su *server import map* → `Next.js version: 0.0.0` → panic. Agravante: website `next@16.2.10` vs backoffice `next@16.2.9` compartiendo el mismo root.
+
+**Fix aplicado:**
+- Backoffice alineado a `next@16.2.10` / `eslint-config-next@16.2.10` (igual a website) + `package-lock.json` sincronizado.
+- `uis/Dockerfile`: bridge de resolución `mkdir -p /uis/node_modules && ln -s /uis/website/node_modules/next /uis/node_modules/next` tras el `npm ci`.
+- **Solución efectiva para dev:** `next dev --webpack` en `uis/website/package.json` y `uis/backoffice/package.json` (scripts `dev`). Webpack ignora `turbopack.root` y resuelve `next` desde el `node_modules` de cada app; `@shared/*` y `@repo/*` resuelven por tsconfig `paths` y Tailwind `@source` no depende del bundler.
+- Por qué no bastó el bridge para Turbopack: resolvió el panic de backoffice, pero la web seguía en `FATAL` (`get_next_server_import_map → Next.js package not found`, `Next.js version: 0.0.0`, endpoint `/(public)/page`) — el *server import map* de Turbopack no resuelve `next` desde el root compartido aunque exista el symlink. Bug conocido de Turbopack en monorepo sin workspaces (ver vercel/next.js #92540 y afines). Se mantienen el bridge y la versión alineada como higiene (si un futuro Next.js corrige el import-map, revertir `--webpack`).
+- Procedimiento de deployment: `docker compose down` → borrar los 4 volúmenes `ui-node-*`/`ui-next-*` → `docker compose up --build -d`. Tras cambiar los `dev` scripts (bind-mount), basta `docker compose restart uis`.
+
+**Verificado:** ambas apps `✓ Ready` en 16.2.10 (webpack) sin panics; `:3000` web y `:3001` backoffice 200 en `/` y `/login` estables (sin bucle de reload); `:8000/health` ok; `/docs` y `/openapi.json` sirven los contratos nuevos. E2E login admin + `GET /api/suppliers` (claves slim) y `GET /api/incidents` (`description_excerpt`). Lint, 32 tests Vitest, typecheck raíz y build backoffice OK. Nota menor en build webpack: warning `images.qualities` (pre-existente en la rama de auditoría Lighthouse).
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
