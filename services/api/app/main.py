@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
+import time
 
 load_dotenv()
 
@@ -46,6 +47,19 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    logger = logging.getLogger("api.timing")
+
+    @app.middleware("http")
+    async def timing_middleware(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration = (time.perf_counter() - start) * 1000  # ms
+
+        logger.info(
+            f"{request.method} {request.url.path} → {response.status_code} | {duration:.1f}ms"
+        )
+        return response
 
     app.include_router(incidents_router)
     app.include_router(incidents_manager_router)
