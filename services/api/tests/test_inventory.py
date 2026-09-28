@@ -203,3 +203,65 @@ class TestOrdersEndpoint:
         assert by_type["inbound"]["quantity"] == 10
         assert by_type["inbound"]["warehouse"] == "los_angeles"
         assert by_type["outbound"]["quantity"] == 3
+
+
+class TestInventoryCache:
+    def test_products_cached_and_invalidated_on_write(self, client, auth_headers):
+        from app.core.cache import cache
+
+        _create_product(client, auth_headers, sku_code="CLT-CACHE-1")
+        res = client.get("/inventory/products", headers=auth_headers)
+        assert res.status_code == 200
+        assert len(res.json()) == 1
+        assert cache.get("inventory:products") is not None
+
+        _create_product(client, auth_headers, sku_code="CLT-CACHE-2")
+        assert cache.get("inventory:products") is None
+
+        res = client.get("/inventory/products", headers=auth_headers)
+        assert len(res.json()) == 2
+
+    def test_product_detail_cached_and_invalidated_on_order(self, client, auth_headers):
+        from app.core.cache import cache
+
+        sku = _create_product(client, auth_headers)
+        detail = _product_stock(client, auth_headers, sku["id"])
+        assert detail["current_stock"] == 0
+
+        key = f"inventory:product:{sku['id']}"
+        assert cache.get(key) is not None
+
+        _create_order(client, auth_headers, "inbound", sku["id"], 10, "los_angeles")
+        assert cache.get(key) is None
+
+        updated = _product_stock(client, auth_headers, sku["id"])
+        assert updated["current_stock"] == 10
+
+    def test_orders_cached_and_invalidated_on_order(self, client, auth_headers):
+        from app.core.cache import cache
+
+        sku = _create_product(client, auth_headers)
+        _create_order(client, auth_headers, "inbound", sku["id"], 10, "los_angeles")
+
+        res = client.get("/inventory/orders", headers=auth_headers)
+        assert len(res.json()) == 1
+        assert cache.get("inventory:orders") is not None
+
+        _create_order(client, auth_headers, "outbound", sku["id"], 3, "los_angeles")
+        assert cache.get("inventory:orders") is None
+
+        res = client.get("/inventory/orders", headers=auth_headers)
+        assert len(res.json()) == 2
+
+    def test_failed_outbound_does_not_invalidate_cache(self, client, auth_headers):
+        from app.core.cache import cache
+
+        sku = _create_product(client, auth_headers)
+        _create_order(client, auth_headers, "inbound", sku["id"], 5, "los_angeles")
+
+        client.get("/inventory/products", headers=auth_headers)
+        assert cache.get("inventory:products") is not None
+
+        res = _create_order(client, auth_headers, "outbound", sku["id"], 10, "los_angeles")
+        assert res.status_code == 400
+        assert cache.get("inventory:products") is not None
