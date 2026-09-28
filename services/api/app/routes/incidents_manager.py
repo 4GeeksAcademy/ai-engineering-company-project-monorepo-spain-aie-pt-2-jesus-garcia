@@ -17,8 +17,12 @@ from models import (
     IncidentSummary,
 )
 from app.core.dependencies import require_manager
+from app.core.cache import cache
 
 router = APIRouter(prefix="/api", tags=["incident-manager"])
+
+INCIDENTS_TTL = 30  # segundos
+INCIDENTS_PREFIX = "incidents:"
 
 
 def _find_incident(table, incident_id):
@@ -65,6 +69,11 @@ def _validate_create(data: dict) -> None:
     summary="Métricas agregadas de incidencias",
 )
 def incident_summary(_=Depends(require_manager)) -> IncidentSummary:
+    key = f"{INCIDENTS_PREFIX}summary"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
     db = get_tinydb()
     table = db.table("incidents")
 
@@ -82,7 +91,9 @@ def incident_summary(_=Depends(require_manager)) -> IncidentSummary:
         summary["by_branch"][doc.get("branch", "")] = summary["by_branch"].get(doc["branch"], 0) + 1
 
     db.close()
-    return IncidentSummary(**summary)
+    result = IncidentSummary(**summary)
+    cache.set(key, result, ttl=INCIDENTS_TTL)
+    return result
 
 
 def _description_excerpt(description: str, limit: int = 120) -> str:
@@ -104,6 +115,11 @@ def list_incidents(
     category: str | None = Query(None, description="Filtrar por categoría"),
     _=Depends(require_manager),
 ) -> list[IncidentListItem]:
+    key = f"{INCIDENTS_PREFIX}list:{'|'.join([status or '', origin or '', branch or '', category or ''])}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
     db = get_tinydb()
     table = db.table("incidents")
 
@@ -130,6 +146,7 @@ def list_incidents(
         )
 
     db.close()
+    cache.set(key, results, ttl=INCIDENTS_TTL)
     return results
 
 
@@ -139,6 +156,11 @@ def list_incidents(
     summary="Obtener una incidencia por ID",
 )
 def get_incident(incident_id: str, _=Depends(require_manager)) -> Incident:
+    key = f"{INCIDENTS_PREFIX}detail:{incident_id}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
     db = get_tinydb()
     table = db.table("incidents")
 
@@ -148,7 +170,9 @@ def get_incident(incident_id: str, _=Depends(require_manager)) -> Incident:
         raise HTTPException(status_code=404, detail=f"Incidencia {incident_id} no encontrada.")
 
     db.close()
-    return Incident(id=str(doc.doc_id), **doc)
+    result = Incident(id=str(doc.doc_id), **doc)
+    cache.set(key, result, ttl=INCIDENTS_TTL)
+    return result
 
 
 @router.post(
@@ -177,6 +201,7 @@ def create_incident(payload: IncidentCreate, _=Depends(require_manager)) -> Inci
 
     doc_id = table.insert(doc)
     db.close()
+    cache.delete_prefix(INCIDENTS_PREFIX)
     return Incident(id=str(doc_id), **doc)
 
 
@@ -223,6 +248,7 @@ def update_incident_status(
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         table.update(update_data, doc_ids=[doc.doc_id])
+        cache.delete_prefix(INCIDENTS_PREFIX)
 
     for d in table.all():
         if d.doc_id == doc.doc_id:
