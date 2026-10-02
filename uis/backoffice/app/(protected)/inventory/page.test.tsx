@@ -52,7 +52,7 @@ const order: InventoryOrderItem = {
   product_name: "Classic White Sneaker - Size 42",
   warehouse: "zaragoza",
   quantity: 20,
-  user_uuid: "a1b2c3d4-e5f6",
+  user_email: "ops@trackflow.com",
   created_at: "2025-06-01T10:30:00Z",
 };
 
@@ -101,7 +101,7 @@ describe("InventoryPage", () => {
 
     const orders = await screen.findByRole("region", { name: "Órdenes registradas" });
     expect(within(orders).getByText("20")).toBeInTheDocument();
-    expect(within(orders).getByText("a1b2c3d4-e5f6")).toBeInTheDocument();
+    expect(within(orders).getByText("ops@trackflow.com")).toBeInTheDocument();
   });
 
   it("un usuario con role user no puede crear ni registrar órdenes", async () => {
@@ -186,7 +186,7 @@ describe("InventoryPage", () => {
         product_name: sku1.name,
         warehouse: "los_angeles",
         quantity: 10,
-        user_uuid: "u-in",
+        user_email: "ops@trackflow.com",
         created_at: "2025-06-01T10:00:00Z",
       },
       {
@@ -196,7 +196,7 @@ describe("InventoryPage", () => {
         product_name: sku2.name,
         warehouse: "zaragoza",
         quantity: 3,
-        user_uuid: "u-out",
+        user_email: "ops@trackflow.com",
         created_at: "2025-06-01T11:00:00Z",
       },
     ]);

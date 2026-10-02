@@ -103,7 +103,7 @@ export function Sidebar() {
       </nav>
       <div className="mt-auto border-t border-white/10 p-3">
         {!collapsed && user && (
-          <p className="mb-2 truncate px-3 text-xs text-slate-500">
+          <p className="mb-2 truncate px-3 text-xs text-slate-300">
             {user.email}
           </p>
         )}

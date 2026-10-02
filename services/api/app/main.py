@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
+import time
 
 load_dotenv()
 
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import SQLModel
 
 from database import engine
+from models import HealthResponse
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
 from .routes.inventory import router as inventory_router
@@ -46,6 +48,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    logger = logging.getLogger("api.timing")
+
+    @app.middleware("http")
+    async def timing_middleware(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration = (time.perf_counter() - start) * 1000  # ms
+
+        logger.info(
+            f"{request.method} {request.url.path} → {response.status_code} | {duration:.1f}ms"
+        )
+        return response
+
     app.include_router(incidents_router)
     app.include_router(incidents_manager_router)
     app.include_router(inventory_router)
@@ -63,9 +78,9 @@ def create_app() -> FastAPI:
         )
         return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
-    @app.get("/health", tags=["health"])
-    async def health() -> dict:
-        return {"status": "ok"}
+    @app.get("/health", tags=["health"], response_model=HealthResponse)
+    async def health() -> HealthResponse:
+        return HealthResponse(status="ok")
 
     return app
 

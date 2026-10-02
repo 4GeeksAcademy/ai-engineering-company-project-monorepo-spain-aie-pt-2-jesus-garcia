@@ -95,7 +95,7 @@ describe("fetchInventoryOrders", () => {
         product_name: "Classic White Sneaker - Size 42",
         warehouse: "zaragoza",
         quantity: 20,
-        user_uuid: "a1b2c3d4",
+        user_email: "ops@trackflow.com",
         created_at: "2025-06-01T10:30:00Z",
       },
     ];

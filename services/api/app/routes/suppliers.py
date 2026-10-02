@@ -3,15 +3,24 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_tinydb
-from models import Supplier, SupplierCreate, SupplierUpdate
+from models import Supplier, SupplierCreate, SupplierListItem, SupplierUpdate
+from app.core.cache import cache
 from app.core.dependencies import require_manager
 
 router = APIRouter(prefix="/api", tags=["suppliers"])
 
+SUPPLIERS_TTL = 300  # segundos
+SUPPLIERS_PREFIX = "suppliers:"
+
+
+def _list_key(country, category, status, search) -> str:
+    filters = "|".join([country or "", category or "", status or "", search or ""])
+    return f"{SUPPLIERS_PREFIX}list:{filters}"
+
 
 @router.get(
     "/suppliers",
-    response_model=list[Supplier],
+    response_model=list[SupplierListItem],
     summary="Listar proveedores con filtros opcionales",
 )
 def list_suppliers(
@@ -20,7 +29,12 @@ def list_suppliers(
     status: str | None = Query(None, description="Filtrar por estado: active o suspended"),
     search: str | None = Query(None, description="Buscar por nombre"),
     _=Depends(require_manager),
-) -> list[Supplier]:
+) -> list[SupplierListItem]:
+    key = _list_key(country, category, status, search)
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
     db = get_tinydb()
     table = db.table("suppliers")
 
@@ -35,9 +49,21 @@ def list_suppliers(
         if search and search.lower() not in doc.get("name", "").lower():
             continue
 
-        results.append(Supplier(id=str(doc.doc_id), **doc))
+        results.append(
+            SupplierListItem(
+                id=str(doc.doc_id),
+                name=doc.get("name", ""),
+                country=doc.get("country", ""),
+                categories=doc.get("categories", []),
+                rate_per_shipment=doc.get("rate_per_shipment", 0),
+                currency=doc.get("currency", ""),
+                status=doc.get("status", ""),
+                contact_email=doc.get("contact_email"),
+            )
+        )
 
     db.close()
+    cache.set(key, results, ttl=SUPPLIERS_TTL)
     return results
 
 
@@ -47,14 +73,21 @@ def list_suppliers(
     summary="Obtener un proveedor por ID",
 )
 def get_supplier(supplier_id: str, _=Depends(require_manager)) -> Supplier:
+    key = f"{SUPPLIERS_PREFIX}detail:{supplier_id}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
     db = get_tinydb()
     table = db.table("suppliers")
 
     target_id = int(supplier_id) if supplier_id.isdigit() else supplier_id
     for doc in table.all():
         if doc.doc_id == target_id:
+            result = Supplier(id=str(doc.doc_id), **doc)
             db.close()
-            return Supplier(id=str(doc.doc_id), **doc)
+            cache.set(key, result, ttl=SUPPLIERS_TTL)
+            return result
 
     db.close()
     raise HTTPException(status_code=404, detail=f"Supplier {supplier_id} not found")
@@ -86,6 +119,7 @@ def create_supplier(payload: SupplierCreate, _=Depends(require_manager)) -> Supp
 
     doc_id = table.insert(doc)
     db.close()
+    cache.delete_prefix(SUPPLIERS_PREFIX)
 
     return Supplier(id=str(doc_id), **doc)
 
@@ -116,6 +150,7 @@ def update_supplier(supplier_id: str, payload: SupplierUpdate, _=Depends(require
         update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     table.update(update_data, doc_ids=[target_id])
+    cache.delete_prefix(SUPPLIERS_PREFIX)
 
     for d in table.all():
         if d.doc_id == target_id:
@@ -148,3 +183,4 @@ def delete_supplier(supplier_id: str, _=Depends(require_manager)) -> None:
 
     table.remove(doc_ids=[target_id])
     db.close()
+    cache.delete_prefix(SUPPLIERS_PREFIX)

@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchSuppliers, createSupplier, updateSupplier, deleteSupplier, friendlyError } from "@/lib/api";
-import type { Supplier, SupplierCreate, SupplierUpdate } from "@/lib/types";
+import dynamic from "next/dynamic";
+import { fetchSuppliers, fetchSupplier, createSupplier, updateSupplier, deleteSupplier, friendlyError } from "@/lib/api";
+import type { Supplier, SupplierCreate, SupplierListItem, SupplierUpdate } from "@/lib/types";
 import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_STATUSES,
   COUNTRY_FLAGS,
 } from "@/lib/types";
-import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/contexts/AuthContext";
+
+const SupplierForm = dynamic(
+  () => import("@/components/suppliers/SupplierForm").then((m) => m.SupplierForm),
+  { ssr: false },
+);
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -23,7 +28,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function SuppliersPage() {
   const { token } = useAuth();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +41,7 @@ export default function SuppliersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
-  const [confirmDelete, setConfirmDelete] = useState<Supplier | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SupplierListItem | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -80,9 +85,14 @@ export default function SuppliersPage() {
     setShowForm(true);
   }
 
-  function handleEdit(supplier: Supplier) {
-    setEditingSupplier(supplier);
-    setShowForm(true);
+  async function handleEdit(supplier: SupplierListItem) {
+    try {
+      const detail = await fetchSupplier(supplier.id, token);
+      setEditingSupplier(detail);
+      setShowForm(true);
+    } catch (err) {
+      setError(friendlyError(err));
+    }
   }
 
   async function handleSubmit(data: SupplierCreate | SupplierUpdate) {
@@ -94,7 +104,7 @@ export default function SuppliersPage() {
     await refresh();
   }
 
-  async function handleToggleStatus(supplier: Supplier) {
+  async function handleToggleStatus(supplier: SupplierListItem) {
     const newStatus = supplier.status === "active" ? "suspended" : "active";
     setActionLoading(supplier.id);
     try {
