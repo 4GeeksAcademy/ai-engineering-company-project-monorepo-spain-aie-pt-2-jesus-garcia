@@ -81,7 +81,7 @@ Regresión garantizada por `services/api/tests/test_response_contract.py`.
 | `POST /inventory/products` | `SKURead` | Sin cambios. |
 | `POST /inventory/orders/inbound` | `StockEntryRead` | Sin cambios (mapa explícito ORM→schema). |
 | `POST /inventory/orders/outbound` | `StockExitRead` | Sin cambios. |
-| `GET /inventory/orders` | `list[InventoryOrderItem]` | **Optimizado.** `user_uuid` → `user_email` (resuelto contra TinyDB users; `""` si la cuenta ya no existe). Se deja de exponer IDs internos de auth en el listado masivo. |
+| `GET /inventory/orders` | `list[InventoryOrderItem]` | **Optimizado y restringido.** `user_uuid` → `user_email` (resuelto contra TinyDB users; `""` si la cuenta ya no existe). Se deja de exponer IDs internos de auth en el listado masivo. **Acceso solo manager/admin** (`require_manager`): el email del operador es PII y no debe verse con cualquier sesión iniciada. |
 
 ### Salud — `app/main.py`
 
@@ -136,7 +136,7 @@ class InventoryOrderItem(BaseModel):
 2. **204 sin body como excepción.** Los `DELETE` de users y suppliers no tienen cuerpo; también se excluyen del test.
 3. **Master-detail en suppliers.** La lista devuelve `SupplierListItem`; el modal de edición hace `GET /api/suppliers/{id}` (detail) antes de abrir, para no perder `notes`/`service_zone`.
 4. **Excerpt de descripción.** La lista de incidencias expone `description_excerpt` (truncado a ~120 chars) en lugar de la descripción completa; el detalle sigue devolviéndola entera.
-5. **`user_email` en vez de `user_uuid`.** El feed de órdenes muestra el email del operador (legible) y deja de filtrar el `doc_id` interno de auth. Los DTO de escritura (`StockEntryRead`/`StockExitRead`) conservan `user_uuid` para auditoría por respuesta de alta.
+5. **`user_email` en vez de `user_uuid`.** El feed de órdenes muestra el email del operador (legible) y deja de filtrar el `doc_id` interno de auth. Al ser PII, el endpoint queda restringido a manager/admin (`require_manager`). Los DTO de escritura (`StockEntryRead`/`StockExitRead`) conservan `user_uuid` para auditoría por respuesta de alta.
 6. **Whitelist de `get_current_user`.** El contexto de usuario inyectado en las rutas ya no lleva `hashed_password`/`password_changed_at`; solo `id, email, is_active, role, created_at`. Elimina el foot-gun de fuga si un endpoint futuro devuelve `current_user` sin `response_model`.
 
 ## Checklist de regresión

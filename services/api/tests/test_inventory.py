@@ -164,6 +164,9 @@ class TestAuth:
     def test_get_orders_without_token_returns_401(self, client):
         assert client.get("/inventory/orders").status_code == 401
 
+    def test_get_orders_with_user_role_returns_403(self, client, user_headers):
+        assert client.get("/inventory/orders", headers=user_headers).status_code == 403
+
     def test_inbound_with_user_role_returns_403(self, client, user_headers):
         res = client.post(
             "/inventory/orders/inbound",

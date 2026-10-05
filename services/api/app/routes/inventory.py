@@ -152,10 +152,10 @@ def create_outbound_order(
 @router.get(
     "/orders",
     response_model=list[InventoryOrderItem],
-    summary="Listar todas las órdenes con datos del producto y user_uuid",
+    summary="Listar todas las órdenes con datos del producto y email del operador (solo manager/admin)",
 )
 def list_orders(
-    _=Depends(get_current_user),
+    _=Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> list[InventoryOrderItem]:
     key = f"{INVENTORY_PREFIX}orders"

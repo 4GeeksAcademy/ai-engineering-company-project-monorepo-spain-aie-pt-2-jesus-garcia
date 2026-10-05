@@ -250,6 +250,14 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 
 **Verificado:** ambas apps `✓ Ready` en 16.2.10 (webpack) sin panics; `:3000` web y `:3001` backoffice 200 en `/` y `/login` estables (sin bucle de reload); `:8000/health` ok; `/docs` y `/openapi.json` sirven los contratos nuevos. E2E login admin + `GET /api/suppliers` (claves slim) y `GET /api/incidents` (`description_excerpt`). Lint, 32 tests Vitest, typecheck raíz y build backoffice OK. Nota menor en build webpack: warning `images.qualities` (pre-existente en la rama de auditoría Lighthouse).
 
+## Fix privacidad — correos de operadores en el listado de órdenes
+
+`GET /inventory/orders` exponía el `user_email` de todos los operadores a cualquier usuario autenticado (solo dependía de `get_current_user`). Ajuste de acceso (opción elegida: preservar el dato de auditoría solo para roles privilegiados):
+
+- **Backend** (`services/api/app/routes/inventory.py`): `GET /inventory/orders` pasa de `get_current_user` a `require_manager` → `role user` recibe **403**. Nuevo test `test_get_orders_with_user_role_returns_403` en `test_inventory.py`.
+- **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
+- **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
