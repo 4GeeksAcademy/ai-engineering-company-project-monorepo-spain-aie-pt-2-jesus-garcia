@@ -196,3 +196,62 @@ class TestSummary:
         assert body["by_category"]["carrier_issue"] == 1
         assert body["by_origin"]["customer"] == 3
         assert body["by_branch"]["la_warehouse"] == 3
+
+
+class TestIncidentCache:
+    def test_summary_cached_and_invalidated_on_create(self, client, auth_headers):
+        from app.core.cache import cache
+
+        client.get("/api/incidents/summary", headers=auth_headers)
+        assert cache.get("incidents:summary") is not None
+
+        _create(client, auth_headers)
+        assert cache.get("incidents:summary") is None
+
+    def test_list_keys_by_filters_and_invalidated_together(self, client, auth_headers):
+        from app.core.cache import cache
+
+        _create(client, auth_headers)
+        client.get("/api/incidents?status=open", headers=auth_headers)
+        client.get("/api/incidents?category=lost_parcel", headers=auth_headers)
+        assert cache.get("incidents:list:open|||") is not None
+        assert cache.get("incidents:list:|||lost_parcel") is not None
+
+        _create(client, auth_headers)
+        assert cache.get("incidents:list:open|||") is None
+        assert cache.get("incidents:list:|||lost_parcel") is None
+
+    def test_detail_cached_and_invalidated_on_status_change(self, client, auth_headers):
+        from app.core.cache import cache
+
+        iid = _create(client, auth_headers).json()["id"]
+        detail = client.get(f"/api/incidents/{iid}", headers=auth_headers).json()
+        assert detail["status"] == "open"
+        key = f"incidents:detail:{iid}"
+        assert cache.get(key) is not None
+
+        res = client.patch(
+            f"/api/incidents/{iid}/status",
+            headers=auth_headers,
+            json={"status": "in_progress"},
+        )
+        assert res.status_code == 200
+        assert cache.get(key) is None
+
+        updated = client.get(f"/api/incidents/{iid}", headers=auth_headers).json()
+        assert updated["status"] == "in_progress"
+
+    def test_invalid_transition_does_not_invalidate_cache(self, client, auth_headers):
+        from app.core.cache import cache
+
+        iid = _create(client, auth_headers).json()["id"]
+        client.get("/api/incidents/summary", headers=auth_headers)
+        assert cache.get("incidents:summary") is not None
+
+        res = client.patch(
+            f"/api/incidents/{iid}/status",
+            headers=auth_headers,
+            json={"status": "resolved"},
+        )
+        assert res.status_code == 400
+        assert cache.get("incidents:summary") is not None

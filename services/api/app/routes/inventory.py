@@ -13,6 +13,7 @@ from schemas import (
     StockExitCreate,
     StockExitRead,
 )
+from app.core.cache import cache
 from app.core.dependencies import get_current_user, require_manager
 from app.services.inventory_service import (
     compute_stock_by_warehouse,
@@ -21,6 +22,9 @@ from app.services.inventory_service import (
 )
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
+
+INVENTORY_TTL = 15  # segundos
+INVENTORY_PREFIX = "inventory:"
 
 
 def _sku_to_read(sku: SKU, session: Session) -> SKURead:
@@ -44,8 +48,14 @@ def list_products(
     _=Depends(get_current_user),
     session: Session = Depends(get_db),
 ) -> list[SKURead]:
+    key = f"{INVENTORY_PREFIX}products"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
     skus = session.exec(select(SKU)).all()
-    return [_sku_to_read(sku, session) for sku in skus]
+    result = [_sku_to_read(sku, session) for sku in skus]
+    cache.set(key, result, ttl=INVENTORY_TTL)
+    return result
 
 
 @router.get(
@@ -58,10 +68,16 @@ def get_product(
     _=Depends(get_current_user),
     session: Session = Depends(get_db),
 ) -> SKURead:
+    key = f"{INVENTORY_PREFIX}product:{product_id}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
     sku = session.get(SKU, product_id)
     if sku is None:
         raise HTTPException(status_code=404, detail=f"SKU {product_id} no encontrado.")
-    return _sku_to_read(sku, session)
+    result = _sku_to_read(sku, session)
+    cache.set(key, result, ttl=INVENTORY_TTL)
+    return result
 
 
 @router.post(
@@ -83,6 +99,7 @@ def create_product(
     session.add(sku)
     session.commit()
     session.refresh(sku)
+    cache.delete_prefix(INVENTORY_PREFIX)
     return _sku_to_read(sku, session)
 
 
@@ -98,6 +115,7 @@ def create_inbound_order(
     session: Session = Depends(get_db),
 ) -> StockEntryRead:
     entry = create_inbound(session, payload, str(current_user["id"]))
+    cache.delete_prefix(INVENTORY_PREFIX)
     return StockEntryRead(
         id=entry.id,
         sku_id=entry.sku_id,
@@ -120,6 +138,7 @@ def create_outbound_order(
     session: Session = Depends(get_db),
 ) -> StockExitRead:
     exit_record = create_outbound(session, payload, str(current_user["id"]))
+    cache.delete_prefix(INVENTORY_PREFIX)
     return StockExitRead(
         id=exit_record.id,
         sku_id=exit_record.sku_id,
@@ -133,12 +152,17 @@ def create_outbound_order(
 @router.get(
     "/orders",
     response_model=list[InventoryOrderItem],
-    summary="Listar todas las órdenes con datos del producto y user_uuid",
+    summary="Listar todas las órdenes con datos del producto y email del operador (solo manager/admin)",
 )
 def list_orders(
-    _=Depends(get_current_user),
+    _=Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> list[InventoryOrderItem]:
+    key = f"{INVENTORY_PREFIX}orders"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
     db = get_tinydb()
     users_by_id = {
         str(doc.doc_id): doc.get("email", "") for doc in db.table("users").all()
@@ -179,4 +203,5 @@ def list_orders(
         for exit_record in exits
     ]
     items.sort(key=lambda item: (item.created_at, item.id), reverse=True)
+    cache.set(key, items, ttl=INVENTORY_TTL)
     return items
