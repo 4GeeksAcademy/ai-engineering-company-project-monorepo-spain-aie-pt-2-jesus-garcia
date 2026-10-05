@@ -2,6 +2,7 @@ import type {
   AnalysisResponse,
   Incident,
   IncidentCreate,
+  IncidentListItem,
   IncidentStatusUpdate,
   IncidentSummary,
   InventoryOrderCreate,
@@ -10,6 +11,7 @@ import type {
   SKUCreate,
   Supplier,
   SupplierCreate,
+  SupplierListItem,
   SupplierUpdate,
 } from "./types";
 
@@ -148,7 +150,7 @@ export async function fetchSuppliers(params?: {
   category?: string;
   status?: string;
   search?: string;
-}, token?: string | null): Promise<Supplier[]> {
+}, token?: string | null): Promise<SupplierListItem[]> {
   const searchParams = new URLSearchParams();
   if (params?.country) searchParams.set("country", params.country);
   if (params?.category) searchParams.set("category", params.category);
@@ -158,7 +160,7 @@ export async function fetchSuppliers(params?: {
   const query = searchParams.toString();
   const url = `/api/suppliers${query ? `?${query}` : ""}`;
 
-  return request<Supplier[]>(url, { headers: authHeaders(token) });
+  return request<SupplierListItem[]>(url, { headers: authHeaders(token) });
 }
 
 export async function fetchSupplier(
@@ -206,7 +208,7 @@ export async function fetchIncidents(params?: {
   origin?: string;
   branch?: string;
   category?: string;
-}, token?: string | null): Promise<Incident[]> {
+}, token?: string | null): Promise<IncidentListItem[]> {
   const searchParams = new URLSearchParams();
   if (params?.status) searchParams.set("status", params.status);
   if (params?.origin) searchParams.set("origin", params.origin);
@@ -216,7 +218,7 @@ export async function fetchIncidents(params?: {
   const query = searchParams.toString();
   const url = `/api/incidents${query ? `?${query}` : ""}`;
 
-  return request<Incident[]>(url, { headers: authHeaders(token) });
+  return request<IncidentListItem[]>(url, { headers: authHeaders(token) });
 }
 
 export async function fetchIncident(id: string, token?: string | null): Promise<Incident> {

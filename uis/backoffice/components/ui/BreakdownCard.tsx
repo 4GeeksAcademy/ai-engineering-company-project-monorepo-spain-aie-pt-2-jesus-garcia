@@ -9,7 +9,7 @@ export function BreakdownCard({
 }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-5">
-      <h3 className="mb-3 text-lg font-semibold text-white">{title}</h3>
+      <h2 className="mb-3 text-lg font-semibold text-white">{title}</h2>
       <ul className="space-y-2">
         {Object.entries(items).map(([key, value]) => (
           <li key={key} className="flex items-center justify-between">

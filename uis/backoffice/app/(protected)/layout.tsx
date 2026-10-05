@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sidebar } from "@/components/Sidebar";
+import { LoadingSpinner } from "@shared/components/LoadingSpinner";
 
 export default function ProtectedLayout({
   children,
@@ -22,7 +23,7 @@ export default function ProtectedLayout({
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-600 border-t-cyan-400" />
+        <LoadingSpinner />
       </div>
     );
   }

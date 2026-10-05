@@ -32,7 +32,13 @@ def get_current_user(
     for doc in table.all():
         if str(doc.doc_id) == str(user_id):
             db.close()
-            return {"id": str(doc.doc_id), **doc}
+            return {
+                "id": str(doc.doc_id),
+                "email": doc.get("email"),
+                "is_active": doc.get("is_active", True),
+                "role": doc.get("role", "user"),
+                "created_at": doc.get("created_at"),
+            }
 
     db.close()
     raise HTTPException(

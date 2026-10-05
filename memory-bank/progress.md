@@ -212,6 +212,44 @@ Plataforma completa orquestada con Docker Compose y red Docker (`monorepo-dev`);
 - `services/api/app/email_service.py` — default de `FRONTEND_URL` actualizado a `localhost:3001`.
 - Validado: `docker compose up --build` desde la raíz; `:3000` web → "TrackFlow | Logística de última milla", `:3001` → "Backoffice | TrackFlow", `:8000/health` → ok; `services:8000` resoluble desde el contenedor `uis`; proxy `/api/auth/me` del backoffice responde 401 con detail del backend (rewrite `BACKEND_URL` funcionando).
 
+## Serialization Audit (backend + frontend coordinado)
+
+Auditoría y endurecimiento de serialización del backend. Documento de referencia: `docs/SERIALIZATION_AUDIT.md`.
+
+### Backend (`services/api`)
+- Todos los endpoints JSON declaran `response_model` explícito:
+  - `MessageResponse` en forgot/reset/change-password; `HealthResponse` en `/health`.
+- Optimización de payloads de listado (nuevos DTOs en `models.py`):
+  - `GET /api/suppliers` → `list[SupplierListItem]` (drop `notes`, `service_zone`, `updated_at`).
+  - `GET /api/incidents` → `list[IncidentListItem]` (`description` → `description_excerpt` ~120 chars; el detalle queda intacto).
+- `GET /inventory/orders` → `InventoryOrderItem.user_email` (resuelto contra TinyDB users; fallback `""`) en lugar de `user_uuid` crudo.
+- `get_current_user` devuelve whitelist segura (`id, email, is_active, role, created_at`) — ya no mete `hashed_password`/`password_changed_at` en el contexto del request.
+- Nuevo `tests/test_response_contract.py` (5 casos) como regresión del mínimo: toda ruta JSON con `response_model`, ningún response_model expone passwords/hash, whitelist de `get_current_user`, payloads slim de suppliers/incidents. Excepciones explícitas: DELETE 204 y export CSV (file-download).
+- Suites: **99 passed** (94 + 5 nuevos).
+
+### Frontend (`uis/backoffice` — cambios coordinados)
+- `lib/types.ts`: `SupplierListItem`, `IncidentListItem` (`description_excerpt`), `InventoryOrderItem.user_email`.
+- `lib/api.ts`: `fetchSuppliers` → `SupplierListItem[]`, `fetchIncidents` → `IncidentListItem[]`.
+- Suppliers: master-detail — el listado usa `SupplierListItem`; `handleEdit` hace `fetchSupplier(id)` (detail) antes de abrir el modal.
+- Incidents: la tabla usa `description_excerpt`; `StatusFlowModal` tipa `IncidentListItem`.
+- Inventory: la columna de órdenes muestra `user_email`.
+- Tests Vitest: **32 passed** (fixtures `user_uuid` → `user_email`). Typecheck raíz, lint y build OK.
+
+## Fix Turbopack monorepo — Docker (uis)
+
+Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)/login` y `/(public)/page` con `Caused by: - Next.js package not found` (dos panics separados, uno por app), acompañado de loop de reload en :3000 y :3001. Aparecía por primera vez tras purgar los volúmenes `.next` (caché previa enmascaraba el fallo).
+
+**Causa raíz:** ambos `next.config.ts` fijan `turbopack.root = ../../` (→ `/uis`), y en `/uis` no hay `node_modules/next` (las deps viven en `/uis/website/node_modules` y `/uis/backoffice/node_modules`). Al reconstruir desde caché limpia, Turbopack no puede resolver `next` para su *server import map* → `Next.js version: 0.0.0` → panic. Agravante: website `next@16.2.10` vs backoffice `next@16.2.9` compartiendo el mismo root.
+
+**Fix aplicado:**
+- Backoffice alineado a `next@16.2.10` / `eslint-config-next@16.2.10` (igual a website) + `package-lock.json` sincronizado.
+- `uis/Dockerfile`: bridge de resolución `mkdir -p /uis/node_modules && ln -s /uis/website/node_modules/next /uis/node_modules/next` tras el `npm ci`.
+- **Solución efectiva para dev:** `next dev --webpack` en `uis/website/package.json` y `uis/backoffice/package.json` (scripts `dev`). Webpack ignora `turbopack.root` y resuelve `next` desde el `node_modules` de cada app; `@shared/*` y `@repo/*` resuelven por tsconfig `paths` y Tailwind `@source` no depende del bundler.
+- Por qué no bastó el bridge para Turbopack: resolvió el panic de backoffice, pero la web seguía en `FATAL` (`get_next_server_import_map → Next.js package not found`, `Next.js version: 0.0.0`, endpoint `/(public)/page`) — el *server import map* de Turbopack no resuelve `next` desde el root compartido aunque exista el symlink. Bug conocido de Turbopack en monorepo sin workspaces (ver vercel/next.js #92540 y afines). Se mantienen el bridge y la versión alineada como higiene (si un futuro Next.js corrige el import-map, revertir `--webpack`).
+- Procedimiento de deployment: `docker compose down` → borrar los 4 volúmenes `ui-node-*`/`ui-next-*` → `docker compose up --build -d`. Tras cambiar los `dev` scripts (bind-mount), basta `docker compose restart uis`.
+
+**Verificado:** ambas apps `✓ Ready` en 16.2.10 (webpack) sin panics; `:3000` web y `:3001` backoffice 200 en `/` y `/login` estables (sin bucle de reload); `:8000/health` ok; `/docs` y `/openapi.json` sirven los contratos nuevos. E2E login admin + `GET /api/suppliers` (claves slim) y `GET /api/incidents` (`description_excerpt`). Lint, 32 tests Vitest, typecheck raíz y build backoffice OK. Nota menor en build webpack: warning `images.qualities` (pre-existente en la rama de auditoría Lighthouse).
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
@@ -220,3 +258,19 @@ Plataforma completa orquestada con Docker Compose y red Docker (`monorepo-dev`);
 - [ ] Añadir paginación en `CandidateList`
 - [ ] Pruebas end-to-end del flujo completo
 - [ ] Conectar formulario de aplicación con API real
+
+## Auditoría de rendimiento (Lighthouse, ambos frontends)
+
+- Para el audit se detuvo el stack Docker (`docker compose stop`) y se corrieron builds de producción locales: website :3000, backoffice :3001, backend uvicorn :8000 (con docker compose start se restaura el entorno dev).
+- `scripts/perf-audit/` — runner reproducible con **Chrome real** + Lighthouse 12.3 (programático): login admin → inyecta `trackflow_token` en localStorage para las rutas protegidas (`disableStorageReset`), emulación desktop/mobile, guarda PNG + JSON.gz + HTML.
+- `audit/before/` y `audit/after/`: 5 URLs/modos (website home desktop+mobile, /application, backoffice /incidents e /inventory).
+- `AUDIT.md` (raíz) — scores baseline, causes raíz, refactor candidates y log de skills. `REPORT.md` (raíz) — delta antes/después.
+- Baseline: web 100/100/100/100 (LCP desktop 0.30 s); backoffice Performance 100 pero **A11y 91 (incidents) / 94 (inventory)**.
+- Fixes aplicados:
+  - Hero: `next/image` con `priority` + `sizes` + `quality` (resuelve `lcp-lazy-loaded`); LCP home desktop 0.30 → 0.20 s.
+  - Assets re-comprimidos con `sips`: `logo.png` 213→46 KB (ambas apps), `truck-hero.jpg` 326→186 KB (mismos filenames, cero-cambio de código).
+  - Contraste AA (textos → `text-slate-300`, CTAs → `bg-cyan-700`), `aria-label` en 4 selects de `/incidents`, `BreakdownCard` h3→h2.
+  - **`hooks/useAsyncData.ts`** (nuevo): Custom Hook que extrae el patrón `data/loading/error`+`useEffect` duplicado en inventory/incidents/suppliers; integrado en `/inventory` (doble fetch paralelo).
+  - **`shared/components/LoadingSpinner.ts`** (nuevo, código compartido raíz `@shared/*`): reemplaza el spinner duplicado entre `website/app/loading.tsx` y `backoffice/(protected)/layout.tsx`.
+  - Config: `turbopack.root` → raíz del monorepo en ambos `next.config.ts`; `@source` Tailwind v4 hacia `shared/` en ambos `globals.css`; tsconfigs mapean `react` → `@types` locales (Turbopack no transpila `.tsx` fuera de la raíz de app).
+- Resultado `after`: **5/5 ejecuciones 100/100/100/100** (A11y incidents 91→100, inventory 94→100). Validation: typecheck raíz OK, lint+build ambos OK, 32 tests Vitest OK.

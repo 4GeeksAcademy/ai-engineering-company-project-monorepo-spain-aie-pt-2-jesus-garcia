@@ -6,6 +6,8 @@ COPY website/package.json website/package-lock.json ./website/
 COPY backoffice/package.json backoffice/package-lock.json ./backoffice/
 RUN cd website && npm ci && npm cache clean --force && cd ../backoffice && npm ci && npm cache clean --force
 
+RUN mkdir -p /uis/node_modules && ln -s /uis/website/node_modules/next /uis/node_modules/next
+
 COPY website ./website
 COPY backoffice ./backoffice
 COPY start.sh ./start.sh

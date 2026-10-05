@@ -99,6 +99,14 @@ class AuthMeResponse(BaseModel):
     profile: Profile
 
 
+class MessageResponse(BaseModel):
+    message: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+
+
 VALID_CATEGORIES = [
     "carrier_last_mile",
     "carrier_international",
@@ -127,6 +135,17 @@ class Supplier(BaseModel):
     service_zone: str | None = None
     contact_email: str | None = None
     notes: str | None = None
+
+
+class SupplierListItem(BaseModel):
+    id: str
+    name: str
+    country: str
+    categories: list[str]
+    rate_per_shipment: float
+    currency: str
+    status: str
+    contact_email: str | None = None
 
 
 class SupplierCreate(BaseModel):
@@ -239,6 +258,16 @@ class Incident(BaseModel):
     status: str
     created_at: str
     updated_at: str
+
+
+class IncidentListItem(BaseModel):
+    id: str
+    title: str
+    description_excerpt: str
+    origin: str
+    branch: str
+    category: str
+    status: str
 
 
 class IncidentCreate(BaseModel):

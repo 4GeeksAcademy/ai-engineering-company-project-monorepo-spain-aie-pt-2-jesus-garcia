@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@source "../../shared/**/*.{ts,tsx}";
+
 @theme inline {
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
 }

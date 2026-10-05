@@ -40,6 +40,9 @@ export function HeroSection() {
               alt="Camion de TrackFlow"
               width={500}
               height={350}
+              priority
+              quality={80}
+              sizes="(max-width: 768px) 90vw, 448px"
               className="w-full max-w-md rounded-3xl object-cover"
             />
           </div>

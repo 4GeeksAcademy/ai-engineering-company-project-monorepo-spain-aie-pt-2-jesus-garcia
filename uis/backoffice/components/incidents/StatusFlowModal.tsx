@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { Incident } from "@/lib/types";
+import type { IncidentListItem } from "@/lib/types";
 import { INCIDENT_STATUSES, nextStatuses } from "@/lib/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface StatusFlowModalProps {
-  incident: Incident | null;
+  incident: IncidentListItem | null;
   onClose: () => void;
   onTransition: (id: string, target: string) => Promise<void>;
 }
@@ -120,7 +120,7 @@ export function StatusFlowModal({ incident, onClose, onTransition }: StatusFlowM
       >
         <div className="p-6">
           <h2 className="text-xl font-bold text-white">Transición de estado</h2>
-          <p className="mt-1 line-clamp-1 text-sm text-slate-400">{incident.title}</p>
+          <p className="mt-1 line-clamp-1 text-sm text-slate-300">{incident.title}</p>
 
           <div className="mt-6 flex flex-col items-center">
             {FLOW_STATUSES.map((status, index) => (

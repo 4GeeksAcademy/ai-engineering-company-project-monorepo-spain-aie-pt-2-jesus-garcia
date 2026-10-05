@@ -8,6 +8,7 @@ from models import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
     LoginRequest,
+    MessageResponse,
     ResetPasswordRequest,
     TokenResponse,
 )
@@ -34,7 +35,7 @@ def login(payload: LoginRequest):
     return TokenResponse(access_token=token, user=user)
 
 
-@router.post("/auth/forgot-password", status_code=202)
+@router.post("/auth/forgot-password", status_code=202, response_model=MessageResponse)
 def forgot_password(payload: ForgotPasswordRequest):
     token = issue_password_reset_token(payload.email)
     if token is not None:
@@ -45,7 +46,7 @@ def forgot_password(payload: ForgotPasswordRequest):
     return {"message": "If the email exists, a reset link has been sent"}
 
 
-@router.post("/auth/reset-password")
+@router.post("/auth/reset-password", response_model=MessageResponse)
 def reset_password(payload: ResetPasswordRequest):
     payload_data = decode_token(payload.token)
     if payload_data is None or payload_data.get("type") != "password_reset":
@@ -61,7 +62,7 @@ def reset_password(payload: ResetPasswordRequest):
     return {"message": "Password updated successfully"}
 
 
-@router.post("/auth/change-password")
+@router.post("/auth/change-password", response_model=MessageResponse)
 def change_password_route(
     payload: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user),

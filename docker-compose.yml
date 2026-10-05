@@ -11,6 +11,8 @@ services:
     volumes:
       - ./uis/website:/uis/website
       - ./uis/backoffice:/uis/backoffice
+      - ./shared:/shared
+      - ./src:/src
       - ui-node-website:/uis/website/node_modules
       - ui-node-backoffice:/uis/backoffice/node_modules
       - ui-next-website:/uis/website/.next

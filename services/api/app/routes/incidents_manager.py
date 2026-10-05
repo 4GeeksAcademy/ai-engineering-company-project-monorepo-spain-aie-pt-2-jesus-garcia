@@ -12,6 +12,7 @@ from models import (
     INCIDENT_STATUSES,
     Incident,
     IncidentCreate,
+    IncidentListItem,
     IncidentStatusUpdate,
     IncidentSummary,
 )
@@ -84,9 +85,16 @@ def incident_summary(_=Depends(require_manager)) -> IncidentSummary:
     return IncidentSummary(**summary)
 
 
+def _description_excerpt(description: str, limit: int = 120) -> str:
+    description = str(description or "").strip()
+    if len(description) <= limit:
+        return description
+    return description[:limit].rstrip() + "…"
+
+
 @router.get(
     "/incidents",
-    response_model=list[Incident],
+    response_model=list[IncidentListItem],
     summary="Listar incidencias con filtros opcionales",
 )
 def list_incidents(
@@ -95,7 +103,7 @@ def list_incidents(
     branch: str | None = Query(None, description="Filtrar por sede"),
     category: str | None = Query(None, description="Filtrar por categoría"),
     _=Depends(require_manager),
-) -> list[Incident]:
+) -> list[IncidentListItem]:
     db = get_tinydb()
     table = db.table("incidents")
 
@@ -109,7 +117,17 @@ def list_incidents(
             continue
         if category and doc.get("category") != category:
             continue
-        results.append(Incident(id=str(doc.doc_id), **doc))
+        results.append(
+            IncidentListItem(
+                id=str(doc.doc_id),
+                title=doc.get("title", ""),
+                description_excerpt=_description_excerpt(doc.get("description", "")),
+                origin=doc.get("origin", ""),
+                branch=doc.get("branch", ""),
+                category=doc.get("category", ""),
+                status=doc.get("status", ""),
+            )
+        )
 
     db.close()
     return results
