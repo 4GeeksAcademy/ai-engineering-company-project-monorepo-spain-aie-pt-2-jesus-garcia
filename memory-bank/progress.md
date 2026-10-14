@@ -319,3 +319,14 @@ Optimización de rendimiento con caché de respuestas (backend) + render (fronte
 - Benchmark reproducible: **`services/api/bench_cache.py`** (`TestClient` + `time.perf_counter`; cold = `cache.clear()`+petición, warm = petición siguiente, mínimo de `--repeats` cadencias, por defecto 3; imprime volúmenes leídos y admite `--json`). Comando: `DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py` (tras `seed_perf.py --force`).
 - Medidas reales con los volúmenes anteriores (SQLite local para inventario): `GET /inventory/products` 261,5→1,3 ms (−99,5 %), `GET /inventory/orders` 306,1→26,5 ms (−91 %), suppliers −95 %, incidents/summary −96 %, auth scan −42 %. Matriz de invalidación, TTLs, hit-rate y limitaciones (caché en memoria = 1 worker; paginar/serializar-JSON para listas de 20k).
 - Suites: **120 passed** en `services/api` (inc. 30 tests nuevos de caché) · typecheck raíz OK.
+
+## Telemetría — Plan y esquemas de eventos (`docs/telemetry/`)
+
+Entregable de diseño (solo documentación, sin instrumentación en runtime):
+
+- `docs/telemetry/telemetry-plan.md` — Plan de Telemetría en inglés:
+  - **Fase 1**: flujo de inventario mapeado end-to-end (login → `/auth/me` → `/inventory` → `OrderForm` → validación → `ConfirmDialog` → `POST /orders/{inbound|outbound}` → `inventory_service` → commit → `reload`), ≥5 puntos de instrumentación con anclaje `file:line`, más secciones de auth, rendimiento, errores frontend y navegación. Golden rule por evento.
+  - **Fase 2**: Event Envelope estándar (`event_id`, `timestamp`, `session_id`, `user_id`, `event_type`, `schema_version`, `request_id`, `source`, `app`, `properties`) y catálogo de 17 eventos con allowlist de `properties`.
+  - **Fase 3**: clasificación stream/batch por urgencia, estrategias throttle/debounce para eventos de alta frecuencia (`page_view`, `api_response_time`) y riesgos/exclusiones de privacidad y coste.
+  - **Gaps documentados**: el modelo `SKU` no tiene `client_id` ni `product_category`; no existe `min_stock`; no hay endpoint de edición directa de stock (el evento se define como guarda); las discrepancias se anclan a incidencias `inventory_discrepancy`.
+- `docs/telemetry/event-schemas.json` — JSON Schema 2020-12 con `envelope` + `definitions` + 17 `events`; cada evento declara `source`, `processing`, `golden_rule`, `required_properties` y `allowlist` (`additionalProperties: false`). Validado con `JSON.parse` y comprobación de los 5 eventos obligatorios.
