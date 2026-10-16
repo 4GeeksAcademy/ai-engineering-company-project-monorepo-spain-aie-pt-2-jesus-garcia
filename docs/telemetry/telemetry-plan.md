@@ -136,13 +136,26 @@ Additional structural gaps that shape instrumentation:
 
 ### 4.7 Opportunity catalog (golden rule per event)
 
+Every event below completes the golden rule of §2. Events are split into the two groups
+required by the brief: **mandatory** (`obligatorio`, the contracted inventory metrics from the
+company brief) and **identified opportunity** (`oportunidad identificada`, proposed during
+exploration of the backoffice). The mandatory group is fixed; the opportunity group is ours to
+extend and can be dropped without breaking the contracted metrics.
+
+#### 4.7.1 Mandatory — `obligatorio`
+
 | event_type | We capture it because we need to know… | …which lets us decide… |
 |---|---|---|
 | `inbound_order_created` | incoming volume per client / warehouse | warehouse capacity and staffing (Ana) |
 | `outbound_order_created` | orders processed per client / warehouse and pace | detect bottlenecks before they hit SLA (Ana) |
-| `stock_threshold_triggered` | how often a client runs out of a SKU | alert client + commercial before a stockout (Miguel) |
+| `stock_threshold_triggered` | how often a client runs out of a SKU (minimum-threshold activations) | alert client + commercial before a stockout (Miguel) |
 | `direct_stock_edit_rejected` | whether staff try to bypass traceability | reinforce training/permissions where it happens most |
 | `inventory_discrepancy_detected` | which SKUs / warehouses show most discrepancies | prioritize inventory audits (Ana) |
+
+#### 4.7.2 Identified opportunity — `oportunidad identificada`
+
+| event_type | We capture it because we need to know… | …which lets us decide… |
+|---|---|---|
 | `session_started` | when and how often sessions begin | adoption/usage analysis |
 | `login_succeeded` | successful logins per role | adoption tracking and access baselines |
 | `login_failed` | failed login attempts | detect credential stuffing / UX friction |
@@ -153,8 +166,62 @@ Additional structural gaps that shape instrumentation:
 | `order_form_abandoned` | where operators abandon order creation | reduce friction in the order flow |
 | `stock_validation_failed` | which validation errors happen | improve form guidance / fix systemic issues |
 | `outbound_rejected_insufficient_stock` | how often outbound fails for lack of stock | inventory planning and client alerts |
+| `incident_form_opened` | how many incident reports start | funnel conversion for the incident manager |
+| `incident_created` | incident volume by category / branch / origin | prioritize root-cause work and staffing where incidents concentrate |
+| `incident_validation_failed` | which incident fields fail validation | improve the incident form and fix systemic gaps |
+| `incident_status_change_opened` | how often operators open the status flow | measure whether incidents actually move forward |
+| `incident_status_changed` | how fast incidents move between states | reduce incident backlog / resolution time (SLA) |
+| `incident_transition_rejected` | rejected state transitions and why | detect UX/permission friction and misused flows |
 | `api_response_time` | API latency per endpoint | detect performance regressions (high frequency) |
 | `frontend_error_uncaught` | unhandled JS errors and their routes | fix stability issues before users report them |
+
+### 4.8 Incident management flow (as implemented)
+
+The centralized incident manager (`/incidents`) is a real, already-shipped surface, so it is
+instrumented alongside inventory. It reuses the domain enums already defined in
+`services/api/models.py:217-248` (`origin`, `branch`, `category`, `status`,
+`INCIDENT_STATUS_TRANSITIONS`).
+
+```
+[Backoffice user]
+  │
+  └─ /incidents (protected layout)
+        ├─ fetchIncidents(token) + fetchIncidentSummary(token)   GET /api/incidents[/summary]
+        │
+        ├─ "+ Nueva incidencia" button ──► setShowForm(true) ──► IncidentForm
+        │     ├─ client validate()  (title/description/origin/branch/category)
+        │     ├─ ConfirmDialog
+        │     └─ POST /api/incidents  ──► _validate_create
+        │            ├─ missing/invalid field → 400
+        │            └─ insert → 201
+        │
+        └─ "Cambiar estado" button ──► setFlowTarget(incident) ──► StatusFlowModal
+              ├─ nextStatuses(current)  (same map as INCIDENT_STATUS_TRANSITIONS)
+              ├─ ConfirmDialog
+              └─ PATCH /api/incidents/{id}/status
+                     ├─ invalid transition / final state → 400
+                     └─ update status → 200
+```
+
+Instrumentation points inside the incident flow:
+
+| # | Point | Anchor (file:line) | Event |
+|---|---|---|---|
+| 1 | Incident form opened | `uis/backoffice/app/(protected)/incidents/page.tsx:146` (`+ Nueva incidencia`) | `incident_form_opened` |
+| 2 | Incident created | `services/api/app/routes/incidents_manager.py:194` (201) | `incident_created` |
+| 3 | Incident create validation failed | `services/api/app/routes/incidents_manager.py:40` (`_validate_create`, 400) | `incident_validation_failed` |
+| 4 | Status flow opened | `incidents/page.tsx:264` (`Cambiar estado`) → `StatusFlowModal.tsx:72` | `incident_status_change_opened` |
+| 5 | Status changed | `StatusFlowModal.tsx:99` (confirm) → `incidents_manager.py:223` (200) | `incident_status_changed` |
+| 6 | Transition rejected | `incidents_manager.py:244-254` (invalid transition / final state, 400) | `incident_transition_rejected` |
+
+Business links:
+
+- An incident whose `category = "inventory_discrepancy"` is the real, already-shipped trigger for
+  the mandatory `inventory_discrepancy_detected` event (§4.2 #5). The two events are not
+  duplicates: `incident_created` measures incident-manager usage; `inventory_discrepancy_detected`
+  carries the inventory-specific `system_quantity` / `physical_quantity` / `discrepancy_delta`.
+- "Activaciones del umbral mínimo" stay in the mandatory group as `stock_threshold_triggered`
+  (§4.2 #4): no incident is required for it to fire.
 
 ## 5. Phase 2 — Event Envelope (EE) and event schemas
 
