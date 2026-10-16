@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   createInboundOrder,
   createInventoryProduct,
@@ -20,11 +21,18 @@ import {
   computeInventoryTotals,
 } from "@/lib/types";
 import { useAsyncData } from "@/hooks/useAsyncData";
-import { ProductForm } from "@/components/inventory/ProductForm";
-import { OrderForm } from "@/components/inventory/OrderForm";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { BreakdownCard } from "@/components/ui/BreakdownCard";
 import { useAuth } from "@/contexts/AuthContext";
+
+const ProductForm = dynamic(
+  () => import("@/components/inventory/ProductForm").then((m) => m.ProductForm),
+  { ssr: false },
+);
+const OrderForm = dynamic(
+  () => import("@/components/inventory/OrderForm").then((m) => m.OrderForm),
+  { ssr: false },
+);
 
 interface OrderTarget {
   sku: Pick<SKU, "id" | "name">;
@@ -41,29 +49,33 @@ export default function InventoryPage() {
 
   const { data, loading, error, reload } = useAsyncData(
     async () => {
-      const [freshProducts, freshOrders] = await Promise.all([
-        fetchInventoryProducts(token),
-        fetchInventoryOrders(token),
-      ]);
+      const freshProducts = await fetchInventoryProducts(token);
+      const freshOrders = isManager ? await fetchInventoryOrders(token) : [];
       return { products: freshProducts, orders: freshOrders };
     },
-    [token],
+    [token, isManager],
     friendlyError,
   );
 
-  const products = data?.products ?? [];
-  const orders = data?.orders ?? [];
+  const products = useMemo(() => data?.products ?? [], [data]);
+  const orders = useMemo(() => data?.orders ?? [], [data]);
 
-  const totals = computeInventoryTotals(products);
-  const stockByWarehouse: Record<string, number> = {
-    los_angeles: totals.stockByWarehouse.los_angeles ?? 0,
-    zaragoza: totals.stockByWarehouse.zaragoza ?? 0,
-  };
+  const totals = useMemo(() => computeInventoryTotals(products), [products]);
+  const stockByWarehouse = useMemo(
+    () => ({
+      los_angeles: totals.stockByWarehouse.los_angeles ?? 0,
+      zaragoza: totals.stockByWarehouse.zaragoza ?? 0,
+    }),
+    [totals],
+  );
 
-  const visibleProducts =
-    warehouseFilter === ""
-      ? products
-      : products.filter((product) => product.warehouse === warehouseFilter);
+  const visibleProducts = useMemo(
+    () =>
+      warehouseFilter === ""
+        ? products
+        : products.filter((product) => product.warehouse === warehouseFilter),
+    [products, warehouseFilter],
+  );
 
   async function handleCreateProduct(data: SKUCreate) {
     await createInventoryProduct(data, token);
@@ -222,59 +234,61 @@ export default function InventoryPage() {
             </div>
           </section>
 
-          <section aria-label="Órdenes registradas" className="mt-8">
-            <h2 className="mb-3 text-lg font-semibold text-white">Historial de órdenes</h2>
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-white/10 bg-slate-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-300">Tipo</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Producto</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Almacén</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Cantidad</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Usuario</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {orders.map((item) => (
-                    <tr
-                      key={`${item.order_type}-${item.id}`}
-                      className="transition hover:bg-white/5"
-                    >
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                            item.order_type === "inbound"
-                              ? "bg-emerald-500/20 text-emerald-300"
-                              : "bg-cyan-500/20 text-cyan-300"
-                          }`}
-                        >
-                          {INVENTORY_ORDER_TYPES[item.order_type] ?? item.order_type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">{item.product_name}</td>
-                      <td className="px-4 py-3 text-slate-300">
-                        {WAREHOUSE_LABELS[item.warehouse] ?? item.warehouse}
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">{item.quantity}</td>
-                      <td className="px-4 py-3 text-xs text-slate-300">{item.user_email}</td>
-                      <td className="px-4 py-3 text-xs text-slate-300">
-                        {new Date(item.created_at).toLocaleString("es-ES")}
-                      </td>
-                    </tr>
-                  ))}
-                  {orders.length === 0 && (
+          {isManager && (
+            <section aria-label="Órdenes registradas" className="mt-8">
+              <h2 className="mb-3 text-lg font-semibold text-white">Historial de órdenes</h2>
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-white/10 bg-slate-800/50">
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-slate-300">
-                        Aún no hay órdenes registradas
-                      </td>
+                      <th className="px-4 py-3 font-medium text-slate-300">Tipo</th>
+                      <th className="px-4 py-3 font-medium text-slate-300">Producto</th>
+                      <th className="px-4 py-3 font-medium text-slate-300">Almacén</th>
+                      <th className="px-4 py-3 font-medium text-slate-300">Cantidad</th>
+                      <th className="px-4 py-3 font-medium text-slate-300">Usuario</th>
+                      <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {orders.map((item) => (
+                      <tr
+                        key={`${item.order_type}-${item.id}`}
+                        className="transition hover:bg-white/5"
+                      >
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                              item.order_type === "inbound"
+                                ? "bg-emerald-500/20 text-emerald-300"
+                                : "bg-cyan-500/20 text-cyan-300"
+                            }`}
+                          >
+                            {INVENTORY_ORDER_TYPES[item.order_type] ?? item.order_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300">{item.product_name}</td>
+                        <td className="px-4 py-3 text-slate-300">
+                          {WAREHOUSE_LABELS[item.warehouse] ?? item.warehouse}
+                        </td>
+                        <td className="px-4 py-3 text-slate-300">{item.quantity}</td>
+                        <td className="px-4 py-3 text-xs text-slate-300">{item.user_email}</td>
+                        <td className="px-4 py-3 text-xs text-slate-300">
+                          {new Date(item.created_at).toLocaleString("es-ES")}
+                        </td>
+                      </tr>
+                    ))}
+                    {orders.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-12 text-center text-slate-300">
+                          Aún no hay órdenes registradas
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </>
       )}
 

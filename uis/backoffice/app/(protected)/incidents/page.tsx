@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   fetchIncidents,
   fetchIncidentSummary,
@@ -17,9 +18,17 @@ import {
   INCIDENT_STATUS_ORDER,
   nextStatuses,
 } from "@/lib/types";
-import { IncidentForm } from "@/components/incidents/IncidentForm";
-import { StatusFlowModal } from "@/components/incidents/StatusFlowModal";
 import { useAuth } from "@/contexts/AuthContext";
+
+const IncidentForm = dynamic(
+  () => import("@/components/incidents/IncidentForm").then((m) => m.IncidentForm),
+  { ssr: false },
+);
+const StatusFlowModal = dynamic(
+  () =>
+    import("@/components/incidents/StatusFlowModal").then((m) => m.StatusFlowModal),
+  { ssr: false },
+);
 
 const STATUS_BADGE: Record<string, string> = {
   open: "bg-amber-500/20 text-amber-300",

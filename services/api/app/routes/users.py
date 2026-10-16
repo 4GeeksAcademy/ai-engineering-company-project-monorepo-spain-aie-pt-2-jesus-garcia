@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from models import User, UserCreate, UserRole, UserUpdate
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, invalidate_user_cache
 from app.services.user_service import (
     delete_user,
     get_user,
@@ -45,9 +45,14 @@ def update_user_account(
     payload: UserUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    return update_user(user_id, payload.model_dump(exclude_unset=True), current_user)
+    updated = update_user(user_id, payload.model_dump(exclude_unset=True), current_user)
+    invalidate_user_cache(user_id)
+    return updated
 
 
 @router.delete("/users/{user_id}", status_code=204)
 def delete_user_account(user_id: str, current_user: dict = Depends(get_current_user)):
-    delete_user(user_id, current_user)
+    try:
+        delete_user(user_id, current_user)
+    finally:
+        invalidate_user_cache(user_id)

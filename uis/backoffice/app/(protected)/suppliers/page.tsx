@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { fetchSuppliers, fetchSupplier, createSupplier, updateSupplier, deleteSupplier, friendlyError } from "@/lib/api";
 import type { Supplier, SupplierCreate, SupplierListItem, SupplierUpdate } from "@/lib/types";
 import {
@@ -8,9 +9,13 @@ import {
   SUPPLIER_STATUSES,
   COUNTRY_FLAGS,
 } from "@/lib/types";
-import { SupplierForm } from "@/components/suppliers/SupplierForm";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/contexts/AuthContext";
+
+const SupplierForm = dynamic(
+  () => import("@/components/suppliers/SupplierForm").then((m) => m.SupplierForm),
+  { ssr: false },
+);
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
