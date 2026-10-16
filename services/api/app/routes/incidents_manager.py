@@ -17,7 +17,7 @@ from models import (
     IncidentSummary,
 )
 from app.core.dependencies import require_manager
-from app.core.cache import cache
+from app.core.cache import cache, filter_cache_key
 
 router = APIRouter(prefix="/api", tags=["incident-manager"])
 
@@ -96,6 +96,16 @@ def incident_summary(_=Depends(require_manager)) -> IncidentSummary:
     return result
 
 
+def _list_key(status, origin, branch, category) -> str:
+    return filter_cache_key(
+        f"{INCIDENTS_PREFIX}list:",
+        status=status,
+        origin=origin,
+        branch=branch,
+        category=category,
+    )
+
+
 def _description_excerpt(description: str, limit: int = 120) -> str:
     description = str(description or "").strip()
     if len(description) <= limit:
@@ -115,7 +125,7 @@ def list_incidents(
     category: str | None = Query(None, description="Filtrar por categoría"),
     _=Depends(require_manager),
 ) -> list[IncidentListItem]:
-    key = f"{INCIDENTS_PREFIX}list:{'|'.join([status or '', origin or '', branch or '', category or ''])}"
+    key = _list_key(status, origin, branch, category)
     hit = cache.get(key)
     if hit is not None:
         return hit

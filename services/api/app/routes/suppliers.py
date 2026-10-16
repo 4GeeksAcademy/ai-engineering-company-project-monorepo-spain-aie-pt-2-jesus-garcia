@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_tinydb
 from models import Supplier, SupplierCreate, SupplierListItem, SupplierUpdate
-from app.core.cache import cache
+from app.core.cache import cache, filter_cache_key
 from app.core.dependencies import require_manager
 
 router = APIRouter(prefix="/api", tags=["suppliers"])
@@ -14,8 +14,13 @@ SUPPLIERS_PREFIX = "suppliers:"
 
 
 def _list_key(country, category, status, search) -> str:
-    filters = "|".join([country or "", category or "", status or "", search or ""])
-    return f"{SUPPLIERS_PREFIX}list:{filters}"
+    return filter_cache_key(
+        f"{SUPPLIERS_PREFIX}list:",
+        country=country,
+        category=category,
+        status=status,
+        search=search,
+    )
 
 
 @router.get(

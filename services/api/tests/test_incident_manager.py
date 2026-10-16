@@ -214,12 +214,27 @@ class TestIncidentCache:
         _create(client, auth_headers)
         client.get("/api/incidents?status=open", headers=auth_headers)
         client.get("/api/incidents?category=lost_parcel", headers=auth_headers)
-        assert cache.get("incidents:list:open|||") is not None
-        assert cache.get("incidents:list:|||lost_parcel") is not None
+        status_key = 'incidents:list:{"branch":"","category":"","origin":"","status":"open"}'
+        category_key = (
+            'incidents:list:{"branch":"","category":"lost_parcel","origin":"","status":""}'
+        )
+        assert cache.get(status_key) is not None
+        assert cache.get(category_key) is not None
 
         _create(client, auth_headers)
-        assert cache.get("incidents:list:open|||") is None
-        assert cache.get("incidents:list:|||lost_parcel") is None
+        assert cache.get(status_key) is None
+        assert cache.get(category_key) is None
+
+    def test_list_key_is_unambiguous_when_value_contains_separator(self):
+        from app.routes.incidents_manager import _list_key
+
+        # Antes (join con "|") estas dos combinaciones producían la misma clave.
+        assert _list_key("a|b", "", "", "") != _list_key("a", "b", "", "")
+        assert _list_key("", "", "", "x|y") != _list_key("", "", "x", "y")
+        # Mismos filtros → misma clave (orden fijo).
+        assert _list_key("open", "customer", "la_warehouse", "lost_parcel") == _list_key(
+            "open", "customer", "la_warehouse", "lost_parcel"
+        )
 
     def test_detail_cached_and_invalidated_on_status_change(self, client, auth_headers):
         from app.core.cache import cache

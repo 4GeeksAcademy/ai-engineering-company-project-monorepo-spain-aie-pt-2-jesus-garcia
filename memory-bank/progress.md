@@ -301,10 +301,10 @@ Optimización de rendimiento con caché de respuestas (backend) + render (fronte
 - `GET /products`, `GET /products/{id}`, `GET /orders` cacheados bajo `inventory:`. Invalidación de prefijo en `POST /products`, `/orders/inbound`, `/orders/outbound` (solo escritura exitosa). Tests de caché en `test_inventory.py` (19 casos).
 
 ### C4 — Caché suppliers (`app/routes/suppliers.py`, TTL 300s)
-- `GET /suppliers` clave `suppliers:list:{filtros}`, `GET /suppliers/{id}` clave `suppliers:detail:{id}`. Invalidación prefijo en `POST/PUT/DELETE`. `tests/test_suppliers.py` (4 casos).
+- `GET /suppliers` clave `suppliers:list:{json(filtros)}` (helper `filter_cache_key`, JSON con orden fijo → inequívoca aunque un valor contenga `|`), `GET /suppliers/{id}` clave `suppliers:detail:{id}`. Invalidación prefijo en `POST/PUT/DELETE`. `tests/test_suppliers.py` (5 casos).
 
 ### C5 — Caché incidents (`app/routes/incidents_manager.py`, TTL 30s)
-- `GET /summary`, `GET /incidents` (clave con filtros), `GET /incidents/{id}` bajo `incidents:`. Invalidación prefijo en `POST` y `PATCH /{id}/status` **solo si la transición es válida**. `tests/test_incident_manager.py` (28 casos).
+- `GET /summary`, `GET /incidents` (clave `incidents:list:{json(filtros)}` vía `filter_cache_key`), `GET /incidents/{id}` bajo `incidents:`. Invalidación prefijo en `POST` y `PATCH /{id}/status` **solo si la transición es válida**. `tests/test_incident_manager.py` (29 casos).
 
 ### C6 — Caché de autenticación (`app/core/dependencies.py`, TTL 5s)
 - `get_current_user` cachea el doc del usuario por `id` (`auth:user:{id}`, TTL 5s) → se aplica a todos los endpoints protegidos (evita el scan TinyDB de la tabla users por request).

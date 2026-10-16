@@ -45,13 +45,13 @@ Seeder: `python seed_perf.py --force` (determinista, `Random(42)`, idempotente; 
 
 ## Implementación
 
-`app/core/cache.py` — `TTLCache` thread-safe (dict + `RLock`): `get/set(ttl)/delete/delete_prefix/clear/stats`. Helper `cached(cache, key, ttl, compute)`. Caché por proceso (un worker uvicorn); con multi-worker haría falta Redis (limitación documentada).
+`app/core/cache.py` — `TTLCache` thread-safe (dict + `RLock`): `get/set(ttl)/delete/delete_prefix/clear/stats`. Helpers `cached(cache, key, ttl, compute)` y `filter_cache_key(prefix, **filters)` (serializa los filtros como JSON con orden fijo, de modo que valores con `|` u otros caracteres no colisionen). Caché por proceso (un worker uvicorn); con multi-worker haría falta Redis (limitación documentada).
 
 | Dominio | Prefijo | TTL | Claves |
 |---|---|---|---|
 | Inventario | `inventory:` | 15s | `products`, `product:{id}`, `orders` |
-| Suppliers | `suppliers:` | 300s | `list:{country|category|status|search}`, `detail:{id}` |
-| Incidents | `incidents:` | 30s | `summary`, `list:{status|origin|branch|category}`, `detail:{id}` |
+| Suppliers | `suppliers:` | 300s | `list:{json(filtros)}`, `detail:{id}` |
+| Incidents | `incidents:` | 30s | `summary`, `list:{json(filtros)}`, `detail:{id}` |
 | Auth | `auth:` | 5s | `user:{id}` |
 
 ## Resultados medidos (volúmenes de la tabla anterior)

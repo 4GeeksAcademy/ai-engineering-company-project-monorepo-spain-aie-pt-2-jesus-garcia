@@ -4,6 +4,7 @@ Caché local por proceso (dict + RLock). Válida para un único worker de uvicor
 con múltiples workers haría falta una caché compartida (Redis).
 """
 
+import json
 import threading
 import time
 
@@ -83,3 +84,18 @@ def cached(cache: TTLCache, key: str, ttl: float, compute):
     value = compute()
     cache.set(key, value, ttl=ttl)
     return value
+
+
+def filter_cache_key(prefix: str, **filters) -> str:
+    """Construye una clave de caché inequívoca a partir de filtros de query.
+
+    Serializa los filtros como JSON con orden fijo de claves, de modo que
+    valores que contengan el separador (p. ej. ``search="a|b"``) no puedan
+    colisionar con combinaciones distintas. ``None`` se normaliza a ``""`` para
+    que un filtro ausente y uno vacío compartan entrada.
+    """
+    normalized = {key: ("" if value is None else value) for key, value in filters.items()}
+    payload = json.dumps(
+        normalized, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return f"{prefix}{payload}"
