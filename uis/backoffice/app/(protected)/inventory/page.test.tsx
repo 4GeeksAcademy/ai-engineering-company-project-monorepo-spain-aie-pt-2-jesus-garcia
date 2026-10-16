@@ -117,6 +117,20 @@ describe("InventoryPage", () => {
     expect(within(products).queryByRole("button", { name: "Salida" })).not.toBeInTheDocument();
   });
 
+  it("un usuario con role user no ve el historial de órdenes ni pide sus correos", async () => {
+    mockRole("user");
+    render(<InventoryPage />);
+
+    const products = await screen.findByRole("region", { name: "Productos" });
+    await within(products).findByText(sku1.name);
+
+    expect(
+      screen.queryByRole("region", { name: "Órdenes registradas" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("ops@trackflow.com")).not.toBeInTheDocument();
+    expect(mockFetchOrders).not.toHaveBeenCalled();
+  });
+
   it("filtra la tabla de productos por almacén", async () => {
     mockRole("manager");
     render(<InventoryPage />);

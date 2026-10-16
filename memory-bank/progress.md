@@ -250,6 +250,14 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 
 **Verificado:** ambas apps `✓ Ready` en 16.2.10 (webpack) sin panics; `:3000` web y `:3001` backoffice 200 en `/` y `/login` estables (sin bucle de reload); `:8000/health` ok; `/docs` y `/openapi.json` sirven los contratos nuevos. E2E login admin + `GET /api/suppliers` (claves slim) y `GET /api/incidents` (`description_excerpt`). Lint, 32 tests Vitest, typecheck raíz y build backoffice OK. Nota menor en build webpack: warning `images.qualities` (pre-existente en la rama de auditoría Lighthouse).
 
+## Fix privacidad — correos de operadores en el listado de órdenes
+
+`GET /inventory/orders` exponía el `user_email` de todos los operadores a cualquier usuario autenticado (solo dependía de `get_current_user`). Ajuste de acceso (opción elegida: preservar el dato de auditoría solo para roles privilegiados):
+
+- **Backend** (`services/api/app/routes/inventory.py`): `GET /inventory/orders` pasa de `get_current_user` a `require_manager` → `role user` recibe **403**. Nuevo test `test_get_orders_with_user_role_returns_403` en `test_inventory.py`.
+- **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
+- **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
@@ -274,3 +282,61 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
   - **`shared/components/LoadingSpinner.ts`** (nuevo, código compartido raíz `@shared/*`): reemplaza el spinner duplicado entre `website/app/loading.tsx` y `backoffice/(protected)/layout.tsx`.
   - Config: `turbopack.root` → raíz del monorepo en ambos `next.config.ts`; `@source` Tailwind v4 hacia `shared/` en ambos `globals.css`; tsconfigs mapean `react` → `@types` locales (Turbopack no transpila `.tsx` fuera de la raíz de app).
 - Resultado `after`: **5/5 ejecuciones 100/100/100/100** (A11y incidents 91→100, inventory 94→100). Validation: typecheck raíz OK, lint+build ambos OK, 32 tests Vitest OK.
+
+## Optimización de rendimiento — Caché (C1–C8)
+
+Optimización de rendimiento con caché de respuestas (backend) + render (frontend). Documento de referencia: `CACHING_REPORT.md`.
+
+### C1 — Seeder de carga realista (`services/api/seed_perf.py`)
+- Crea datos coherentes y variados para la auditoría (determinista `Random(42)`, idempotente). Volúmenes objetivo moderados: **400 suppliers / 5.000 incidents / 200 users + perfiles (TinyDB)** y **150 SKUs / 20.000 órdenes (SQL)**; el usuario #1 es admin con password `admin123`.
+- Flags `--scale N` y overrides por tabla (`--suppliers`, `--incidents`, `--users`, `--skus`, `--orders`).
+- **Guard destructivo** (`services/api/seed_guard.py`): todos los seeders que truncan/borran (`seed_perf.py`, `seed.py`, `seed_incidents.py`, `seed_inventory.py`) exigen `--force`/`--reset`; `--dry-run` muestra el plan sin escribir y `--allow-remote-db` (o `TRACKFLOW_ALLOW_REMOTE_SEED=1`) autoriza una `DATABASE_URL` remota. Sin flag, abortan con exit code 2 antes de tocar datos.
+- Inventario requiere `DATABASE_URL`; si falta, lo omite con aviso. Para no tocar Supabase se puede override local: `DATABASE_URL=sqlite:///./perf_measure.db`.
+
+### C2 — Infraestructura de caché (`app/core/cache.py`)
+- `TTLCache` thread-safe (`RLock`): `get/set(ttl)/delete/delete_prefix/clear/stats`, instancia global `cache` y helper `cached(cache, key, ttl, compute)` (no rompe con valores falsy).
+- `tests/conftest.py`: fixture autouse `_clear_cache` (limpia antes/después de cada test). `tests/test_cache.py` (9 casos).
+
+### C3 — Caché inventario (`app/routes/inventory.py`, TTL 15s)
+- `GET /products`, `GET /products/{id}`, `GET /orders` cacheados bajo `inventory:`. Invalidación de prefijo en `POST /products`, `/orders/inbound`, `/orders/outbound` (solo escritura exitosa). Tests de caché en `test_inventory.py` (19 casos).
+
+### C4 — Caché suppliers (`app/routes/suppliers.py`, TTL 300s)
+- `GET /suppliers` clave `suppliers:list:{json(filtros)}` (helper `filter_cache_key`, JSON con orden fijo → inequívoca aunque un valor contenga `|`), `GET /suppliers/{id}` clave `suppliers:detail:{id}`. Invalidación prefijo en `POST/PUT/DELETE`. `tests/test_suppliers.py` (5 casos).
+
+### C5 — Caché incidents (`app/routes/incidents_manager.py`, TTL 30s)
+- `GET /summary`, `GET /incidents` (clave `incidents:list:{json(filtros)}` vía `filter_cache_key`), `GET /incidents/{id}` bajo `incidents:`. Invalidación prefijo en `POST` y `PATCH /{id}/status` **solo si la transición es válida**. `tests/test_incident_manager.py` (29 casos).
+
+### C6 — Caché de autenticación (`app/core/dependencies.py`, TTL 5s)
+- `get_current_user` cachea el doc del usuario por `id` (`auth:user:{id}`, TTL 5s) → se aplica a todos los endpoints protegidos (evita el scan TinyDB de la tabla users por request).
+- `invalidate_user_cache(id)` en `PUT/DELETE /api/users/{id}`. Tradeoff documentado: un cambio de role/desactivación tarda ≤5s en notarse. `tests/test_auth_cache.py` (4 casos).
+
+### C7 — Frontend perf (`uis/backoffice`)
+- `/inventory`: `useMemo` para products/orders/totals/stockByWarehouse/visibleProducts.
+- `next/dynamic({ssr:false})` para `ProductForm`, `OrderForm`, `IncidentForm`, `StatusFlowModal`, `SupplierForm` (carga solo al abrir el modal).
+- Lint 0 warnings · Vitest 32 passed · build OK.
+
+### C8 — Reporte (`CACHING_REPORT.md`) + benchmark reproducible
+- Benchmark reproducible: **`services/api/bench_cache.py`** (`TestClient` + `time.perf_counter`; cold = `cache.clear()`+petición, warm = petición siguiente, mínimo de `--repeats` cadencias, por defecto 3; imprime volúmenes leídos y admite `--json`). Comando: `DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py` (tras `seed_perf.py --force`).
+- Medidas reales con los volúmenes anteriores (SQLite local para inventario): `GET /inventory/products` 261,5→1,3 ms (−99,5 %), `GET /inventory/orders` 306,1→26,5 ms (−91 %), suppliers −95 %, incidents/summary −96 %, auth scan −42 %. Matriz de invalidación, TTLs, hit-rate y limitaciones (caché en memoria = 1 worker; paginar/serializar-JSON para listas de 20k).
+- Suites: **120 passed** en `services/api` (inc. 30 tests nuevos de caché) · typecheck raíz OK.
+
+## Telemetría — Plan y esquemas de eventos (`docs/telemetry/`)
+
+Entregable de diseño (solo documentación, sin instrumentación en runtime):
+
+- `docs/telemetry/telemetry-plan.md` — Plan de Telemetría en inglés:
+  - **Fase 1**: flujo de inventario mapeado end-to-end (login → `/auth/me` → `/inventory` → `OrderForm` → validación → `ConfirmDialog` → `POST /orders/{inbound|outbound}` → `inventory_service` → commit → `reload`), ≥5 puntos de instrumentación con anclaje `file:line`, más secciones de auth, rendimiento, errores frontend y navegación. Golden rule por evento.
+  - **Fase 2**: Event Envelope estándar (`event_id`, `timestamp`, `session_id`, `user_id`, `event_type`, `schema_version`, `request_id`, `source`, `app`, `properties`) y catálogo de 17 eventos con allowlist de `properties`.
+  - **Fase 3**: clasificación stream/batch por urgencia, estrategias throttle/debounce para eventos de alta frecuencia (`page_view`, `api_response_time`) y riesgos/exclusiones de privacidad y coste.
+  - **Gaps documentados**: el modelo `SKU` no tiene `client_id` ni `product_category`; no existe `min_stock`; no hay endpoint de edición directa de stock (el evento se define como guarda); las discrepancias se anclan a incidencias `inventory_discrepancy`.
+- `docs/telemetry/event-schemas.json` — JSON Schema 2020-12 con `envelope` + `definitions` + 17 `events`; cada evento declara `source`, `processing`, `golden_rule`, `required_properties` y `allowlist` (`additionalProperties: false`). Validado con `JSON.parse` y comprobación de los 5 eventos obligatorios.
+
+### Ampliación — catálogo de incidencias + clasificación obligatorio/oportunidad
+
+Ampliación del entregable de telemetría (inglés) sobre la base anterior:
+
+- Catálogo reorganizado en los dos grupos que pide el brief: **obligatorio** (`obligatorio`, las 5 métricas de inventario del contexto) y **oportunidad identificada** (`oportunidad identificada`, exploración propia: auth, rendimiento, navegación e incidencias).
+- **Flujo de incidencias instrumentado** (§4.8) con anclajes `file:line`: `incident_form_opened` (`incidents/page.tsx:146`), `incident_created` / `incident_validation_failed` (`incidents_manager.py:194`/`:40`), `incident_status_change_opened` (`incidents/page.tsx:264` → `StatusFlowModal.tsx`), `incident_status_changed` (`StatusFlowModal.tsx:99` → `incidents_manager.py:223`) y `incident_transition_rejected` (`incidents_manager.py:244-254`).
+- `event-schemas.json` → **23 eventos** (17 + 6 de incidencias); nuevas `definitions` `incident_category|status|branch|origin` (enums tomados de `services/api/models.py`); `envelope.event_type` enum y `version` 1.1.0.
+- Throttle/dedupe añadido para `incident_validation_failed` / `incident_transition_rejected` (ventana 60 s por firma) además de `page_view` / `api_response_time`.
+- §6.3 gana una subsección **"Considered and discarded events"** (p. ej. texto completo de la incidencia por PII, snapshot periódico de stock por coste/derivable, heatmaps) junto a las exclusiones de datos ya existentes.

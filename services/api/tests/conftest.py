@@ -102,6 +102,15 @@ def _reset_service_state():
     service.reset()
 
 
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    from app.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture()
 def sample_csv_bytes() -> bytes:
     return SAMPLE_CSV.encode("utf-8")
