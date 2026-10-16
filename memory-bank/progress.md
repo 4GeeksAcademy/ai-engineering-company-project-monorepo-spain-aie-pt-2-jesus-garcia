@@ -330,3 +330,13 @@ Entregable de diseño (solo documentación, sin instrumentación en runtime):
   - **Fase 3**: clasificación stream/batch por urgencia, estrategias throttle/debounce para eventos de alta frecuencia (`page_view`, `api_response_time`) y riesgos/exclusiones de privacidad y coste.
   - **Gaps documentados**: el modelo `SKU` no tiene `client_id` ni `product_category`; no existe `min_stock`; no hay endpoint de edición directa de stock (el evento se define como guarda); las discrepancias se anclan a incidencias `inventory_discrepancy`.
 - `docs/telemetry/event-schemas.json` — JSON Schema 2020-12 con `envelope` + `definitions` + 17 `events`; cada evento declara `source`, `processing`, `golden_rule`, `required_properties` y `allowlist` (`additionalProperties: false`). Validado con `JSON.parse` y comprobación de los 5 eventos obligatorios.
+
+### Ampliación — catálogo de incidencias + clasificación obligatorio/oportunidad
+
+Ampliación del entregable de telemetría (inglés) sobre la base anterior:
+
+- Catálogo reorganizado en los dos grupos que pide el brief: **obligatorio** (`obligatorio`, las 5 métricas de inventario del contexto) y **oportunidad identificada** (`oportunidad identificada`, exploración propia: auth, rendimiento, navegación e incidencias).
+- **Flujo de incidencias instrumentado** (§4.8) con anclajes `file:line`: `incident_form_opened` (`incidents/page.tsx:146`), `incident_created` / `incident_validation_failed` (`incidents_manager.py:194`/`:40`), `incident_status_change_opened` (`incidents/page.tsx:264` → `StatusFlowModal.tsx`), `incident_status_changed` (`StatusFlowModal.tsx:99` → `incidents_manager.py:223`) y `incident_transition_rejected` (`incidents_manager.py:244-254`).
+- `event-schemas.json` → **23 eventos** (17 + 6 de incidencias); nuevas `definitions` `incident_category|status|branch|origin` (enums tomados de `services/api/models.py`); `envelope.event_type` enum y `version` 1.1.0.
+- Throttle/dedupe añadido para `incident_validation_failed` / `incident_transition_rejected` (ventana 60 s por firma) además de `page_view` / `api_response_time`.
+- §6.3 gana una subsección **"Considered and discarded events"** (p. ej. texto completo de la incidencia por PII, snapshot periódico de stock por coste/derivable, heatmaps) junto a las exclusiones de datos ya existentes.

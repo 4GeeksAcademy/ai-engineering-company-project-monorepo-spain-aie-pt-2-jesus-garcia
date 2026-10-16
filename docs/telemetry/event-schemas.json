@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://trackflow.com/schemas/telemetry/event-schemas.json",
   "title": "TrackFlow Telemetry Event Schemas",
-  "description": "Standard Event Envelope (EE) and per-event property allowlists for the TrackFlow backoffice and inventory API. Human-readable companion: telemetry-plan.md.",
-  "version": "1.0.0",
+  "description": "Standard Event Envelope (EE) and per-event property allowlists for the TrackFlow backoffice (inventory + centralized incident manager) and API. Human-readable companion: telemetry-plan.md.",
+  "version": "1.1.0",
   "envelope": {
     "$id": "https://trackflow.com/schemas/telemetry/envelope.json",
     "title": "Event Envelope",
@@ -59,6 +59,12 @@
           "order_form_abandoned",
           "stock_validation_failed",
           "outbound_rejected_insufficient_stock",
+          "incident_form_opened",
+          "incident_created",
+          "incident_validation_failed",
+          "incident_status_change_opened",
+          "incident_status_changed",
+          "incident_transition_rejected",
           "api_response_time",
           "frontend_error_uncaught"
         ]
@@ -122,6 +128,42 @@
     "path": {
       "type": "string",
       "description": "Normalized route path without query string or identifiers, e.g. /inventory."
+    },
+    "incident_category": {
+      "type": "string",
+      "enum": [
+        "lost_parcel",
+        "delivery_failure",
+        "inventory_discrepancy",
+        "carrier_issue",
+        "returns_issue",
+        "warehouse_incident",
+        "system_failure",
+        "client_complaint",
+        "other"
+      ],
+      "description": "Incident category. Source of truth: services/api/models.py INCIDENT_CATEGORIES."
+    },
+    "incident_status": {
+      "type": "string",
+      "enum": ["open", "in_progress", "resolved", "discarded"],
+      "description": "Incident status. Source of truth: services/api/models.py INCIDENT_STATUSES."
+    },
+    "incident_branch": {
+      "type": "string",
+      "enum": [
+        "central",
+        "la_warehouse",
+        "la_office",
+        "zaragoza_warehouse",
+        "zaragoza_office"
+      ],
+      "description": "Incident branch/site. Source of truth: services/api/models.py INCIDENT_BRANCHES."
+    },
+    "incident_origin": {
+      "type": "string",
+      "enum": ["customer", "branch", "internal"],
+      "description": "Incident origin. Source of truth: services/api/models.py INCIDENT_ORIGINS."
     }
   },
   "events": {
@@ -461,6 +503,136 @@
           "requested_quantity": { "type": "integer", "minimum": 1 },
           "available_quantity": { "type": "integer", "minimum": 0 },
           "deficit": { "type": "integer", "minimum": 1, "description": "requested_quantity - available_quantity." }
+        }
+      }
+    },
+    "incident_form_opened": {
+      "description": "An operator opens the 'new incident' form from the incidents page (+ Nueva incidencia).",
+      "source": "frontend",
+      "processing": "batch",
+      "processing_rationale": "Funnel measurement for the incident manager; aggregated, no live action.",
+      "high_frequency": false,
+      "golden_rule": "We capture incident_form_opened because we need to know how many incident reports start, which lets us measure funnel conversion into created incidents.",
+      "required_properties": [],
+      "allowlist": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "entry_source": { "type": "string", "enum": ["button", "route"] }
+        }
+      }
+    },
+    "incident_created": {
+      "description": "An incident is created through the centralized incident manager (POST /api/incidents, 201). Free-text description is never sent.",
+      "source": "backend",
+      "processing": "stream",
+      "processing_rationale": "The incident inventory feeds operational triage (Ana) and the executive view; low latency is useful.",
+      "high_frequency": false,
+      "golden_rule": "We capture incident_created because we need to know incident volume by category, branch and origin, which lets us prioritize root-cause work and staffing where incidents concentrate (Ana).",
+      "required_properties": ["incident_id", "category", "branch", "origin", "status"],
+      "allowlist": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["incident_id", "category", "branch", "origin", "status"],
+        "properties": {
+          "incident_id": { "type": "string", "minLength": 1 },
+          "category": { "$ref": "#/definitions/incident_category" },
+          "branch": { "$ref": "#/definitions/incident_branch" },
+          "origin": { "$ref": "#/definitions/incident_origin" },
+          "status": { "$ref": "#/definitions/incident_status" },
+          "description_length": { "type": "integer", "minimum": 0, "description": "Length of the free-text description. The text itself is never captured." }
+        }
+      }
+    },
+    "incident_validation_failed": {
+      "description": "Server-side validation of incident creation fails (missing/invalid field, HTTP 400).",
+      "source": "backend",
+      "processing": "stream",
+      "processing_rationale": "Repeated failures signal a broken form or a missing domain value; react quickly.",
+      "high_frequency": false,
+      "throttle": "Deduplicate by (reason, field, branch) within 60 s so a single operator retrying does not create an alert storm.",
+      "golden_rule": "We capture incident_validation_failed because we need to know which incident fields fail validation, which lets us improve the incident form and fix systemic gaps.",
+      "required_properties": ["field", "reason"],
+      "allowlist": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "reason"],
+        "properties": {
+          "field": { "type": "string", "enum": ["title", "description", "origin", "branch", "category", "status"] },
+          "reason": { "type": "string", "enum": ["missing", "invalid_value"] },
+          "origin": { "$ref": "#/definitions/incident_origin" },
+          "branch": { "$ref": "#/definitions/incident_branch" },
+          "category": { "$ref": "#/definitions/incident_category" }
+        }
+      }
+    },
+    "incident_status_change_opened": {
+      "description": "An operator opens the status-flow modal for an incident (Cambiar estado).",
+      "source": "frontend",
+      "processing": "batch",
+      "processing_rationale": "Usage/funnel measurement; aggregated, no live action.",
+      "high_frequency": false,
+      "golden_rule": "We capture incident_status_change_opened because we need to know how often operators open the status flow, which lets us measure whether incidents actually move forward.",
+      "required_properties": ["from_status"],
+      "allowlist": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_status"],
+        "properties": {
+          "incident_id": { "type": "string" },
+          "from_status": { "$ref": "#/definitions/incident_status" },
+          "allowed_targets": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/incident_status" }
+          },
+          "category": { "$ref": "#/definitions/incident_category" },
+          "branch": { "$ref": "#/definitions/incident_branch" }
+        }
+      }
+    },
+    "incident_status_changed": {
+      "description": "An incident status transition succeeds (PATCH /api/incidents/{id}/status, 200). Only emitted when the state actually changes.",
+      "source": "backend",
+      "processing": "stream",
+      "processing_rationale": "Resolution-time and backlog monitoring need low latency to feed the incident SLA view.",
+      "high_frequency": false,
+      "golden_rule": "We capture incident_status_changed because we need to know how fast incidents move between states, which lets us reduce incident backlog and resolution time (Ana).",
+      "required_properties": ["incident_id", "from_status", "to_status", "category", "branch"],
+      "allowlist": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["incident_id", "from_status", "to_status", "category", "branch"],
+        "properties": {
+          "incident_id": { "type": "string", "minLength": 1 },
+          "from_status": { "$ref": "#/definitions/incident_status" },
+          "to_status": { "$ref": "#/definitions/incident_status" },
+          "category": { "$ref": "#/definitions/incident_category" },
+          "branch": { "$ref": "#/definitions/incident_branch" },
+          "time_in_status_seconds": { "type": "integer", "minimum": 0, "description": "Seconds spent in from_status before the transition." }
+        }
+      }
+    },
+    "incident_transition_rejected": {
+      "description": "An incident status transition is rejected because it is not allowed or the incident is in a final state (HTTP 400).",
+      "source": "backend",
+      "processing": "stream",
+      "processing_rationale": "Permission/UX friction tripwire; the team needs to react quickly where rejections concentrate.",
+      "high_frequency": false,
+      "throttle": "Deduplicate by (attempted_status, from_status, branch) within 60 s to avoid storms from repeated retries.",
+      "golden_rule": "We capture incident_transition_rejected because we need to know which state transitions are rejected and why, which lets us detect UX or permission friction and misused flows.",
+      "required_properties": ["incident_id", "from_status", "attempted_status", "reason"],
+      "allowlist": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["incident_id", "from_status", "attempted_status", "reason"],
+        "properties": {
+          "incident_id": { "type": "string", "minLength": 1 },
+          "from_status": { "$ref": "#/definitions/incident_status" },
+          "attempted_status": { "$ref": "#/definitions/incident_status" },
+          "reason": { "type": "string", "enum": ["invalid_transition", "final_state"] },
+          "category": { "$ref": "#/definitions/incident_category" },
+          "branch": { "$ref": "#/definitions/incident_branch" }
         }
       }
     },

@@ -267,7 +267,10 @@ Minimum inventory `properties` (mandatory events): `warehouse`, `client_id`, `pr
 | `direct_stock_edit_rejected` | backend | stream | `warehouse`, `client_id`, `product_id`, `product_category`, `attempted_quantity`, `rejection_reason`, `endpoint`, `user_role` |
 | `inventory_discrepancy_detected` | backend | batch | `warehouse`, `client_id`, `product_id`, `product_category`, `quantity`, `system_quantity`, `physical_quantity`, `discrepancy_delta`, `detection_source`, `incident_id` |
 
-#### Additional events (12)
+#### Identified opportunity events (18)
+
+The mandatory five are the `obligatorio` group of §4.7.1; the events below are the
+`oportunidad identificada` group of §4.7.2.
 
 | event_type | Source | Processing | Allowed properties (allowlist) |
 |---|---|---|---|
@@ -281,6 +284,12 @@ Minimum inventory `properties` (mandatory events): `warehouse`, `client_id`, `pr
 | `order_form_abandoned` | frontend | batch | `warehouse`, `order_type`, `product_id`, `product_category`, `client_id`, `last_field_touched`, `time_in_form_ms`, `abandon_reason` |
 | `stock_validation_failed` | backend | stream | `warehouse`, `product_id`, `client_id`, `product_category`, `field`, `reason`, `attempted_quantity`, `order_type` |
 | `outbound_rejected_insufficient_stock` | backend | stream | `warehouse`, `client_id`, `product_id`, `product_category`, `requested_quantity`, `available_quantity`, `deficit` |
+| `incident_form_opened` | frontend | batch | `entry_source` |
+| `incident_created` | backend | stream | `incident_id`, `category`, `branch`, `origin`, `status`, `description_length` |
+| `incident_validation_failed` | backend | stream | `field`, `reason`, `origin`, `branch`, `category` |
+| `incident_status_change_opened` | frontend | batch | `incident_id`, `from_status`, `allowed_targets`, `category`, `branch` |
+| `incident_status_changed` | backend | stream | `incident_id`, `from_status`, `to_status`, `category`, `branch`, `time_in_status_seconds` |
+| `incident_transition_rejected` | backend | stream | `incident_id`, `from_status`, `attempted_status`, `reason`, `category`, `branch` |
 | `api_response_time` | backend | batch | `method`, `path`, `status_code`, `duration_ms`, `app`, `cache_hit` |
 | `frontend_error_uncaught` | frontend | stream | `error_type`, `error_name`, `error_message_sanitized`, `path`, `app` |
 
@@ -316,6 +325,12 @@ High-frequency frontend event: **`page_view`**. High-frequency backend event: **
 | `order_form_abandoned` | batch | UX friction analysis, aggregated. |
 | `stock_validation_failed` | stream | Repeated failures signal a systemic/broken form → act fast. |
 | `outbound_rejected_insufficient_stock` | stream | Inventory planning / client alert with low latency. |
+| `incident_form_opened` | batch | Funnel measurement for the incident manager; aggregated. |
+| `incident_created` | stream | Incident inventory feeds operational triage (Ana) and the exec view; low latency. |
+| `incident_validation_failed` | stream | Repeated failures signal a broken form → act fast. |
+| `incident_status_change_opened` | batch | Usage/funnel measurement; aggregated, no live action. |
+| `incident_status_changed` | stream | Resolution-time and backlog monitoring need low latency (SLA). |
+| `incident_transition_rejected` | stream | Permission/UX friction tripwire; react quickly. |
 | `api_response_time` | batch | High volume; latency percentiles computed in windows. |
 | `frontend_error_uncaught` | stream | Stability alerting; users must not be the first to know. |
 
@@ -332,6 +347,9 @@ batch when it only feeds analysis, funnels, or high-volume aggregation.**
 | `pages_visited_in_session` | Emit once per session, on `session_expired`, explicit logout, or a 30 min inactivity timeout. |
 | `session_started` | One event per new session id; ignore re-renders (idempotent by `session_id`). |
 | `frontend_error_uncaught` | Deduplicate identical errors by `(error_name, error_message_sanitized, path)` within 60 s to avoid error storms. |
+| `incident_validation_failed` / `incident_transition_rejected` | Deduplicate by `(reason, field/attempted_status, branch)` within 60 s: a single operator retrying must not compound into an alert-worthy storm. Emit one per distinct failure signature and count occurrences in `properties` if needed. |
+| `incident_created` | Idempotent by `incident_id`; ignore duplicate emissions on client retry. |
+| `incident_status_changed` | Emit only when `from_status != to_status` (the backend already no-ops equal states), so it cannot fire on a re-confirmed state. |
 
 ### 6.3 Risks and exclusions
 
@@ -342,6 +360,19 @@ batch when it only feeds analysis, funnels, or high-volume aggregation.**
 - Raw IP addresses and precise geolocation.
 - Carrier data and shipment-level tracking (different project).
 - Full JS stack traces (only sanitized message + hash).
+
+**Considered and discarded events (explored, then dropped):**
+
+| Considered event | Why it was discarded |
+|---|---|
+| `incident_description_text` (full description in `properties`) | Free text can contain consumer PII (names, addresses, phone); no analytical decision needs it. `incident_created` logs `description_length` instead. |
+| `incident_description_viewed` | No decision beyond `incident_status_change_opened`; would add noise. |
+| `stock_level_polled` (periodic stock snapshot per SKU) | High volume/cost and fully derivable from inbound/outbound orders; the dashboard computes stock on read. |
+| `inventory_page_refreshed` (every `refresh()` call) | Already covered by `page_view`; per-refresh emission is high-frequency noise. |
+| `session_heartbeat` / `idle_tick` | Pure volume with no decision; session boundaries come from `session_started`/`session_expired`. |
+| `ui_heatmap` / `mouse_move` / `keypress` | High cost and privacy-invasive; not tied to any decision in §4.7. |
+| `login_attempt` (pre-result, including email) | Would carry the email — privacy; `login_failed`/`login_succeeded` cover the decision. |
+| `carrier_assigned` / `recipient_contacted` | Belongs to the last-mile project, out of scope for the inventory system. |
 
 **Risks:**
 
@@ -369,7 +400,11 @@ Aligned with the business context and the existing `seed_inventory.py`:
 
 - [ ] `docs/telemetry/telemetry-plan.md` and `docs/telemetry/event-schemas.json` exist.
 - [ ] All 5 mandatory event types are present with their required `properties`.
+- [ ] Every event is classified as `obligatorio` or `oportunidad identificada` (§4.7).
+- [ ] Every `event_type` follows the `entity_action` naming convention.
+- [ ] The incident flow (`/incidents`) is instrumented: form opened, created, validation failed, status flow opened, status changed, transition rejected (§4.8).
 - [ ] Every event declares `source`, `processing`, `golden_rule` and an `allowlist`.
 - [ ] `event-schemas.json` is valid JSON and parses.
 - [ ] No event allowlist includes credentials, consumer PII, IPs or carrier data.
 - [ ] High-frequency events (`page_view`, `api_response_time`) declare a throttle/aggregation strategy.
+- [ ] Considered-and-discarded events are documented with a reason (§6.3).
