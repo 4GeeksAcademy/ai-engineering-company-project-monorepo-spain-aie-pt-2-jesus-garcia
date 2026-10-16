@@ -11,9 +11,13 @@ Determinista (Random(42)) e idempotente (trunca y repuebla cada tabla).
 Inventario requiere DATABASE_URL configurada; si no, se omite con aviso.
 
 Uso:
-  python seed_perf.py                 # volúmenes objetivo
-  python seed_perf.py --scale 5       # multiplica todos los volúmenes
-  python seed_perf.py --incidents 10000 --orders 50000   # override individual
+  python seed_perf.py --force         # volúmenes objetivo (requiere confirmación)
+  python seed_perf.py --force --scale 5                   # multiplica los volúmenes
+  python seed_perf.py --force --incidents 10000 --orders 50000   # override individual
+  python seed_perf.py --dry-run       # muestra el plan sin escribir
+
+Destructivo: exige --force/--reset para truncar. Aborta si DATABASE_URL parece
+remota (p. ej. Supabase) salvo --allow-remote-db o TRACKFLOW_ALLOW_REMOTE_SEED=1.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -24,8 +28,9 @@ from typing import Callable
 from sqlalchemy import insert
 from sqlmodel import SQLModel, Session, delete, select
 
-from database import engine, get_tinydb
+from database import DATABASE_URL, engine, get_tinydb
 from app.core.security import hash_password
+from seed_guard import add_safety_flags, enforce_destructive_guard
 from models import (
     INCIDENT_BRANCHES,
     INCIDENT_CATEGORIES,
@@ -362,6 +367,7 @@ def parse_args(argv: list[str]) -> Namespace:
     parser.add_argument("--users", type=int, default=None)
     parser.add_argument("--skus", type=int, default=None)
     parser.add_argument("--orders", type=int, default=None)
+    add_safety_flags(parser)
     return parser.parse_args(argv)
 
 
@@ -380,6 +386,17 @@ def main(argv: list[str] | None = None) -> int:
 
     print("Plan de carga:")
     print(f"  suppliers: {suppliers} | incidents: {incidents} | users: {users} | skus: {skus} | orders: {orders}")
+
+    enforce_destructive_guard(
+        force=args.force,
+        dry_run=args.dry_run,
+        allow_remote_db=args.allow_remote_db,
+        database_url=DATABASE_URL,
+        tinydb_tables=["users", "profiles", "suppliers", "incidents"],
+        sql_tables=["StockExit", "StockEntry", "SKU"] if engine is not None else [],
+        description="seed_perf",
+    )
+
     print("Truncando y repoblando tablas…")
 
     uuids = seed_users(users)

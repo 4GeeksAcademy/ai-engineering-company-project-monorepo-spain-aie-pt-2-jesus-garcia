@@ -17,7 +17,7 @@ Antes de tocar nada se verificó que con el dataset inicial (15 suppliers, 95 in
 | sku (Postgres/SQL) | 4 | 150 |
 | órdenes (stock_entry + stock_exit) | 9 | 20.000 (8.000 inbound / 12.000 outbound) |
 
-Seeder: `python seed_perf.py` (determinista, `Random(42)`, idempotente; flags `--scale` y por tabla).
+Seeder: `python seed_perf.py --force` (determinista, `Random(42)`, idempotente; flags `--scale` y por tabla). Es destructivo: exige `--force`/`--reset`, admite `--dry-run` para previsualizar y aborta si `DATABASE_URL` parece remota salvo `--allow-remote-db`.
 > Nota: inventario (PostgreSQL/SQLModel) se midió contra SQLite local (`DATABASE_URL=sqlite:///./perf_measure.db`) para no tocar Supabase. Los tiempos de agregados/joins SQL son representativos del mismo plan de ejecución relacional; en Postgres remoto los absolutos pueden variar por red, pero la ratio cold→warm se mantiene.
 
 ## Método de medición

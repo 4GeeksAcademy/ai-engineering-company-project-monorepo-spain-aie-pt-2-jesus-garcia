@@ -8,10 +8,12 @@ Salida esperada de /api/incidents/summary (post-transformación):
   por category: lost_parcel 14, carrier_issue 45, delivery_failure 19, returns_issue 17
 """
 
+from argparse import ArgumentParser
 from datetime import datetime, timedelta, timezone
 import sys
 
-from database import get_tinydb
+from database import DATABASE_URL, get_tinydb
+from seed_guard import add_safety_flags, enforce_destructive_guard
 
 # Reparto por categoría -> (open, resolved, discarded); suma 95 en total.
 SPLIT = {
@@ -68,6 +70,19 @@ def seed() -> int:
 
 
 def main():
+    parser = ArgumentParser(description="Seed destructivo de incidencias (trunca y repuebla).")
+    add_safety_flags(parser)
+    args = parser.parse_args()
+
+    enforce_destructive_guard(
+        force=args.force,
+        dry_run=args.dry_run,
+        allow_remote_db=args.allow_remote_db,
+        database_url=DATABASE_URL,
+        tinydb_tables=["incidents"],
+        description="seed incidencias",
+    )
+
     try:
         total = seed()
     except Exception as exc:  # noqa: BLE001

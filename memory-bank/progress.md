@@ -290,6 +290,7 @@ Optimización de rendimiento con caché de respuestas (backend) + render (fronte
 ### C1 — Seeder de carga realista (`services/api/seed_perf.py`)
 - Crea datos coherentes y variados para la auditoría (determinista `Random(42)`, idempotente). Volúmenes objetivo moderados: **400 suppliers / 5.000 incidents / 200 users + perfiles (TinyDB)** y **150 SKUs / 20.000 órdenes (SQL)**; el usuario #1 es admin con password `admin123`.
 - Flags `--scale N` y overrides por tabla (`--suppliers`, `--incidents`, `--users`, `--skus`, `--orders`).
+- **Guard destructivo** (`services/api/seed_guard.py`): todos los seeders que truncan/borran (`seed_perf.py`, `seed.py`, `seed_incidents.py`, `seed_inventory.py`) exigen `--force`/`--reset`; `--dry-run` muestra el plan sin escribir y `--allow-remote-db` (o `TRACKFLOW_ALLOW_REMOTE_SEED=1`) autoriza una `DATABASE_URL` remota. Sin flag, abortan con exit code 2 antes de tocar datos.
 - Inventario requiere `DATABASE_URL`; si falta, lo omite con aviso. Para no tocar Supabase se puede override local: `DATABASE_URL=sqlite:///./perf_measure.db`.
 
 ### C2 — Infraestructura de caché (`app/core/cache.py`)
