@@ -23,7 +23,19 @@ Seeder: `python seed_perf.py --force` (determinista, `Random(42)`, idempotente; 
 ## Método de medición
 
 - Middleware HTTP de timing (`app.main`): loguea `{method} {path} → {status} | {ms}`.
-- Medición programática (TestClient + `time.perf_counter`): **cold** = `cache.clear()` y una petición (≈ coste precaché, que es el coste normal de la operación) · **warm** = petición siguiente con caché caliente · mínimo de 3 cadencias.
+- Benchmark reproducible: **`services/api/bench_cache.py`** (`TestClient` + `time.perf_counter`). Por cada endpoint y cada cadencia: **cold** = `cache.clear()` y una petición (≈ coste precaché; incluye el scan de auth, que es el coste normal de la operación) · **warm** = petición inmediata siguiente con la caché caliente. Se ejecutan `--repeats` cadencias (por defecto **3**) y se reporta el **mínimo** de cada serie para reducir el ruido del scheduler. El script imprime además los volúmenes leídos, para contrastarlos con la tabla anterior.
+
+### Reproducir la tabla
+
+```bash
+cd services/api
+# 1. Datos de carga (destructivo — ver seed_perf.py)
+DATABASE_URL=sqlite:///./perf_measure.db python seed_perf.py --force
+# 2. Medición (3 cadencias por defecto; opciones: --repeats N, --json)
+DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py
+```
+
+Sin `DATABASE_URL`, los endpoints `/inventory/*` se omiten con aviso y solo se miden los de TinyDB (suppliers/incidents/auth). El inventario se mide contra SQLite local (`perf_measure.db`) para no tocar Supabase; los relativos cold→warm son representativos (ver nota de la tabla de volúmenes).
 
 ## Evaluación coste × frecuencia × estabilidad (antes de cachear)
 
@@ -56,7 +68,7 @@ Seeder: `python seed_perf.py --force` (determinista, `Random(42)`, idempotente; 
 
 ## Resultados medidos (volúmenes de la tabla anterior)
 
-Tiempos en ms (mínimo de 3 cadencias; cold ≈ coste sin caché, warm ≈ con caché caliente):
+Tiempos en ms (mínimo de 3 cadencias con `python bench_cache.py`; cold ≈ coste sin caché, warm ≈ con caché caliente):
 
 | Endpoint | Cold (≈ antes) | Warm (después) | Δ |
 |---|---:|---:|---:|
@@ -73,7 +85,7 @@ Tiempos en ms (mínimo de 3 cadencias; cold ≈ coste sin caché, warm ≈ con c
 
 ¹ `/auth/me` warm sigue leyendo el perfil fresco (diseño); el ahorro es el scan de la tabla `users` (caché de auth). Con 200 users el escaneo costaba ~10 ms por request.
 
-**Hit-rate** (2 requests a `/api/suppliers`): 2 hits / 2 misses, `size=2` (`auth:user:*` + `suppliers:list:*`), hit-rate 0,5 — el segundo request ya no toca TinyDB ni la lista.
+**Hit-rate** (2 requests consecutivos a `/api/suppliers`, leído con `cache.stats()`): 2 hits / 2 misses, `size=2` (`auth:user:*` + `suppliers:list:*`), hit-rate 0,5 — el segundo request ya no toca TinyDB ni la lista.
 
 ## Matriz de invalidación
 

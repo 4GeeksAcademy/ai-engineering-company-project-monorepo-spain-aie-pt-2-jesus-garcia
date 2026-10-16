@@ -315,6 +315,7 @@ Optimización de rendimiento con caché de respuestas (backend) + render (fronte
 - `next/dynamic({ssr:false})` para `ProductForm`, `OrderForm`, `IncidentForm`, `StatusFlowModal`, `SupplierForm` (carga solo al abrir el modal).
 - Lint 0 warnings · Vitest 32 passed · build OK.
 
-### C8 — Reporte (`CACHING_REPORT.md`)
+### C8 — Reporte (`CACHING_REPORT.md`) + benchmark reproducible
+- Benchmark reproducible: **`services/api/bench_cache.py`** (`TestClient` + `time.perf_counter`; cold = `cache.clear()`+petición, warm = petición siguiente, mínimo de `--repeats` cadencias, por defecto 3; imprime volúmenes leídos y admite `--json`). Comando: `DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py` (tras `seed_perf.py --force`).
 - Medidas reales con los volúmenes anteriores (SQLite local para inventario): `GET /inventory/products` 261,5→1,3 ms (−99,5 %), `GET /inventory/orders` 306,1→26,5 ms (−91 %), suppliers −95 %, incidents/summary −96 %, auth scan −42 %. Matriz de invalidación, TTLs, hit-rate y limitaciones (caché en memoria = 1 worker; paginar/serializar-JSON para listas de 20k).
 - Suites: **120 passed** en `services/api` (inc. 30 tests nuevos de caché) · typecheck raíz OK.
