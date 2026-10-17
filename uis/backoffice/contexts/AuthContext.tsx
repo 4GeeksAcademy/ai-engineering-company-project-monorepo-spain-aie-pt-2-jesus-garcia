@@ -16,6 +16,12 @@ import {
   type User,
 } from "@/lib/auth-api";
 import { ApiRequestError, friendlyError } from "@/lib/api";
+import {
+  clearTelemetrySession,
+  setTelemetryUserId,
+  startTelemetrySession,
+  track,
+} from "@/src/services/telemetry";
 
 interface AuthState {
   user: User | null;
@@ -71,11 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: me.role,
           created_at: "",
         });
+        setTelemetryUserId(me.profile.user_id);
+        track("session_started", {
+          user_role: me.role,
+          entry_path: window.location.pathname,
+        });
       })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiRequestError && err.status === 401) {
           clearToken();
+          track("session_expired", { reason: "token_expired" });
         } else {
           setSessionError(friendlyError(err));
         }
@@ -95,6 +107,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeToken(res.access_token);
       setToken(res.access_token);
       setUser(res.user);
+      startTelemetrySession();
+      setTelemetryUserId(res.user.id);
+      track("login_succeeded", { user_role: res.user.role, method: "password" });
     },
     [],
   );
@@ -106,6 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storeToken(res.access_token);
       setToken(res.access_token);
       setUser(res.user);
+      startTelemetrySession();
+      setTelemetryUserId(res.user.id);
+      track("login_succeeded", { user_role: res.user.role, method: "password" });
     },
     [],
   );
@@ -115,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     setSessionError(null);
+    clearTelemetrySession();
     router.push("/login");
   }, [router]);
 

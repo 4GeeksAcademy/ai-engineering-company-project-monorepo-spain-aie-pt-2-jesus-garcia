@@ -340,3 +340,40 @@ Ampliación del entregable de telemetría (inglés) sobre la base anterior:
 - `event-schemas.json` → **23 eventos** (17 + 6 de incidencias); nuevas `definitions` `incident_category|status|branch|origin` (enums tomados de `services/api/models.py`); `envelope.event_type` enum y `version` 1.1.0.
 - Throttle/dedupe añadido para `incident_validation_failed` / `incident_transition_rejected` (ventana 60 s por firma) además de `page_view` / `api_response_time`.
 - §6.3 gana una subsección **"Considered and discarded events"** (p. ej. texto completo de la incidencia por PII, snapshot periódico de stock por coste/derivable, heatmaps) junto a las exclusiones de datos ya existentes.
+
+## Telemetría — Captura en runtime (Fase 1 · 2 · 3)
+
+Implementación de la capa de captura sobre el plan de telemetría. El **envelope queda congelado** (10 campos); `environment` y `consent` viajan como **metadatos de transporte** (headers + query params), no en el body.
+
+### Fase 1 — Colector backend (`services/api`)
+- `models.py` — enums `TelemetrySource`, `TelemetryApp`, `TelemetryWarehouse` (`los_angeles`/`zaragoza`), `TelemetryEventType` (23) + modelo Pydantic `TelemetryEvent` (valida `event_id` UUIDv4, `timestamp` ISO-8601, `session_id` no vacío, `schema_version` semver y enums cerrados).
+- `schemas.py` — `TelemetryBatch {events}`, `TelemetryIngestResponse {received}`.
+- `app/routes/telemetry.py` — `POST /telemetry/events` (sin auth; acepta eventos pre-login): registra en log el nº recibido + contador por `event_type`, y devuelve `200 {"received": N}`. Registrado en `main.py`.
+- `TELEMETRY_ENDPOINT` leída por el backend (logueada en lifespan, sin uso en runtime todavía).
+- Tests: `tests/test_telemetry.py` (13).
+
+### Fase 2 — Servicio de telemetría frontend (`uis/backoffice`)
+- `src/services/telemetry.ts` — **única función pública de tracking `track(eventType, properties)`**; inyecta el envelope automáticamente (`event_id`, `timestamp`, `session_id`, `user_id`, `schema_version`, `request_id`, `source:"frontend"`, `app:"backoffice"`).
+- Cola local; **batch a 20 eventos o debounce 10 s**; **`navigator.sendBeacon` en `visibilitychange` (oculto)**; **reintentos 3× con backoff exponencial** y descarte del lote al agotar.
+- `AuthContext` conecta la sesión (`startTelemetrySession` en login/registro, `setTelemetryUserId`, `clearTelemetrySession` en logout). `contexts/TelemetryProvider.tsx` registra el listener de ciclo de vida y monta el banner.
+- `next.config.ts` — rewrite `/api/telemetry/:path*` → `${backend}/telemetry/:path*`.
+- Env (`.env.local` + `.env.example` raíz + `docker-compose.yml`): `NEXT_PUBLIC_TELEMETRY_ENDPOINT=/api/telemetry/events`, `NEXT_PUBLIC_TELEMETRY_SAMPLE_RATE=1.0`, `NEXT_PUBLIC_TELEMETRY_ENABLED=false`.
+
+### Fase 3 — Cinco barreras de seguridad (frontend + backend, defense in depth)
+Pipeline en `track()`: `consent → sanitize → allowlist → sampling → enqueue → environment-gate → transport`.
+- **Consentimiento**: `src/telemetry/consent.ts` + `components/telemetry/ConsentBanner.tsx`; solo bloquea eventos **analíticos** (`requiresConsent`), los de seguridad/operativos se emiten igual.
+- **Limpieza**: `src/telemetry/sanitize.ts` y `app/telemetry/sanitize.py` (redactan email/teléfono/URL/JWT, eliminan claves sensibles, truncan a 300).
+- **Lista blanca**: `src/telemetry/allowlist.ts` y `app/telemetry/barriers.py` (`filter_properties`).
+- **Muestreo**: `src/telemetry/sampling.ts` determinista por `(session_id, event_type)`, solo eventos de alta frecuencia; 100% por defecto con override `NEXT_PUBLIC_TELEMETRY_SAMPLE_RATE`.
+- **Separación de entornos**: `src/telemetry/environment.ts` (solo envía en producción salvo `NEXT_PUBLIC_TELEMETRY_ENABLED=true`); el colector descarta `development`/`test` salvo `TELEMETRY_ALLOW_NON_PRODUCTION=1`.
+- **Metadatos de transporte**: `fetch` envía `X-Telemetry-Environment` / `X-Telemetry-Consent` / `X-Telemetry-App-Version`; `sendBeacon` (sin headers) los añade como query params.
+- **Fuente única**: `shared/telemetry/schema.ts` + `shared/telemetry/catalog.ts`; espejo `services/api/app/telemetry/catalog.py` con test de paridad contra `docs/telemetry/event-schemas.json` (`tests/test_telemetry_catalog.py`).
+- Tests nuevos: `uis/backoffice/src/services/__tests__/telemetry.test.ts` (18), `services/api/tests/test_telemetry_barriers.py` (11), `tests/test_telemetry_catalog.py` (6).
+
+### Instrumentación de eventos (capa de captura)
+
+- **Frontend (`uis/backoffice`)**: `hooks/usePageView.ts` (`page_view`); `AuthContext` (`session_started`, `session_expired`, `login_succeeded`); `LoginForm` (`login_failed`); `OrderForm` (`order_form_opened`, `order_form_abandoned`); `incidents/page.tsx` (`incident_form_opened`, `incident_status_change_opened`); `TelemetryProvider` (`frontend_error_uncaught` vía `window.onerror` / `unhandledrejection`).
+- **Backend (`services/api`)**: `app/telemetry/emitter.py` (envelope + log); `inventory_service` emite **`inbound_order_created`**, **`outbound_order_created`** (obligatorios) y `outbound_rejected_insufficient_stock`. Logging de runtime habilitado con `logging.basicConfig(level=LOG_LEVEL)` en `app/main.py`.
+- **Gaps documentados** (prerrequisitos inexistentes): `stock_threshold_triggered` (falta `min_stock` por SKU), `direct_stock_edit_rejected` (no hay endpoint de edición directa), `inventory_discrepancy_detected` (requiere datos de producto en la auditoría); eventos backend de incidencias y `api_response_time` quedan para la instrumentación server-side.
+- Tests: `services/api/tests/test_inventory_telemetry.py` (3) verifica la emisión de los eventos de inventario.
+- Verificado: `pytest` **160 passed**; Vitest **51 passed**; root typecheck, lint y build (`uis/backoffice`) OK.

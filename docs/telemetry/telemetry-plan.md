@@ -1,6 +1,8 @@
 # TrackFlow — Telemetry Plan
 
-> **Status:** design deliverable (no runtime instrumentation in this iteration).
+> **Status:** design deliverable **plus runtime capture layer** (Fase 1 collector, Fase 2 frontend
+> service, Fase 3 safety barriers — see §9). The **envelope is frozen** (10 fields); execution
+> context such as `environment` and `consent` travels as **transport metadata**, not in the body.
 > **Scope:** inventory management system of TrackFlow (warehouses Los Angeles & Zaragoza) plus the
 > backoffice sections around it (authentication, performance, frontend errors, navigation).
 > **Companion file:** [`event-schemas.json`](./event-schemas.json) — machine-readable Event Envelope
@@ -408,3 +410,75 @@ Aligned with the business context and the existing `seed_inventory.py`:
 - [ ] No event allowlist includes credentials, consumer PII, IPs or carrier data.
 - [ ] High-frequency events (`page_view`, `api_response_time`) declare a throttle/aggregation strategy.
 - [ ] Considered-and-discarded events are documented with a reason (§6.3).
+
+## 9. Runtime capture layer (Fase 1–3)
+
+The plan above is now backed by a working capture layer. The envelope is unchanged.
+
+### 9.1 Fase 1 — backend collector (`services/api`)
+
+- `POST /telemetry/events` accepts `{"events": [...]}`, logs the number of received events and a
+  per-`event_type` counter, and responds `200 {"received": N}` (N = events received in the batch).
+- `TelemetryEvent` (Pydantic, `services/api/models.py`) mirrors the envelope and validates:
+  `event_id` (UUIDv4), `timestamp` (ISO-8601), `session_id` (non-empty), `schema_version` (semver),
+  and closed enums `source` / `app` / `event_type` (the 23 catalog events). Cross-referenced with the
+  TrackFlow domain (`TelemetryWarehouse`: `los_angeles` / `zaragoza`).
+- The collector reads `TELEMETRY_ENDPOINT` at startup (captured/logged, unused in runtime).
+- The endpoint is unauthenticated by design (it must accept pre-auth events such as `login_failed`).
+
+### 9.2 Fase 2 — frontend service (`uis/backoffice`)
+
+- `src/services/telemetry.ts` exposes a **single tracking entry point**:
+  `track(eventType, properties)`. Callers never pass envelope fields.
+- Envelope fields are auto-injected: `event_id` (UUID), `timestamp` (ISO-8601), `session_id`
+  (generated on login, kept in `sessionStorage`), `user_id` (from the authenticated session),
+  `schema_version` (shared constant), `request_id` (flow correlation via `beginTelemetryRequest()`),
+  `source: "frontend"`, `app: "backoffice"`.
+- Transport: local queue; **batch at 20 events or 10 s debounce**; **`sendBeacon` on
+  `visibilitychange`** when the tab is hidden; **3 retries with exponential backoff** then the batch
+  is discarded.
+- `AuthContext` wires the session (`startTelemetrySession`, `setTelemetryUserId`,
+  `clearTelemetrySession`); `TelemetryProvider` installs the lifecycle listener and mounts the consent
+  banner.
+
+### 9.3 Fase 3 — five safety barriers
+
+Barriers run on the frontend (pipeline inside `track()`) **and** on the backend collector (defense in
+depth). Pipeline order: `consent → sanitize → allowlist → sampling → enqueue → environment-gate →
+transport`.
+
+| Barrier | Frontend | Backend |
+|---|---|---|
+| **Consent** | `src/telemetry/consent.ts` + `ConsentBanner.tsx`; analytics events are dropped when consent ≠ `granted` | `requires_consent` events dropped when the consent signal ≠ `granted` |
+| **Cleaning** | `src/telemetry/sanitize.ts` (redact email/phone/URL/JWT, drop `password`/`token`/…, truncate 300) | `app/telemetry/sanitize.py` |
+| **Allowlist** | `src/telemetry/allowlist.ts` filters to the catalog allowlist | `app/telemetry/barriers.py` (`filter_properties`) |
+| **Sampling** | `src/telemetry/sampling.ts` deterministic per `(session_id, event_type)`, only high-frequency events; default 100%, env override | windowed aggregation for `api_response_time` (per §6.2) |
+| **Environment separation** | `src/telemetry/environment.ts`; transport only sends in production unless enabled | drops `development`/`test` events unless allowed |
+
+- **Consent scope:** only *analytics* events are gated; security/operational events (`login_failed`,
+  `session_expired`, `frontend_error_uncaught`, `api_response_time`, all inventory/incident backend
+  events) are exempt.
+- **Transport metadata (envelope frozen):** `fetch` sends `X-Telemetry-Environment`,
+  `X-Telemetry-Consent`, `X-Telemetry-App-Version` headers. `sendBeacon` cannot set headers, so the
+  beacon URL appends the same values as query params (`?environment=…&consent=…`).
+
+### 9.4 Single source of truth + env vars
+
+- `shared/telemetry/schema.ts` (`SCHEMA_VERSION`, batch/retry constants) and
+  `shared/telemetry/catalog.ts` (per-event allowlist/consent/sampling) are the frontend source.
+- `services/api/app/telemetry/catalog.py` mirrors the catalog; `tests/test_telemetry_catalog.py`
+  asserts byte-for-byte parity with `event-schemas.json` (no drift).
+- Frontend env: `NEXT_PUBLIC_TELEMETRY_ENDPOINT`, `NEXT_PUBLIC_TELEMETRY_SAMPLE_RATE`,
+  `NEXT_PUBLIC_TELEMETRY_ENABLED`. Backend env: `TELEMETRY_ENDPOINT`,
+  `TELEMETRY_ALLOW_NON_PRODUCTION`.
+
+## 10. Validation checklist — runtime capture layer
+
+- [ ] `POST /telemetry/events` accepts a batch and returns `{"received": N}`.
+- [ ] `TelemetryEvent` validates the envelope and rejects unknown `event_type` / malformed fields.
+- [ ] `track()` is the only public tracking entry point; envelope fields are auto-injected.
+- [ ] Queue flushes at 20 events and on the 10 s debounce; `sendBeacon` fires on tab hide.
+- [ ] Failed sends retry 3× with exponential backoff, then are discarded.
+- [ ] The five barriers run on both frontend and backend.
+- [ ] Catalog mirrors `event-schemas.json` (parity test).
+- [ ] Frontend Vitest suite and backend `pytest` suite are green.

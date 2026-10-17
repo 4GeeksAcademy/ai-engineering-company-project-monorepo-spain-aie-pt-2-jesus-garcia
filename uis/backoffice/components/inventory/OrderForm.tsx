@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InventoryOrderCreate, SKU } from "@/lib/types";
 import { WAREHOUSE_LABELS } from "@/lib/types";
 import { ApiRequestError, friendlyError } from "@/lib/api";
+import { track } from "@/src/services/telemetry";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface OrderFormProps {
   orderType: "inbound" | "outbound";
-  sku: Pick<SKU, "id" | "name">;
+  sku: Pick<SKU, "id" | "name"> & Partial<Pick<SKU, "sku_code" | "warehouse">>;
   onSubmit: (data: InventoryOrderCreate) => Promise<void>;
   onClose: () => void;
 }
@@ -28,6 +29,17 @@ export function OrderForm({ orderType, sku, onSubmit, onClose }: OrderFormProps)
   );
 
   const numericQuantity = parseInt(quantity, 10);
+  const productId = sku.sku_code ?? String(sku.id);
+  const openedAt = useRef(0);
+
+  useEffect(() => {
+    openedAt.current = Date.now();
+    track("order_form_opened", {
+      warehouse: sku.warehouse ?? "los_angeles",
+      order_type: orderType,
+      product_id: productId,
+    });
+  }, [orderType, productId, sku.warehouse]);
 
   function buildPayload(): InventoryOrderCreate {
     return {
@@ -79,6 +91,17 @@ export function OrderForm({ orderType, sku, onSubmit, onClose }: OrderFormProps)
   async function handleConfirm() {
     if (!pendingSubmit) return;
     await doSubmit(pendingSubmit);
+  }
+
+  function handleCancel() {
+    track("order_form_abandoned", {
+      warehouse,
+      order_type: orderType,
+      product_id: productId,
+      abandon_reason: "closed",
+      time_in_form_ms: Date.now() - openedAt.current,
+    });
+    onClose();
   }
 
   const isOutbound = orderType === "outbound";
@@ -148,7 +171,7 @@ export function OrderForm({ orderType, sku, onSubmit, onClose }: OrderFormProps)
         <div className="flex justify-end gap-3 border-t border-white/10 px-6 py-4">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCancel}
             className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
           >
             Cancelar
