@@ -7,6 +7,9 @@ services:
     environment:
       BACKEND_URL: http://services:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: /api/telemetry/events
+      NEXT_PUBLIC_TELEMETRY_SAMPLE_RATE: "1.0"
+      NEXT_PUBLIC_TELEMETRY_ENABLED: "false"
     env_file: .env
     volumes:
       - ./uis/website:/uis/website

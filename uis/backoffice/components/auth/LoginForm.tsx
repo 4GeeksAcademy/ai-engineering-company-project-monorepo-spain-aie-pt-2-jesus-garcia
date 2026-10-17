@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader } from "@/components/Loader";
 import { ApiRequestError } from "@/lib/api";
+import { track } from "@/src/services/telemetry";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -30,8 +31,10 @@ export function LoginForm() {
       setShowLoader(false);
       setLoading(false);
       if (err instanceof ApiRequestError && err.status === 401) {
+        track("login_failed", { failure_reason: "invalid_credentials", method: "password" });
         setError("Credenciales inválidas. Revisa tu email y contraseña.");
       } else {
+        track("login_failed", { failure_reason: "server_error", method: "password" });
         setError("Error al conectar con el servidor. Inténtalo de nuevo.");
       }
     }

@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
+import os
+import time
 
 load_dotenv()
 
@@ -18,16 +20,23 @@ from .routes.suppliers import router as suppliers_router
 from .routes.auth import router as auth_router
 from .routes.users import router as users_router
 from .routes.profiles import router as profiles_router
+from .routes.telemetry import router as telemetry_router
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s:%(name)s:%(message)s")
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:3000,http://localhost:3001"
+
+TELEMETRY_ENDPOINT = os.getenv("TELEMETRY_ENDPOINT")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if engine is not None:
         SQLModel.metadata.create_all(engine)
+    logger.info("Telemetry endpoint configured: %s", TELEMETRY_ENDPOINT or "<unset>")
     yield
 
 
@@ -47,6 +56,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    logger = logging.getLogger("api.timing")
+
+    @app.middleware("http")
+    async def timing_middleware(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration = (time.perf_counter() - start) * 1000  # ms
+
+        logger.info(
+            f"{request.method} {request.url.path} → {response.status_code} | {duration:.1f}ms"
+        )
+        return response
+
     app.include_router(incidents_router)
     app.include_router(incidents_manager_router)
     app.include_router(inventory_router)
@@ -54,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(profiles_router)
+    app.include_router(telemetry_router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

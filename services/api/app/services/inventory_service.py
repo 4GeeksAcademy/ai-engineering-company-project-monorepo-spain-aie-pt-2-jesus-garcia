@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from sqlmodel import Session, func, select
 
+from app.telemetry.emitter import emit_event
 from models import SKU, StockEntry, StockExit
 from schemas import StockEntryCreate, StockExitCreate
 
@@ -38,7 +39,7 @@ def _validate_order_input(session: Session, sku_id: int, quantity: int, warehous
 
 
 def create_inbound(session: Session, data: StockEntryCreate, user_uuid: str) -> StockEntry:
-    _validate_order_input(session, data.sku_id, data.quantity, data.warehouse)
+    sku = _validate_order_input(session, data.sku_id, data.quantity, data.warehouse)
     entry = StockEntry(
         sku_id=data.sku_id,
         quantity=data.quantity,
@@ -48,6 +49,16 @@ def create_inbound(session: Session, data: StockEntryCreate, user_uuid: str) -> 
     session.add(entry)
     session.commit()
     session.refresh(entry)
+    emit_event(
+        "inbound_order_created",
+        {
+            "warehouse": data.warehouse,
+            "product_id": sku.sku_code,
+            "quantity": data.quantity,
+            "order_id": entry.id,
+        },
+        user_id=user_uuid,
+    )
     return entry
 
 
@@ -55,6 +66,17 @@ def create_outbound(session: Session, data: StockExitCreate, user_uuid: str) -> 
     sku = _validate_order_input(session, data.sku_id, data.quantity, data.warehouse)
     available = compute_stock(session, data.sku_id, data.warehouse)
     if data.quantity > available:
+        emit_event(
+            "outbound_rejected_insufficient_stock",
+            {
+                "warehouse": data.warehouse,
+                "product_id": sku.sku_code,
+                "requested_quantity": data.quantity,
+                "available_quantity": available,
+                "deficit": data.quantity - available,
+            },
+            user_id=user_uuid,
+        )
         raise HTTPException(
             status_code=400,
             detail=(
@@ -71,4 +93,14 @@ def create_outbound(session: Session, data: StockExitCreate, user_uuid: str) -> 
     session.add(exit_record)
     session.commit()
     session.refresh(exit_record)
+    emit_event(
+        "outbound_order_created",
+        {
+            "warehouse": data.warehouse,
+            "product_id": sku.sku_code,
+            "quantity": data.quantity,
+            "order_id": exit_record.id,
+        },
+        user_id=user_uuid,
+    )
     return exit_record

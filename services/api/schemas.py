@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from models import TelemetryEvent
+
 
 class SKUCreate(BaseModel):
     name: str
@@ -57,3 +59,11 @@ class InventoryOrderItem(BaseModel):
     quantity: int
     user_email: str = ""
     created_at: datetime
+
+
+class TelemetryBatch(BaseModel):
+    events: list[TelemetryEvent] = Field(default_factory=list)
+
+
+class TelemetryIngestResponse(BaseModel):
+    received: int

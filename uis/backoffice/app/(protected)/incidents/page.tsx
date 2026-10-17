@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   fetchIncidents,
   fetchIncidentSummary,
@@ -17,9 +18,18 @@ import {
   INCIDENT_STATUS_ORDER,
   nextStatuses,
 } from "@/lib/types";
-import { IncidentForm } from "@/components/incidents/IncidentForm";
-import { StatusFlowModal } from "@/components/incidents/StatusFlowModal";
 import { useAuth } from "@/contexts/AuthContext";
+import { track } from "@/src/services/telemetry";
+
+const IncidentForm = dynamic(
+  () => import("@/components/incidents/IncidentForm").then((m) => m.IncidentForm),
+  { ssr: false },
+);
+const StatusFlowModal = dynamic(
+  () =>
+    import("@/components/incidents/StatusFlowModal").then((m) => m.StatusFlowModal),
+  { ssr: false },
+);
 
 const STATUS_BADGE: Record<string, string> = {
   open: "bg-amber-500/20 text-amber-300",
@@ -134,7 +144,10 @@ export default function IncidentsPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            track("incident_form_opened", { entry_source: "button" });
+            setShowForm(true);
+          }}
           className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-600"
         >
           + Nueva incidencia
@@ -252,7 +265,16 @@ export default function IncidentsPage() {
                     <div className="flex items-center gap-2">
                       {nextStatuses(incident.status).length > 0 ? (
                         <button
-                          onClick={() => setFlowTarget(incident)}
+                          onClick={() => {
+                            track("incident_status_change_opened", {
+                              incident_id: incident.id,
+                              from_status: incident.status,
+                              allowed_targets: nextStatuses(incident.status),
+                              category: incident.category,
+                              branch: incident.branch,
+                            });
+                            setFlowTarget(incident);
+                          }}
                           className="rounded-lg bg-cyan-600/20 px-3 py-1 text-xs font-medium text-cyan-300 transition hover:bg-cyan-600/40"
                         >
                           Cambiar estado
