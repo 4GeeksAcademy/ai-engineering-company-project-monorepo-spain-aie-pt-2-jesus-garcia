@@ -408,3 +408,38 @@ El stub del colector se sustituye por el endpoint real que valida, persiste y re
 - `test_telemetry.py` y `test_telemetry_barriers.py` actualizados al nuevo contrato (los 422 por evento pasan a rechazo parcial).
 - Verificado contra Supabase real en transacción con rollback: `rowcount = 1` para dos filas con el mismo `event_id`, `tags` JSONB correcto y `received_at` rellenado por `now()`.
 - Suites: **178 passed** en `services/api`. Frontend intacto (sin cambios en `uis/` ni `shared/`).
+
+## Telemetría — Reporte técnico operativo (Phase 4) + dashboard
+
+`telemetry_events` se transforma en métricas **técnicas/operativas** con Pandas y se expone en `GET /telemetry/report`. No hay KPIs de negocio (ventas, conversión, ingresos): volumen, errores, latencia y autenticación.
+
+### Backend (`services/api`)
+
+- `app/telemetry/analysis.py` (nuevo) — pipeline por métrica: **load** (SQL con push-down de `event_type IN (...)` y `timestamp >= start` / `< end`) → **refine** (tags + columnas derivadas) → `pd.to_datetime(..., utc=True)` → `date` (`YYYY-MM-DD`) → `groupby` → agregación → `list[dict]`.
+  - `fetch_events()` devuelve solo `event_type`, `timestamp`, `tags`; nunca escanea la tabla completa.
+  - 5 funciones puras `(session, start_date, end_date)`:
+    - `events_per_day` — ¿qué eventos ocurren y con qué volumen? (`groupby date + event_type`, count).
+    - `error_rate_by_day` — ¿los fallos crecen respecto al tráfico? (`is_failure` sobre `FAILURE_EVENT_TYPES`, `error_count/event_count`).
+    - `errors_by_type` — ¿dónde se concentran los fallos? (`date + event_type`, count).
+    - `latency_per_day` — ¿se degrada la latencia? (`api_response_time.tags.duration_ms` → media, p50, p95, muestras).
+    - `auth_failure_rate` — ¿aumentan los logins fallidos? (`login_failed/(login_failed+login_succeeded)`, `[0,1]`).
+  - Sin bucles por fila para agregar; periodo vacío → `[]`.
+  - `FAILURE_EVENT_TYPES`: `direct_stock_edit_rejected`, `stock_validation_failed`, `outbound_rejected_insufficient_stock`, `login_failed`, `incident_validation_failed`, `incident_transition_rejected`, `frontend_error_uncaught`.
+- `schemas.py` — `TelemetryPeriod` (alias `from`/`to`) y `TelemetryReportResponse` (`period`, `metrics`).
+- `app/routes/telemetry.py` — `GET /telemetry/report` público, params opcionales `start_date`/`end_date` (ISO 8601 UTC). Defaults: últimos 7 días (`now` truncado a minuto para que el default también cachee). `start >= end` → 400. Caché en memoria `telemetry:report:<start>:<end>` con TTL **60 s** reutilizando `app/core/cache.py`; en hit no se ejecuta Pandas.
+- `tests/test_telemetry_report.py` (14 casos): agrupaciones por fecha, error rate, errores por tipo, latencia/p95, auth failure rate, conversión UTC antes de agrupar, periodo vacío, push-down SQL (`EVENT_TYPE IN` + `TIMESTAMP >=`), `end` exclusivo, defaults de 7 días, 400 y cache hit (spy sobre `build_metrics`).
+
+### Frontend (`uis/backoffice`)
+
+- `lib/types.ts` — `TelemetryReport`, filas de las 5 métricas y `computeTelemetrySummary()` (totales y tasas ponderadas por sus denominadores).
+- `lib/api.ts` — `fetchTelemetryReport({ start_date, end_date })` contra `/api/telemetry/report` (rewrite existente; endpoint público).
+- `app/(protected)/telemetry/page.tsx` — rango de fechas (por defecto últimos 7 días), `period.from`/`period.to`, tarjetas resumen y tablas con barras CSS para eventos por día, tasa de error, errores por tipo, latencia y fallos de login. Estado vacío cuando no hay eventos.
+- `components/Sidebar.tsx` — entrada “Telemetría” → `/telemetry`.
+- Tests: `lib/__tests__/api.test.ts`, `lib/__tests__/types.test.ts` y `app/(protected)/telemetry/page.test.tsx` (periodo, resumen, 5 secciones, cambio de rango, vacío y error con reintento).
+
+### Verificación
+
+- `pytest` en `services/api`: **192 passed** (178 + 14 nuevos).
+- `uis/backoffice`: **59 tests Vitest**, lint y build OK; ruta `/telemetry` en el build.
+- Tipo-check raíz (`npm run typecheck`) OK.
+- Contra Supabase real (`2026-10-25T00:00:00Z` → `2026-10-26T00:00:00Z`, 27 eventos): la respuesta incluye las 5 métricas; cold ≈ 443 ms, warm ≈ 3 ms (caché 60 s).
