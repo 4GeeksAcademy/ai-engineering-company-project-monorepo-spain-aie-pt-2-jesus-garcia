@@ -1,8 +1,7 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
-
-from models import TelemetryEvent
 
 
 class SKUCreate(BaseModel):
@@ -62,8 +61,16 @@ class InventoryOrderItem(BaseModel):
 
 
 class TelemetryBatch(BaseModel):
-    events: list[TelemetryEvent] = Field(default_factory=list)
+    """Envelope laxo: los eventos se validan individualmente en el handler.
+
+    El body completo solo falla si `events` no es una lista; así un evento
+    inválido no tumba el resto del lote.
+    """
+
+    events: list[Any] = Field(default_factory=list)
 
 
 class TelemetryIngestResponse(BaseModel):
     received: int
+    stored: int
+    rejected: int
