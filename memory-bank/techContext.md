@@ -34,7 +34,8 @@ uvicorn app.main:app --port 8000
 ```
 
 - Seed opcional (crea admin@trackflow.com / admin123): `python seed_users.py`
-- Seed de inventario (SQL, requiere `DATABASE_URL`): `python seed_inventory.py`
+- Seed de inventario (SQL, requiere `DATABASE_URL`): `python seed_inventory.py --force` (destructivo; `--dry-run` para previsualizar)
+- Benchmark de caché (cold/warm): `DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py` (tras `seed_perf.py --force`; `--repeats N`, `--json`)
 - Usar SIEMPRE `services/api/venv`. El `.venv` raíz no tiene las deps de la API.
 
 ### Docker Compose (método único de ejecución de la plataforma)

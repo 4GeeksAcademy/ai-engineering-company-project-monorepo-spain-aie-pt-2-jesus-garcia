@@ -1,8 +1,10 @@
+from argparse import ArgumentParser
 from datetime import datetime, timezone
 import sys
 
-from database import get_tinydb
+from database import DATABASE_URL, get_tinydb
 from models import SupplierCreate, CURRENCY_BY_COUNTRY
+from seed_guard import add_safety_flags, enforce_destructive_guard
 
 SUPPLIERS_SEED = [
     {
@@ -176,6 +178,19 @@ def seed():
 
 
 def main():
+    parser = ArgumentParser(description="Seed destructivo de proveedores (trunca y repuebla).")
+    add_safety_flags(parser)
+    args = parser.parse_args()
+
+    enforce_destructive_guard(
+        force=args.force,
+        dry_run=args.dry_run,
+        allow_remote_db=args.allow_remote_db,
+        database_url=DATABASE_URL,
+        tinydb_tables=["suppliers"],
+        description="seed proveedores",
+    )
+
     try:
         seed()
     except Exception as exc:  # noqa: BLE001

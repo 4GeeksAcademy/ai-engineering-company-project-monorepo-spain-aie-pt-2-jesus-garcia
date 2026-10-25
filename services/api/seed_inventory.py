@@ -1,7 +1,9 @@
 """Seed determinista e idempotente de inventario (SKUs + entradas/salidas).
 
 Ejecutarlo varias veces produce siempre el mismo estado: las tablas de
-inventario se truncan y se repueblan con valores fijos.
+inventario se borran y se repueblan con valores fijos. Es destructivo, por lo
+que exige `--force`/`--reset` (y aborta si DATABASE_URL parece remota salvo
+`--allow-remote-db`).
 
 Stock neto esperado por SKU (suma de ambos almacenes):
   CLT-SNK-W-42 -> 47   (los_angeles 47, zaragoza 0)
@@ -10,14 +12,16 @@ Stock neto esperado por SKU (suma de ambos almacenes):
   TRL-SNK-BL-43 -> 17  (los_angeles 0,  zaragoza 17)
 """
 
+from argparse import ArgumentParser
 from datetime import datetime, timedelta, timezone
 import sys
 
 from sqlmodel import Session, SQLModel, delete, select
 
-from database import engine
+from database import DATABASE_URL, engine
 from app.services.inventory_service import compute_stock_by_warehouse
 from models import SKU, StockEntry, StockExit
+from seed_guard import add_safety_flags, enforce_destructive_guard
 
 USER_UUID = "11111111-1111-1111-1111-111111111111"
 
@@ -125,6 +129,19 @@ def seed() -> list[dict]:
 
 
 def main():
+    parser = ArgumentParser(description="Seed destructivo de inventario (borra y repuebla).")
+    add_safety_flags(parser)
+    args = parser.parse_args()
+
+    enforce_destructive_guard(
+        force=args.force,
+        dry_run=args.dry_run,
+        allow_remote_db=args.allow_remote_db,
+        database_url=DATABASE_URL,
+        sql_tables=["StockExit", "StockEntry", "SKU"],
+        description="seed inventario",
+    )
+
     try:
         summary = seed()
     except Exception as exc:  # noqa: BLE001
