@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { fetchTelemetryReport, friendlyError } from "@/lib/api";
 import { computeTelemetrySummary } from "@/lib/types";
 import type { TelemetryReport } from "@/lib/types";
 import { useAsyncData } from "@/hooks/useAsyncData";
+import { usePagination } from "@/hooks/usePagination";
 import { MetricCard } from "@/components/ui/MetricCard";
+import { Pagination } from "@/components/ui/Pagination";
 
 const inputClass =
   "rounded-lg border border-white/10 bg-slate-800 px-4 py-2 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none";
@@ -45,19 +47,42 @@ function isEmptyReport(report: TelemetryReport): boolean {
   return Object.values(report.metrics).every((rows) => rows.length === 0);
 }
 
-function Section({
+function PagedSection<T>({
   title,
+  label,
+  rows,
+  resetKey,
   children,
 }: {
   title: string;
-  children: ReactNode;
+  label: string;
+  rows: readonly T[];
+  resetKey?: string;
+  children: (visibleRows: readonly T[]) => ReactNode;
 }) {
+  const pagination = usePagination(rows, { resetKey });
+  const tableRef = useRef<HTMLDivElement>(null);
+
   return (
     <section aria-label={title} className="mt-8">
       <h2 className="mb-3 text-lg font-semibold text-white">{title}</h2>
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
-        <table className="w-full text-left text-sm">{children}</table>
+      <div
+        ref={tableRef}
+        className="scroll-mt-6 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/60"
+      >
+        <table className="w-full text-left text-sm">{children(pagination.pageItems)}</table>
       </div>
+      {rows.length > 0 && (
+        <Pagination
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPageChange={pagination.setPage}
+          onPageSizeChange={pagination.setPageSize}
+          scrollTargetRef={tableRef}
+          label={label}
+        />
+      )}
     </section>
   );
 }
@@ -75,6 +100,7 @@ export default function TelemetryPage() {
   const initial = useMemo(() => defaultRange(), []);
   const [startDate, setStartDate] = useState(initial.start);
   const [endDate, setEndDate] = useState(initial.end);
+  const rangeKey = `${startDate}|${endDate}`;
 
   const { data, loading, error, reload } = useAsyncData(
     () =>
@@ -201,124 +227,169 @@ export default function TelemetryPage() {
             </div>
           ) : (
             <>
-              <Section title="Eventos por día">
-                <thead className="border-b border-white/10 bg-slate-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Tipo</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Eventos</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Volumen</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.metrics.events_per_day.map((row) => (
-                    <tr key={`${row.date}-${row.event_type}`}>
-                      <td className="px-4 py-3 text-slate-300">{row.date}</td>
-                      <td className="px-4 py-3 font-medium text-white">{row.event_type}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.event_count}</td>
-                      <td className="px-4 py-3">
-                        <Bar value={row.event_count} max={maxEventCount} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Section>
+              <PagedSection
+                title="Eventos por día"
+                label="eventos"
+                rows={data.metrics.events_per_day}
+                resetKey={rangeKey}
+              >
+                {(visibleRows) => (
+                  <>
+                    <thead className="border-b border-white/10 bg-slate-800/50">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Tipo</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Eventos</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Volumen</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {visibleRows.map((row) => (
+                        <tr key={`${row.date}-${row.event_type}`}>
+                          <td className="px-4 py-3 text-slate-300">{row.date}</td>
+                          <td className="px-4 py-3 font-medium text-white">{row.event_type}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.event_count}</td>
+                          <td className="px-4 py-3">
+                            <Bar value={row.event_count} max={maxEventCount} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+              </PagedSection>
 
-              <Section title="Tasa de error por día">
-                <thead className="border-b border-white/10 bg-slate-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Eventos</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Errores</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Tasa</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.metrics.error_rate_by_day.map((row) => (
-                    <tr key={row.date}>
-                      <td className="px-4 py-3 text-slate-300">{row.date}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.event_count}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.error_count}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-block rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-medium text-rose-300">
-                          {formatPercent(row.error_rate)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Section>
+              <PagedSection
+                title="Tasa de error por día"
+                label="días"
+                rows={data.metrics.error_rate_by_day}
+                resetKey={rangeKey}
+              >
+                {(visibleRows) => (
+                  <>
+                    <thead className="border-b border-white/10 bg-slate-800/50">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Eventos</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Errores</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Tasa</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {visibleRows.map((row) => (
+                        <tr key={row.date}>
+                          <td className="px-4 py-3 text-slate-300">{row.date}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.event_count}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.error_count}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-block rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-medium text-rose-300">
+                              {formatPercent(row.error_rate)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+              </PagedSection>
 
-              <Section title="Errores por tipo">
-                <thead className="border-b border-white/10 bg-slate-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Tipo</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Errores</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Concentración</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.metrics.errors_by_type.map((row) => (
-                    <tr key={`${row.date}-${row.event_type}`}>
-                      <td className="px-4 py-3 text-slate-300">{row.date}</td>
-                      <td className="px-4 py-3 font-medium text-white">{row.event_type}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.error_count}</td>
-                      <td className="px-4 py-3">
-                        <Bar value={row.error_count} max={maxErrorCount} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Section>
+              <PagedSection
+                title="Errores por tipo"
+                label="errores"
+                rows={data.metrics.errors_by_type}
+                resetKey={rangeKey}
+              >
+                {(visibleRows) => (
+                  <>
+                    <thead className="border-b border-white/10 bg-slate-800/50">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Tipo</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Errores</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Concentración</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {visibleRows.map((row) => (
+                        <tr key={`${row.date}-${row.event_type}`}>
+                          <td className="px-4 py-3 text-slate-300">{row.date}</td>
+                          <td className="px-4 py-3 font-medium text-white">{row.event_type}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.error_count}</td>
+                          <td className="px-4 py-3">
+                            <Bar value={row.error_count} max={maxErrorCount} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+              </PagedSection>
 
-              <Section title="Latencia por día">
-                <thead className="border-b border-white/10 bg-slate-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Media</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">p50</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">p95</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Muestras</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.metrics.latency_per_day.map((row) => (
-                    <tr key={row.date}>
-                      <td className="px-4 py-3 text-slate-300">{row.date}</td>
-                      <td className="px-4 py-3 text-slate-200">{formatMillis(row.avg_ms)}</td>
-                      <td className="px-4 py-3 text-slate-200">{formatMillis(row.p50_ms)}</td>
-                      <td className="px-4 py-3 text-slate-200">{formatMillis(row.p95_ms)}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.sample_count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Section>
+              <PagedSection
+                title="Latencia por día"
+                label="días"
+                rows={data.metrics.latency_per_day}
+                resetKey={rangeKey}
+              >
+                {(visibleRows) => (
+                  <>
+                    <thead className="border-b border-white/10 bg-slate-800/50">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Media</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">p50</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">p95</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Muestras</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {visibleRows.map((row) => (
+                        <tr key={row.date}>
+                          <td className="px-4 py-3 text-slate-300">{row.date}</td>
+                          <td className="px-4 py-3 text-slate-200">{formatMillis(row.avg_ms)}</td>
+                          <td className="px-4 py-3 text-slate-200">{formatMillis(row.p50_ms)}</td>
+                          <td className="px-4 py-3 text-slate-200">{formatMillis(row.p95_ms)}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.sample_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+              </PagedSection>
 
-              <Section title="Fallos de autenticación">
-                <thead className="border-b border-white/10 bg-slate-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Fallidos</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Correctos</th>
-                    <th className="px-4 py-3 font-medium text-slate-300">Tasa</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.metrics.auth_failure_rate.map((row) => (
-                    <tr key={row.date}>
-                      <td className="px-4 py-3 text-slate-300">{row.date}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.failed}</td>
-                      <td className="px-4 py-3 text-slate-200">{row.succeeded}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-block rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
-                          {formatPercent(row.failure_rate)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Section>
+              <PagedSection
+                title="Fallos de autenticación"
+                label="días"
+                rows={data.metrics.auth_failure_rate}
+                resetKey={rangeKey}
+              >
+                {(visibleRows) => (
+                  <>
+                    <thead className="border-b border-white/10 bg-slate-800/50">
+                      <tr>
+                        <th className="px-4 py-3 font-medium text-slate-300">Fecha</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Fallidos</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Correctos</th>
+                        <th className="px-4 py-3 font-medium text-slate-300">Tasa</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {visibleRows.map((row) => (
+                        <tr key={row.date}>
+                          <td className="px-4 py-3 text-slate-300">{row.date}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.failed}</td>
+                          <td className="px-4 py-3 text-slate-200">{row.succeeded}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-block rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
+                              {formatPercent(row.failure_rate)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+              </PagedSection>
             </>
           )}
         </>

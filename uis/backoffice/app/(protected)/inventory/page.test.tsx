@@ -227,4 +227,38 @@ describe("InventoryPage", () => {
 
     errorSpy.mockRestore();
   });
+
+  it("pagina la tabla de productos y limita las filas por página", async () => {
+    mockRole("manager");
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      ...sku1,
+      id: index + 1,
+      name: `Producto ${index + 1}`,
+      sku_code: `SKU-${index + 1}`,
+    }));
+    mockFetchProducts.mockResolvedValue(many);
+    render(<InventoryPage />);
+
+    const products = await screen.findByRole("region", { name: "Productos" });
+    await within(products).findByText("Producto 1");
+
+    // 25 filas de datos + la fila de cabecera
+    expect(within(products).getAllByRole("row")).toHaveLength(26);
+    expect(within(products).queryByText("Producto 26")).not.toBeInTheDocument();
+    expect(
+      within(products).getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent === "Mostrando 1–25 de 30 productos",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(products).getByRole("button", { name: "Siguiente ›" }),
+    );
+
+    expect(within(products).getAllByRole("row")).toHaveLength(6);
+    expect(within(products).getByText("Producto 26")).toBeInTheDocument();
+    expect(within(products).queryByText("Producto 1")).not.toBeInTheDocument();
+  });
 });

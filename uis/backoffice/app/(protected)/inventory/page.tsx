@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   createInboundOrder,
@@ -21,8 +21,10 @@ import {
   computeInventoryTotals,
 } from "@/lib/types";
 import { useAsyncData } from "@/hooks/useAsyncData";
+import { usePagination } from "@/hooks/usePagination";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { BreakdownCard } from "@/components/ui/BreakdownCard";
+import { Pagination } from "@/components/ui/Pagination";
 import { useAuth } from "@/contexts/AuthContext";
 
 const ProductForm = dynamic(
@@ -76,6 +78,14 @@ export default function InventoryPage() {
         : products.filter((product) => product.warehouse === warehouseFilter),
     [products, warehouseFilter],
   );
+
+  const productsTableRef = useRef<HTMLDivElement>(null);
+  const ordersTableRef = useRef<HTMLDivElement>(null);
+
+  const productsPagination = usePagination(visibleProducts, {
+    resetKey: warehouseFilter,
+  });
+  const ordersPagination = usePagination(orders);
 
   async function handleCreateProduct(data: SKUCreate) {
     await createInventoryProduct(data, token);
@@ -161,7 +171,10 @@ export default function InventoryPage() {
       ) : (
         <>
           <section aria-label="Productos">
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
+            <div
+              ref={productsTableRef}
+              className="scroll-mt-6 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/60"
+            >
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-white/10 bg-slate-800/50">
                   <tr>
@@ -176,7 +189,7 @@ export default function InventoryPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {visibleProducts.map((product) => (
+                  {productsPagination.pageItems.map((product) => (
                     <tr key={product.id} className="transition hover:bg-white/5">
                       <td className="px-4 py-3">
                         <div className="font-medium text-white">{product.name}</div>
@@ -232,12 +245,26 @@ export default function InventoryPage() {
                 </tbody>
               </table>
             </div>
+            {visibleProducts.length > 0 && (
+              <Pagination
+                page={productsPagination.page}
+                pageSize={productsPagination.pageSize}
+                total={productsPagination.total}
+                onPageChange={productsPagination.setPage}
+                onPageSizeChange={productsPagination.setPageSize}
+                scrollTargetRef={productsTableRef}
+                label="productos"
+              />
+            )}
           </section>
 
           {isManager && (
             <section aria-label="Órdenes registradas" className="mt-8">
               <h2 className="mb-3 text-lg font-semibold text-white">Historial de órdenes</h2>
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
+              <div
+                ref={ordersTableRef}
+                className="scroll-mt-6 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/60"
+              >
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-white/10 bg-slate-800/50">
                     <tr>
@@ -250,7 +277,7 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {orders.map((item) => (
+                    {ordersPagination.pageItems.map((item) => (
                       <tr
                         key={`${item.order_type}-${item.id}`}
                         className="transition hover:bg-white/5"
@@ -287,6 +314,17 @@ export default function InventoryPage() {
                   </tbody>
                 </table>
               </div>
+              {orders.length > 0 && (
+                <Pagination
+                  page={ordersPagination.page}
+                  pageSize={ordersPagination.pageSize}
+                  total={ordersPagination.total}
+                  onPageChange={ordersPagination.setPage}
+                  onPageSizeChange={ordersPagination.setPageSize}
+                  scrollTargetRef={ordersTableRef}
+                  label="órdenes"
+                />
+              )}
             </section>
           )}
         </>
