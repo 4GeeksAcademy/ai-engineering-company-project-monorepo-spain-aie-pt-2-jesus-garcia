@@ -271,3 +271,105 @@ export function computeInventoryTotals(
     stockByWarehouse,
   };
 }
+
+export interface TelemetryPeriod {
+  from: string;
+  to: string;
+}
+
+export interface TelemetryEventsPerDayRow {
+  date: string;
+  event_type: string;
+  event_count: number;
+}
+
+export interface TelemetryErrorRateRow {
+  date: string;
+  event_count: number;
+  error_count: number;
+  error_rate: number;
+}
+
+export interface TelemetryErrorsByTypeRow {
+  date: string;
+  event_type: string;
+  error_count: number;
+}
+
+export interface TelemetryLatencyRow {
+  date: string;
+  avg_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  sample_count: number;
+}
+
+export interface TelemetryAuthFailureRow {
+  date: string;
+  failed: number;
+  succeeded: number;
+  failure_rate: number;
+}
+
+export interface TelemetryMetrics {
+  events_per_day: TelemetryEventsPerDayRow[];
+  error_rate_by_day: TelemetryErrorRateRow[];
+  errors_by_type: TelemetryErrorsByTypeRow[];
+  latency_per_day: TelemetryLatencyRow[];
+  auth_failure_rate: TelemetryAuthFailureRow[];
+}
+
+export interface TelemetryReport {
+  period: TelemetryPeriod;
+  metrics: TelemetryMetrics;
+}
+
+export interface TelemetryReportSummary {
+  totalEvents: number;
+  errorRate: number | null;
+  avgLatency: number | null;
+  authFailureRate: number | null;
+}
+
+export function computeTelemetrySummary(
+  metrics: TelemetryMetrics,
+): TelemetryReportSummary {
+  const totalEvents = metrics.events_per_day.reduce(
+    (total, row) => total + row.event_count,
+    0,
+  );
+
+  const errorTotals = metrics.error_rate_by_day.reduce(
+    (acc, row) => ({
+      errors: acc.errors + row.error_count,
+      events: acc.events + row.event_count,
+    }),
+    { errors: 0, events: 0 },
+  );
+  const errorRate =
+    errorTotals.events > 0 ? errorTotals.errors / errorTotals.events : null;
+
+  const latencyTotals = metrics.latency_per_day.reduce(
+    (acc, row) => ({
+      weighted: acc.weighted + row.avg_ms * row.sample_count,
+      samples: acc.samples + row.sample_count,
+    }),
+    { weighted: 0, samples: 0 },
+  );
+  const avgLatency =
+    latencyTotals.samples > 0
+      ? latencyTotals.weighted / latencyTotals.samples
+      : null;
+
+  const authTotals = metrics.auth_failure_rate.reduce(
+    (acc, row) => ({
+      failed: acc.failed + row.failed,
+      attempts: acc.attempts + row.failed + row.succeeded,
+    }),
+    { failed: 0, attempts: 0 },
+  );
+  const authFailureRate =
+    authTotals.attempts > 0 ? authTotals.failed / authTotals.attempts : null;
+
+  return { totalEvents, errorRate, avgLatency, authFailureRate };
+}

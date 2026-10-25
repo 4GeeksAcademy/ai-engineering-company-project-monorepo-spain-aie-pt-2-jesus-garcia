@@ -13,6 +13,7 @@ import type {
   SupplierCreate,
   SupplierListItem,
   SupplierUpdate,
+  TelemetryReport,
 } from "./types";
 
 export class ApiRequestError extends Error {
@@ -308,4 +309,18 @@ export async function createOutboundOrder(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data),
   });
+}
+
+export async function fetchTelemetryReport(params?: {
+  start_date?: string;
+  end_date?: string;
+}): Promise<TelemetryReport> {
+  const searchParams = new URLSearchParams();
+  if (params?.start_date) searchParams.set("start_date", params.start_date);
+  if (params?.end_date) searchParams.set("end_date", params.end_date);
+
+  const query = searchParams.toString();
+  const url = `/api/telemetry/report${query ? `?${query}` : ""}`;
+
+  return request<TelemetryReport>(url, { headers: {} });
 }
