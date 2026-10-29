@@ -13,6 +13,7 @@ from .schema import (
     ReportingTables,
     get_reporting_tables,
     outbox_table,
+    stock_table,
     telemetry_table,
 )
 from .settings import OPS_SCHEMA, REPORTING_SCHEMA
@@ -52,6 +53,13 @@ def create_telemetry_table(engine: Engine) -> None:
     """
 
     telemetry_table().metadata.create_all(engine)
+
+
+def create_inventory_tables(engine: Engine) -> None:
+    """Solo para tests: crea ``stock_entry``/``stock_exit`` mínimas."""
+
+    stock_table("stock_entry").metadata.create_all(engine)
+    stock_table("stock_exit").metadata.create_all(engine)
 
 
 def drop_reporting_schema(engine: Engine) -> None:

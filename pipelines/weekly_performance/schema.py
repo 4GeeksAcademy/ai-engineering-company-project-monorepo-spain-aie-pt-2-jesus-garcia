@@ -255,6 +255,22 @@ def telemetry_table() -> Table:
     )
 
 
+def stock_table(name: str) -> Table:
+    """Vista de solo lectura de ``stock_entry``/``stock_exit`` (reconciliación)."""
+
+    metadata = MetaData()
+    return Table(
+        name,
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("sku_id", Integer, nullable=False),
+        Column("quantity", Integer, nullable=False),
+        Column("warehouse", String(64), nullable=False),
+        Column("user_uuid", String(64), nullable=False),
+        Column("created_at", DateTime(timezone=True), nullable=False),
+    )
+
+
 def outbox_table(schema: str | None) -> Table:
     """Outbox transaccional (se usará en la fase de instrumentación de origen)."""
 

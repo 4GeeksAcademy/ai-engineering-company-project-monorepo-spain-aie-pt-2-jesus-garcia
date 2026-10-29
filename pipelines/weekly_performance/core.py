@@ -24,7 +24,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .db import get_engine
 from .locks import week_lock
-from .schema import telemetry_table
+from .schema import stock_table, telemetry_table
 from .settings import (
     DEFAULT_LOOKBACK_WEEKS,
     DISCREPANCY,
@@ -322,6 +322,8 @@ def evaluate_quality(
     week_start: date,
     duplicate_order_ids: int = 0,
     instrumentation_since: date | None = None,
+    previous_kpis: list[dict] | None = None,
+    source_freshness_hours: float | None = None,
 ) -> QualityReport:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -372,6 +374,25 @@ def evaluate_quality(
 
     if duplicate_order_ids:
         warnings.append(f"duplicate_order_ids:{duplicate_order_ids}")
+
+    if previous_kpis:
+        previous_inbound = sum(
+            int(row["inbound_units_count"]) for row in previous_kpis
+        )
+        current_inbound = sum(int(row["inbound_units_count"]) for row in kpis)
+        if previous_inbound > 0:
+            variation = (current_inbound - previous_inbound) / previous_inbound
+            if abs(variation) > 0.5:
+                warnings.append(f"volume_variation:{variation:+.0%}")
+
+        previous_active = len(previous_kpis)
+        if previous_active > 0:
+            drop = (previous_active - len(kpis)) / previous_active
+            if drop > 0.3:
+                warnings.append(f"active_combinations_drop:{drop:.0%}")
+
+    if source_freshness_hours is not None and source_freshness_hours > 24:
+        warnings.append(f"stale_source:{source_freshness_hours:.1f}h")
 
     if blockers:
         status = "failed"
@@ -871,6 +892,134 @@ def replay_rejects(
     return result
 
 
+def previous_week_kpis(engine: Engine, week_start: date) -> list[dict]:
+    """KPIs ya persistidos de la semana anterior (para G7/G8)."""
+
+    tables = tables_for(engine)
+    previous = week_start - timedelta(days=7)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(tables.performance).where(
+                tables.performance.c.week_start == previous
+            )
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def source_freshness_hours(
+    rows: list[dict], now: datetime | None = None
+) -> float | None:
+    """Horas desde el evento más reciente recibido (G11)."""
+
+    timestamps = [
+        value
+        for value in (_as_utc(row.get("received_at")) for row in rows)
+        if value is not None
+    ]
+    if not timestamps:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return max(0.0, (now - max(timestamps)).total_seconds() / 3600)
+
+
+def _as_utc(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def reconcile_source(
+    engine: Engine,
+    start_date: date,
+    end_date: date,
+) -> list[dict]:
+    """Compara órdenes SQL (stock_entry/stock_exit) con eventos persistidos.
+
+    Cada día devuelve los conteos y el delta. Un delta distinto de cero indica
+    que la instrumentación perdió eventos (o que la fuente no está al día).
+    """
+
+    if end_date < start_date:
+        raise ValueError("end_date no puede ser anterior a start_date")
+
+    telemetry = telemetry_table()
+    entries = stock_table("stock_entry")
+    exits = stock_table("stock_exit")
+    results: list[dict] = []
+
+    current = start_date
+    while current <= end_date:
+        start = datetime.combine(current, time.min, tzinfo=timezone.utc)
+        end = start + timedelta(days=1)
+        with engine.connect() as conn:
+            inbound_events = int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(telemetry)
+                    .where(
+                        telemetry.c.event_type == INBOUND,
+                        telemetry.c.timestamp >= start,
+                        telemetry.c.timestamp < end,
+                    )
+                ).scalar()
+                or 0
+            )
+            outbound_events = int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(telemetry)
+                    .where(
+                        telemetry.c.event_type == OUTBOUND,
+                        telemetry.c.timestamp >= start,
+                        telemetry.c.timestamp < end,
+                    )
+                ).scalar()
+                or 0
+            )
+            inbound_orders = int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(entries)
+                    .where(
+                        entries.c.created_at >= start,
+                        entries.c.created_at < end,
+                    )
+                ).scalar()
+                or 0
+            )
+            outbound_orders = int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(exits)
+                    .where(
+                        exits.c.created_at >= start,
+                        exits.c.created_at < end,
+                    )
+                ).scalar()
+                or 0
+            )
+
+        delta_in = inbound_events - inbound_orders
+        delta_out = outbound_events - outbound_orders
+        results.append(
+            {
+                "date": current.isoformat(),
+                "inbound_orders": inbound_orders,
+                "inbound_events": inbound_events,
+                "outbound_orders": outbound_orders,
+                "outbound_events": outbound_events,
+                "delta_inbound": delta_in,
+                "delta_outbound": delta_out,
+                "ok": delta_in == 0 and delta_out == 0,
+            }
+        )
+        current += timedelta(days=1)
+
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Orquestación
 # ---------------------------------------------------------------------------
@@ -1050,6 +1199,14 @@ def _execute_week_inner(
             lambda: steps.aggregate(normalized.valid),
         )
         duplicate_order_ids = count_duplicate_order_ids(normalized.valid)
+        previous = previous_week_kpis(engine, week_start)
+        # G11 solo aplica a la última semana cerrada: en backfill histórico la
+        # antigüedad de la fuente es esperada.
+        freshness = (
+            source_freshness_hours(rows)
+            if week_start == resolve_target_weeks(1)[0]
+            else None
+        )
 
         quality = _run_step(
             engine,
@@ -1062,6 +1219,8 @@ def _execute_week_inner(
                 week_start=week_start,
                 duplicate_order_ids=duplicate_order_ids,
                 instrumentation_since=instrumentation_since,
+                previous_kpis=previous,
+                source_freshness_hours=freshness,
             ),
         )
 

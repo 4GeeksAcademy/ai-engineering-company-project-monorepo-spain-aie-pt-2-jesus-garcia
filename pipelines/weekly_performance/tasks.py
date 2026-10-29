@@ -20,6 +20,7 @@ from .core import (
     extract_week,
     load_week,
     normalize_validate,
+    reconcile_source,
     reconcile_week,
 )
 from .db import get_engine
@@ -66,6 +67,8 @@ def quality_task(
     week_start: date,
     duplicate_order_ids: int = 0,
     instrumentation_since: date | None = None,
+    previous_kpis: list[dict] | None = None,
+    source_freshness_hours: float | None = None,
 ) -> QualityReport:
     return evaluate_quality(
         kpis,
@@ -74,6 +77,8 @@ def quality_task(
         week_start=week_start,
         duplicate_order_ids=duplicate_order_ids,
         instrumentation_since=instrumentation_since,
+        previous_kpis=previous_kpis,
+        source_freshness_hours=source_freshness_hours,
     )
 
 
@@ -95,3 +100,8 @@ def load_task(kpis: list[dict], week_start: date, run_id: str) -> int:
 )
 def reconcile_task(kpis: list[dict], week_start: date) -> int:
     return reconcile_week(get_engine(), kpis, week_start)
+
+
+@task(name="reconcile-source", retries=2, retry_delay_seconds=[30, 120])
+def reconcile_source_task(start_date: date, end_date: date) -> list[dict]:
+    return reconcile_source(get_engine(), start_date, end_date)

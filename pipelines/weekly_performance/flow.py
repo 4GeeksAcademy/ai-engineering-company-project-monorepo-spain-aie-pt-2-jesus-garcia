@@ -7,7 +7,7 @@ falla al final si alguna semana quedó mal.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from prefect import flow
 
@@ -21,6 +21,7 @@ from .tasks import (
     load_task,
     normalize_task,
     quality_task,
+    reconcile_source_task,
     reconcile_task,
 )
 
@@ -92,3 +93,12 @@ def weekly_flow(
             + ", ".join(str(state.message) for state in failed)
         )
     return [state.result() for state in states]
+
+
+@flow(name="source-reconciliation")
+def source_reconciliation_flow(days: int = 7):
+    """Compara órdenes SQL y eventos persistidos de los últimos ``days`` días."""
+
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=days)
+    return reconcile_source_task(start, end)

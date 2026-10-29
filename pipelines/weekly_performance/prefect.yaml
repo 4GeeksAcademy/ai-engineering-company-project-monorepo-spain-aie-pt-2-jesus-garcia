@@ -20,3 +20,18 @@ deployments:
       - reporting
       - weekly
       - business
+
+  - name: source-reconciliation-daily
+    entrypoint: pipelines/weekly_performance/flow.py:source_reconciliation_flow
+    work_pool:
+      name: trackflow-pool
+      work_queue_name: default
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: UTC
+        active: true
+    parameters:
+      days: 7
+    tags:
+      - reporting
+      - reconciliation

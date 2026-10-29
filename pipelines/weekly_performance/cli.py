@@ -14,13 +14,14 @@ Ejemplos::
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import json
 import sys
 
 from .core import (
     freeze_week,
     mark_zombie_runs,
+    reconcile_source,
     replay_rejects,
     resolve_target_weeks,
     run_week,
@@ -101,6 +102,15 @@ def build_parser() -> argparse.ArgumentParser:
     watchdog_parser.add_argument("--max-age-minutes", type=int, default=120)
     watchdog_parser.add_argument("--json", action="store_true", dest="as_json")
 
+    reconcile_parser = subparsers.add_parser(
+        "reconcile-source",
+        help="Compara órdenes SQL con eventos persistidos por día.",
+    )
+    reconcile_parser.add_argument("--days", type=int, default=7)
+    reconcile_parser.add_argument("--start", type=date.fromisoformat, default=None)
+    reconcile_parser.add_argument("--end", type=date.fromisoformat, default=None)
+    reconcile_parser.add_argument("--json", action="store_true", dest="as_json")
+
     return parser
 
 
@@ -129,6 +139,19 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = get_engine()
     create_reporting_schema(engine)
+
+    if args.command == "reconcile-source":
+        end = args.end or datetime.now(timezone.utc).date()
+        start = args.start or end - timedelta(days=args.days)
+        results = reconcile_source(engine, start, end)
+        payload = {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "ok": all(row["ok"] for row in results),
+            "days": results,
+        }
+        print(json.dumps(payload, indent=2) if args.as_json else payload)
+        return 0 if payload["ok"] else 1
 
     if args.command == "replay":
         result = replay_rejects(engine, args.run_id)

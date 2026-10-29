@@ -26,6 +26,7 @@ from sqlalchemy import create_engine
 
 from pipelines.weekly_performance.db import clear_engine_cache
 from pipelines.weekly_performance.sql import (
+    create_inventory_tables,
     create_reporting_schema,
     create_telemetry_table,
 )
@@ -38,6 +39,7 @@ def engine(tmp_path):
     eng = create_engine(url, connect_args={"check_same_thread": False})
     create_reporting_schema(eng)
     create_telemetry_table(eng)
+    create_inventory_tables(eng)
     yield eng
     eng.dispose()
     clear_engine_cache()

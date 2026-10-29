@@ -9,7 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
-| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F3 implementadas (flows/tasks, resiliencia e idempotencia, tests SQLite/PostgreSQL); pendiente instrumentación de origen y fases 4–6 |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F4 implementadas (flows/tasks, resiliencia, idempotencia, calidad/reconciliación); pendiente F5–F6 e instrumentación de origen |
 
 ## Últimas decisiones
 
@@ -605,8 +605,29 @@ G1–G4.
 
 ### Pendiente
 
-- F4 backfill histórico completo y runbook.
 - F5 Prefect self-hosted + worker + alertas.
 - F6 API `/reporting/*`, backoffice y lectura degradada (`stale`).
 - Instrumentación de origen G1–G4 (sigue siendo el bloqueante de producción).
+
+## Pipeline de desempeño — F4 implementada (calidad y reconciliación)
+
+- **G7** — variación de volumen > ±50 % vs semana anterior ⇒ `warning`.
+- **G8** — caída de combinaciones activas > 30 % ⇒ `warning`.
+- **G11** — frescura de fuente > 24 h ⇒ `warning`; solo se evalúa en la última
+  semana cerrada (en backfill histórico la antigüedad es esperada).
+- `previous_week_kpis()` lee los KPIs persistidos de `W-1` para G7/G8.
+- `source_freshness_hours()` calcula la antigüedad del `received_at` más reciente.
+- `reconcile_source()` compara por día `stock_entry`/`stock_exit` con los eventos
+  `inbound_order_created`/`outbound_order_created`; devuelve deltas y `ok`.
+- `reconcile_source_task` + `source_reconciliation_flow` (cron diario 07:00 UTC)
+  y CLI `reconcile-source --days 7`.
+- `schema.py` añade vistas de solo lectura de `stock_entry`/`stock_exit`;
+  `sql.create_inventory_tables()` solo se usa en tests.
+- Tests nuevos en `tests/test_data_quality.py` (G7, G8, G11, W-1 y
+  reconciliación con/sin eventos faltantes).
+
+### Verificación F4
+
+- `pytest pipelines/weekly_performance/tests` → **45 passed, 3 skipped**.
+- `compileall` y `git diff --check` OK.
 
