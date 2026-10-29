@@ -9,7 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
-| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | Plan cerrado con 6 decisiones; pendiente implementación (Fase 0) |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0 + F1 implementadas (esqueleto, DDL, flows/tasks, tests); pendiente instrumentación de origen y fases 2–5 |
 
 ## Últimas decisiones
 
@@ -501,4 +501,59 @@ segunda iteración centrada en resiliencia sobre el diseño previo
   secundario).
 - **Siguiente paso:** Fase 0 — esqueleto `pipelines/weekly_performance/`, DDL de
   `reporting.*` y PostgreSQL efímero para tests.
+
+## Pipeline de desempeño — F0 + F1 implementadas (`pipelines/weekly_performance/`)
+
+Implementación del esqueleto y del núcleo flows/tasks contra datos sembrados.
+Todavía **no** hay instrumentación de origen: el pipeline lee `telemetry_events`
+tal cual y en producción seguirá fallando el gate de cobertura hasta cerrar
+G1–G4.
+
+### Estructura y modelo
+
+- `settings.py` — `DATABASE_URL_PIPELINE` (fallback `DATABASE_URL`), lookback,
+  esquemas `reporting`/`ops`, `PIPELINE_INSTRUMENTATION_SINCE`, eventos y
+  almacenes.
+- `db.py` — engine SQLAlchemy con `pool_pre_ping`, UTC en PostgreSQL y caché
+  limpiable para tests.
+- `schema.py` — tablas portables PostgreSQL/SQLite: `weekly_warehouse_client_performance`,
+  `pipeline_runs`, `pipeline_run_steps`, `weekly_performance_rejects`,
+  `week_watermarks`, `published_weeks`, `weekly_performance_revisions`,
+  `telemetry_events` (solo lectura) y `ops.telemetry_outbox`.
+- `sql.py` — DDL idempotente (`CREATE SCHEMA IF NOT EXISTS`, `create_all`) y
+  helpers para tests.
+- `core.py` — lógica pura sin Prefect: `resolve_target_weeks`, `extract_week`
+  (push-down SQL), `normalize_validate` (dedupe por `event_id` + cuarentena),
+  `aggregate_kpis` (D1: `count(distinct coalesce(order_id, event_id))`),
+  `evaluate_quality` (G1–G6, G9, G12), `load_week` (upsert atómico),
+  `reconcile_week`, ledger, watermarks, congelación y `execute_week`.
+- `tasks.py` — tasks de Prefect; `extract` con 3 reintentos y backoff, `load` y
+  `reconcile` con 2.
+- `flow.py` — `process_week` (subflow) y `weekly_flow` (padre; una semana rota
+  no aborta las demás).
+- `cli.py` / `__main__.py` — `run` y `backfill` con `--week`, `--lookback`,
+  `--force --reason`, `--dry-run`, `--json`.
+- `pyproject.toml`, `Dockerfile` (contexto raíz) y `README.md`.
+
+### Verificación
+
+- `services/api/venv/bin/python -m pytest pipelines/weekly_performance/tests -q`
+  → **26 passed**. Cubre fronteras ISO (incluido cambio de año), normalización y
+  cuarentena, agregación contra totales conocidos, idempotencia del upsert,
+  skip por fingerprint, congelación, reconciliación, gates, acumulación de 3
+  semanas y smoke del flow.
+- E2E manual con SQLite sembrado:
+  `python -m pipelines.weekly_performance backfill --week 2026-07-06 --json`
+  → `success`, 10 extraídas / 10 válidas / 2 escritas; segunda corrida
+  `skipped` por fingerprint. Totales: LA 150/3/1/1 (rate 0.333333), ZG 70/2/0/0.
+- Regresión API: `services/api` → **192 passed** (Prefect instalado solo en el
+  venv local, no se añadió a `requirements.txt`).
+- `compileall` OK. Sin cambios en frontends.
+
+### Pendiente
+
+- Cerrar G1–G4 (outbox, `client_id`, `min_stock`, `POST /inventory/discrepancies`).
+- F2 resiliencia (advisory lock, watchdog, DLQ, circuit breaker, congelación
+  operativa), F3 idempotencia avanzada, F4 backfill histórico, F5 Prefect
+  self-hosted + deployment, F6 API `/reporting/*` y backoffice.
 
