@@ -1,0 +1,7 @@
+services:
+  uis:
+    environment:
+      NEXT_PUBLIC_TELEMETRY_ENABLED: "true"
+  services:
+    environment:
+      TELEMETRY_ALLOW_NON_PRODUCTION: "1"

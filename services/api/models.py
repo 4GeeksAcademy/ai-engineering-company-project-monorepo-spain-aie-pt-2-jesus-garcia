@@ -1,5 +1,9 @@
+import re
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Any
+from uuid import UUID
+
 from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Field as ORMField, Relationship, SQLModel
 
@@ -288,6 +292,96 @@ class IncidentSummary(BaseModel):
     by_category: dict[str, int]
     by_origin: dict[str, int]
     by_branch: dict[str, int]
+
+
+TELEMETRY_SCHEMA_VERSION = "1.0.0"
+TELEMETRY_SCHEMA_VERSION_PATTERN = r"^\d+\.\d+\.\d+$"
+
+
+class TelemetrySource(StrEnum):
+    frontend = "frontend"
+    backend = "backend"
+
+
+class TelemetryApp(StrEnum):
+    backoffice = "backoffice"
+    website = "website"
+
+
+class TelemetryWarehouse(StrEnum):
+    los_angeles = "los_angeles"
+    zaragoza = "zaragoza"
+
+
+class TelemetryEventType(StrEnum):
+    inbound_order_created = "inbound_order_created"
+    outbound_order_created = "outbound_order_created"
+    stock_threshold_triggered = "stock_threshold_triggered"
+    direct_stock_edit_rejected = "direct_stock_edit_rejected"
+    inventory_discrepancy_detected = "inventory_discrepancy_detected"
+    session_started = "session_started"
+    login_succeeded = "login_succeeded"
+    login_failed = "login_failed"
+    session_expired = "session_expired"
+    page_view = "page_view"
+    pages_visited_in_session = "pages_visited_in_session"
+    order_form_opened = "order_form_opened"
+    order_form_abandoned = "order_form_abandoned"
+    stock_validation_failed = "stock_validation_failed"
+    outbound_rejected_insufficient_stock = "outbound_rejected_insufficient_stock"
+    incident_form_opened = "incident_form_opened"
+    incident_created = "incident_created"
+    incident_validation_failed = "incident_validation_failed"
+    incident_status_change_opened = "incident_status_change_opened"
+    incident_status_changed = "incident_status_changed"
+    incident_transition_rejected = "incident_transition_rejected"
+    api_response_time = "api_response_time"
+    frontend_error_uncaught = "frontend_error_uncaught"
+
+
+class TelemetryEvent(BaseModel):
+    event_id: str
+    timestamp: str
+    session_id: str
+    user_id: str | None = None
+    event_type: TelemetryEventType
+    schema_version: str = TELEMETRY_SCHEMA_VERSION
+    request_id: str | None = None
+    source: TelemetrySource
+    app: TelemetryApp
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("event_id")
+    @classmethod
+    def event_id_must_be_uuid(cls, v: str) -> str:
+        try:
+            UUID(v)
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError("event_id must be a valid UUID")
+        return v
+
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_must_be_iso8601(cls, v: str) -> str:
+        try:
+            datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            raise ValueError("timestamp must be an ISO-8601 string")
+        return v
+
+    @field_validator("session_id")
+    @classmethod
+    def session_id_must_not_be_empty(cls, v: str) -> str:
+        if not v:
+            raise ValueError("session_id must not be empty")
+        return v
+
+    @field_validator("schema_version")
+    @classmethod
+    def schema_version_must_be_semver(cls, v: str) -> str:
+        if not re.match(TELEMETRY_SCHEMA_VERSION_PATTERN, v):
+            raise ValueError("schema_version must be semantic (x.y.z)")
+        return v
 
 
 class SKU(SQLModel, table=True):
