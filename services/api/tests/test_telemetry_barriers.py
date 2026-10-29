@@ -128,7 +128,7 @@ def test_endpoint_environment_gate_drops_dev_events(client, caplog):
         headers={"X-Telemetry-Environment": "development"},
     )
     assert response.status_code == 200
-    assert response.json() == {"received": 1}
+    assert response.json() == {"received": 1, "stored": 0, "rejected": 1}
     assert accepted_count(caplog) == 0
     assert dropped_count(caplog) == 1
 
@@ -150,7 +150,7 @@ def test_endpoint_consent_gate_drops_analytics_only(client, caplog):
         },
     )
     assert response.status_code == 200
-    assert response.json() == {"received": 2}
+    assert response.json() == {"received": 2, "stored": 1, "rejected": 1}
     assert accepted_count(caplog) == 1
     assert dropped_count(caplog) == 1
 
@@ -172,7 +172,7 @@ def test_endpoint_accepts_all_when_production_and_consent_granted(client, caplog
         },
     )
     assert response.status_code == 200
-    assert response.json() == {"received": 2}
+    assert response.json() == {"received": 2, "stored": 2, "rejected": 0}
     assert accepted_count(caplog) == 2
     assert dropped_count(caplog) == 0
 

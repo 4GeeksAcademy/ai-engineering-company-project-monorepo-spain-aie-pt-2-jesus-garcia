@@ -1,9 +1,11 @@
 import logging
 import os
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from sqlmodel import Session
 
-from app.telemetry.barriers import process_events
+from app.telemetry.ingest import ingest_batch
+from database import get_db
 from schemas import TelemetryBatch, TelemetryIngestResponse
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
@@ -34,32 +36,25 @@ def _allow_non_production() -> bool:
 @router.post(
     "/events",
     response_model=TelemetryIngestResponse,
-    summary="Recibir un lote de eventos de telemetría",
+    summary="Recibir y persistir un lote de eventos de telemetría",
 )
-def ingest_events(payload: TelemetryBatch, request: Request) -> TelemetryIngestResponse:
-    received = payload.events
-    received_counts = {}
-    for event in received:
-        key = event.event_type.value
-        received_counts[key] = received_counts.get(key, 0) + 1
-    logger.info(
-        "Telemetry events received: %d | by_type: %s",
-        len(received),
-        received_counts,
-    )
+def ingest_events(
+    payload: TelemetryBatch,
+    request: Request,
+    session: Session = Depends(get_db),
+) -> TelemetryIngestResponse:
+    logger.info("Telemetry events received: %d", len(payload.events))
 
-    accepted, accepted_counts, dropped_counts = process_events(
-        received,
+    result = ingest_batch(
+        payload.events,
         environment=_resolve_environment(request),
         consent=_resolve_consent(request),
         allow_non_production=_allow_non_production(),
-    )
-    logger.info(
-        "Telemetry events accepted: %d | dropped: %d | accepted_by_type: %s | dropped_by_type: %s",
-        accepted,
-        sum(dropped_counts.values()),
-        dict(accepted_counts),
-        dict(dropped_counts),
+        session=session,
     )
 
-    return TelemetryIngestResponse(received=len(received))
+    return TelemetryIngestResponse(
+        received=result.received,
+        stored=result.stored,
+        rejected=result.rejected,
+    )

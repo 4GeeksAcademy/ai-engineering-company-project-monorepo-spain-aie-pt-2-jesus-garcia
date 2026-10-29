@@ -5,6 +5,8 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import JSON, Column, DateTime, Index, String, Uuid, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as ORMField, Relationship, SQLModel
 
 
@@ -412,3 +414,46 @@ class StockExit(SQLModel, table=True):
     user_uuid: str
     created_at: datetime = ORMField(default_factory=lambda: datetime.now(timezone.utc))
     product: SKU = Relationship()
+
+
+class TelemetryEventRecord(SQLModel, table=True):
+    """Evento de telemetría persistido en `telemetry_events` (append-only).
+
+    Las columnas fijas del envelope sostienen las consultas analíticas; la parte
+    variable (`properties`) se guarda en `tags` (JSONB en PostgreSQL) filtrada
+    previamente por el allowlist del catálogo.
+    """
+
+    __tablename__ = "telemetry_events"
+    __table_args__ = (
+        Index("ix_telemetry_events_timestamp", "timestamp"),
+        Index("ix_telemetry_events_service", "service"),
+        Index("ix_telemetry_events_session_id", "session_id"),
+        Index("ix_telemetry_events_type_timestamp", "event_type", "timestamp"),
+    )
+
+    event_id: str = ORMField(sa_column=Column(Uuid(as_uuid=False), primary_key=True))
+    timestamp: datetime = ORMField(
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    received_at: datetime = ORMField(
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=func.now(),
+        )
+    )
+    event_type: str = ORMField(sa_column=Column(String(), nullable=False))
+    service: str = ORMField(sa_column=Column(String(), nullable=False))
+    session_id: str = ORMField(sa_column=Column(String(), nullable=False))
+    user_id: str | None = ORMField(sa_column=Column(String(), nullable=True))
+    schema_version: str = ORMField(sa_column=Column(String(), nullable=False))
+    request_id: str | None = ORMField(sa_column=Column(String(), nullable=True))
+    source: str = ORMField(sa_column=Column(String(), nullable=False))
+    tags: dict = ORMField(
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        )
+    )

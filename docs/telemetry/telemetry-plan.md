@@ -411,18 +411,22 @@ Aligned with the business context and the existing `seed_inventory.py`:
 - [ ] High-frequency events (`page_view`, `api_response_time`) declare a throttle/aggregation strategy.
 - [ ] Considered-and-discarded events are documented with a reason (§6.3).
 
-## 9. Runtime capture layer (Fase 1–3)
+## 9. Runtime capture layer (Fase 1–4)
 
 The plan above is now backed by a working capture layer. The envelope is unchanged.
 
 ### 9.1 Fase 1 — backend collector (`services/api`)
 
-- `POST /telemetry/events` accepts `{"events": [...]}`, logs the number of received events and a
-  per-`event_type` counter, and responds `200 {"received": N}` (N = events received in the batch).
+- `POST /telemetry/events` accepts a **lax envelope** `{"events": [...]}`: each list item is a raw
+  dict validated individually with `TelemetryEvent.model_validate`, so a malformed event is
+  rejected without failing the batch. Only a body whose `events` is not a list returns `422`.
+- The endpoint responds `200 {"received", "stored", "rejected"}`. A valid but barrier-dropped or
+  duplicate event is not stored and counts as rejected (`received == stored + rejected`).
 - `TelemetryEvent` (Pydantic, `services/api/models.py`) mirrors the envelope and validates:
   `event_id` (UUIDv4), `timestamp` (ISO-8601), `session_id` (non-empty), `schema_version` (semver),
   and closed enums `source` / `app` / `event_type` (the 23 catalog events). Cross-referenced with the
-  TrackFlow domain (`TelemetryWarehouse`: `los_angeles` / `zaragoza`).
+  TrackFlow domain (`TelemetryWarehouse`: `los_angeles` / `zaragoza`). It validates the **envelope**,
+  not the per-event `required_properties` yet.
 - The collector reads `TELEMETRY_ENDPOINT` at startup (captured/logged, unused in runtime).
 - The endpoint is unauthenticated by design (it must accept pre-auth events such as `login_failed`).
 
@@ -472,13 +476,35 @@ transport`.
   `NEXT_PUBLIC_TELEMETRY_ENABLED`. Backend env: `TELEMETRY_ENDPOINT`,
   `TELEMETRY_ALLOW_NON_PRODUCTION`.
 
+### 9.5 Fase 4 — event storage (`telemetry_events`)
+
+- `TelemetryEventRecord` (`services/api/models.py`) maps the envelope to the Supabase table
+  `telemetry_events`: `event_id uuid` PK, `timestamp` / `received_at` `timestamptz`, plus
+  `event_type`, `service`, `session_id`, `user_id`, `schema_version`, `request_id`, `source` as
+  fixed columns. `service` is derived from the envelope's `app`.
+- `tags jsonb` stores only the `properties` that survive sanitization + allowlist. The envelope is
+  never stored as a single JSON blob; the fixed columns are what the analytical queries use.
+- Valid events are persisted with **one** `INSERT ... ON CONFLICT (event_id) DO NOTHING`
+  (executemany) in a single transaction. Retries are idempotent: the same `event_id` is never
+  duplicated and the response reports `stored: 0`.
+- `timestamp` comes from the event (never replaced by `now()`); `received_at` is filled by the
+  database with `now()`.
+- The table is write-only (no update/delete endpoints): events are immutable facts.
+- Indexes: `timestamp`, `service`, `session_id`, `(event_type, timestamp)`.
+
 ## 10. Validation checklist — runtime capture layer
 
-- [ ] `POST /telemetry/events` accepts a batch and returns `{"received": N}`.
-- [ ] `TelemetryEvent` validates the envelope and rejects unknown `event_type` / malformed fields.
+- [ ] `POST /telemetry/events` returns `{"received", "stored", "rejected"}` with partial acceptance.
+- [ ] An invalid event is rejected individually while valid events in the same batch are stored.
+- [ ] A body whose `events` is not a list returns `422`; missing `events` returns all zeros.
+- [ ] `TelemetryEvent` validates the envelope per item (UUID, ISO-8601, semver, closed enums).
 - [ ] `track()` is the only public tracking entry point; envelope fields are auto-injected.
 - [ ] Queue flushes at 20 events and on the 10 s debounce; `sendBeacon` fires on tab hide.
 - [ ] Failed sends retry 3× with exponential backoff, then are discarded.
-- [ ] The five barriers run on both frontend and backend.
+- [ ] The five barriers run on both frontend and backend (allowlist only reaches `tags`).
 - [ ] Catalog mirrors `event-schemas.json` (parity test).
+- [ ] `telemetry_events` stores the envelope in fixed columns and `properties` in `tags`.
+- [ ] A batch of 20 events produces exactly one `INSERT` statement (bulk insert test).
+- [ ] Duplicate `event_id` (in-batch and across requests) is stored once and reported as rejected.
+- [ ] The frontend is unchanged: same URL, same body, same `response.ok` handling.
 - [ ] Frontend Vitest suite and backend `pytest` suite are green.

@@ -377,3 +377,34 @@ Pipeline en `track()`: `consent → sanitize → allowlist → sampling → enqu
 - **Gaps documentados** (prerrequisitos inexistentes): `stock_threshold_triggered` (falta `min_stock` por SKU), `direct_stock_edit_rejected` (no hay endpoint de edición directa), `inventory_discrepancy_detected` (requiere datos de producto en la auditoría); eventos backend de incidencias y `api_response_time` quedan para la instrumentación server-side.
 - Tests: `services/api/tests/test_inventory_telemetry.py` (3) verifica la emisión de los eventos de inventario.
 - Verificado: `pytest` **160 passed**; Vitest **51 passed**; root typecheck, lint y build (`uis/backoffice`) OK.
+
+## Telemetría — Almacenamiento real de eventos (stub → endpoint de ingesta)
+
+El stub del colector se sustituye por el endpoint real que valida, persiste y reporta. **El frontend no cambia**: misma URL, mismo body, y `transport.ts` solo comprueba `response.ok`.
+
+### Contrato y validación parcial
+
+- `TelemetryBatch` acepta `events: list[Any]` en crudo; el body completo solo devuelve **422** si `events` no es una lista (o falta: `{}` → ceros).
+- Cada elemento se valida con `TelemetryEvent.model_validate` dentro de un `try/except ValidationError`: un evento inválido suma a `rejected` y el resto del lote continúa.
+- `TelemetryIngestResponse` pasa a `{received, stored, rejected}` (`received == stored + rejected`). El frontend ignora las claves nuevas.
+- El contrato Pydantic valida el **envelope**, no los `required_properties` del catálogo (documentado; si se exigieran hoy se rechazarían los eventos de inventario que aún no emiten `client_id`/`product_category`).
+- Log de rechazo desglosado: `invalid` (por campo), `environment`, `consent` y `duplicates`.
+
+### Persistencia en Supabase (bulk insert)
+
+- `models.py` — `TelemetryEventRecord` (`telemetry_events`): `event_id uuid` PK, `timestamp`/`received_at` `timestamptz`, `event_type`, `service` (derivado de `app`), `session_id`, `user_id`, `schema_version`, `request_id`, `source` y `tags jsonb`.
+- `tags` guarda solo las `properties` que pasan sanitización + allowlist. El envelope nunca se serializa como un único JSON.
+- `app/telemetry/ingest.py` (nuevo) — parseo por ítem, dedupe intra-lote por `event_id`, mapeo a columnas y **un único** `INSERT ... ON CONFLICT (event_id) DO NOTHING` (executemany) + un `commit()`. El `on_conflict` se elige por dialecto (`postgresql`/`sqlite`).
+- Idempotencia: reintentar el mismo lote no duplica filas; se reporta `stored: 0`.
+- `received_at` lo pone la BD con `now()` (no viaja en el INSERT); `timestamp` siempre viene del evento y se normaliza a UTC.
+- `user_id`/`request_id` vacíos o con espacios se normalizan a `NULL`.
+- `app/telemetry/barriers.py` — nuevo `apply_barriers()` que devuelve los eventos aceptados; `process_events()` se conserva como wrapper para los tests previos.
+- `app/routes/telemetry.py` — handler real con `Depends(get_db)`; sin cambios de URL ni de auth.
+- Tabla creada/alineada en Supabase (ya existente): PK, `NOT NULL`, `tags` default `'{}'::jsonb`, checks e índices (`timestamp`, `service`, `session_id`, `(event_type, timestamp)`).
+
+### Tests y verificación
+
+- `tests/test_telemetry_storage.py` (18 casos): columnas fijas + `tags` filtradas, `service` desde `app`, lote mixto, ítems no-objeto, 422 de envelope, PII redactada, `{}` en `tags`, duplicados intra-lote y entre peticiones, **una sola sentencia INSERT para 20 eventos** (listener de SQLAlchemy), normalización de vacíos, gates de entorno/consentimiento.
+- `test_telemetry.py` y `test_telemetry_barriers.py` actualizados al nuevo contrato (los 422 por evento pasan a rechazo parcial).
+- Verificado contra Supabase real en transacción con rollback: `rowcount = 1` para dos filas con el mismo `event_id`, `tags` JSONB correcto y `received_at` rellenado por `now()`.
+- Suites: **178 passed** en `services/api`. Frontend intacto (sin cambios en `uis/` ni `shared/`).
