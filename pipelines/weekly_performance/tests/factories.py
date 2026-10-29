@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import Engine, insert
 
@@ -54,7 +55,9 @@ def _event(
     **tags,
 ) -> dict:
     return {
-        "event_id": event_id,
+        # UUIDv5 determinista: válido tanto en SQLite como en la columna UUID
+        # de PostgreSQL que usa la API.
+        "event_id": str(uuid5(NAMESPACE_URL, f"trackflow:{event_id}")),
         "timestamp": timestamp,
         "event_type": event_type,
         "session_id": "seed",

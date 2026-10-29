@@ -1,0 +1,22 @@
+# Deployment base del pipeline. El work pool se crea una vez con:
+#   prefect work-pool create trackflow-pool --type process --concurrency-limit 1
+# La concurrencia 1 es la segunda barrera (la primera es el advisory lock por semana).
+name: weekly-performance
+prefect-version: "3.0.0"
+
+deployments:
+  - name: weekly-prod
+    entrypoint: pipelines/weekly_performance/flow.py:weekly_flow
+    work_pool:
+      name: trackflow-pool
+      work_queue_name: default
+    schedules:
+      - cron: "0 8 * * 1"
+        timezone: UTC
+        active: true
+    parameters:
+      lookback_weeks: 3
+    tags:
+      - reporting
+      - weekly
+      - business

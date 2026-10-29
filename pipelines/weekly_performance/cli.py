@@ -6,6 +6,9 @@ Ejemplos::
     python -m pipelines.weekly_performance backfill --week 2026-07-13
     python -m pipelines.weekly_performance backfill --week 2026-07-13 \\
         --force --reason "corrección de evento tardío"
+    python -m pipelines.weekly_performance replay --run-id <uuid>
+    python -m pipelines.weekly_performance relay --batch-size 100
+    python -m pipelines.weekly_performance watchdog
 """
 
 from __future__ import annotations
@@ -15,8 +18,15 @@ from datetime import date
 import json
 import sys
 
-from .core import resolve_target_weeks, run_week
+from .core import (
+    freeze_week,
+    mark_zombie_runs,
+    replay_rejects,
+    resolve_target_weeks,
+    run_week,
+)
 from .db import get_engine
+from .outbox import relay_outbox
 from .settings import DEFAULT_LOOKBACK_WEEKS, get_instrumentation_since
 from .sql import create_reporting_schema
 
@@ -66,6 +76,31 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_parser.add_argument("--dry-run", action="store_true")
     backfill_parser.add_argument("--json", action="store_true", dest="as_json")
 
+    replay_parser = subparsers.add_parser(
+        "replay", help="Reprocesa la semana de una corrida con rechazos."
+    )
+    replay_parser.add_argument("--run-id", required=True)
+    replay_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    relay_parser = subparsers.add_parser(
+        "relay", help="Mueve eventos pendientes del outbox a telemetría."
+    )
+    relay_parser.add_argument("--batch-size", type=int, default=100)
+    relay_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    freeze_parser = subparsers.add_parser(
+        "freeze", help="Congela una semana para que el lookback no la reescriba."
+    )
+    freeze_parser.add_argument("--week", type=_parse_date, required=True)
+    freeze_parser.add_argument("--by", default="manual")
+    freeze_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    watchdog_parser = subparsers.add_parser(
+        "watchdog", help="Marca como failed las corridas running sin latido."
+    )
+    watchdog_parser.add_argument("--max-age-minutes", type=int, default=120)
+    watchdog_parser.add_argument("--json", action="store_true", dest="as_json")
+
     return parser
 
 
@@ -73,8 +108,38 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.force and not args.reason:
+    if getattr(args, "force", False) and not args.reason:
         parser.error("--force requiere --reason para dejar auditoría")
+
+    if args.command == "relay":
+        engine = get_engine()
+        create_reporting_schema(engine)
+        result = relay_outbox(engine, batch_size=args.batch_size)
+        payload = {"relayed": result.relayed, "duplicates": result.duplicates}
+        print(json.dumps(payload, indent=2) if args.as_json else payload)
+        return 0
+
+    if args.command == "watchdog":
+        engine = get_engine()
+        create_reporting_schema(engine)
+        marked = mark_zombie_runs(engine, max_age_minutes=args.max_age_minutes)
+        payload = {"marked_failed": marked}
+        print(json.dumps(payload, indent=2) if args.as_json else payload)
+        return 0
+
+    engine = get_engine()
+    create_reporting_schema(engine)
+
+    if args.command == "replay":
+        result = replay_rejects(engine, args.run_id)
+        print(json.dumps(result.to_dict(), indent=2))
+        return 0 if result.status in {"success", "skipped"} else 1
+
+    if args.command == "freeze":
+        freeze_week(engine, args.week, published_by=args.by)
+        payload = {"week_start": args.week.isoformat(), "frozen": True}
+        print(json.dumps(payload, indent=2) if args.as_json else payload)
+        return 0
 
     weeks = (
         [args.week]
@@ -91,9 +156,6 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(payload, indent=2))
         return 0
-
-    engine = get_engine()
-    create_reporting_schema(engine)
 
     results = [
         run_week(

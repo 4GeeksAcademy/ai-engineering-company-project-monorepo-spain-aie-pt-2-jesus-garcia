@@ -44,6 +44,12 @@ python -m pipelines.weekly_performance backfill --week 2026-07-13
 python -m pipelines.weekly_performance backfill --week 2026-07-13 \
   --force --reason "evento tardío corregido"
 python -m pipelines.weekly_performance run --dry-run --json
+
+# mantenimiento / resiliencia
+python -m pipelines.weekly_performance replay --run-id <uuid>
+python -m pipelines.weekly_performance relay --batch-size 100
+python -m pipelines.weekly_performance freeze --week 2026-07-13 --by ana
+python -m pipelines.weekly_performance watchdog
 ```
 
 Códigos de salida: `0` éxito/skip, `1` alguna semana falló, `2` error de
@@ -75,6 +81,28 @@ Los tests cubren:
 - skip por fingerprint y semana congelada;
 - gates de calidad;
 - smoke del flow de Prefect.
+
+## Resiliencia e idempotencia
+
+| Mecanismo | Implementación |
+|---|---|
+| Lock por semana | `pg_try_advisory_lock` de sesión (`locks.py`); no-op en SQLite |
+| Aislamiento | `process_week` como subflow con `return_state=True` |
+| Reintentos | Solo errores transitorios (`retry_condition_fn`) |
+| Watchdog | `mark_zombie_runs`: `running` sin latido > 2 h ⇒ `failed` |
+| Circuit breaker | 3 fallos consecutivos de `extract` ⇒ `source_unavailable`; `--force` lo salta |
+| Cuarentena / replay | `weekly_performance_rejects` + `replay_rejects` |
+| Congelación | Auto-freeze tras 2 corridas exitosas post-cierre; `freeze` manual |
+| Revisión | `weekly_performance_revisions` al forzar una semana congelada |
+| Idempotencia de carga | Dedupe por `event_id`, upsert por clave natural y `reconcile_week` |
+| Skip por fingerprint | `week_watermarks` evita recalcular si la fuente no cambió |
+| Outbox relay | `ON CONFLICT (event_id) DO NOTHING` (`outbox.py`) |
+
+La concurrencia del work pool se configura a 1:
+
+```bash
+prefect work-pool create trackflow-pool --type process --concurrency-limit 1
+```
 
 ## Decisiones aplicadas
 

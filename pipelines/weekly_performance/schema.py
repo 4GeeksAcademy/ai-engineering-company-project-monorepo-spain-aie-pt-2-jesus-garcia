@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
+    Uuid,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -236,7 +237,11 @@ def telemetry_table() -> Table:
     return Table(
         "telemetry_events",
         metadata,
-        Column("event_id", String(36), primary_key=True),
+        Column(
+            "event_id",
+            String(36).with_variant(Uuid(as_uuid=False), "postgresql"),
+            primary_key=True,
+        ),
         Column("timestamp", DateTime(timezone=True), nullable=False),
         Column("event_type", String(64), nullable=False),
         Column("session_id", String(128), nullable=False),

@@ -9,7 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
-| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0 + F1 implementadas (esqueleto, DDL, flows/tasks, tests); pendiente instrumentación de origen y fases 2–5 |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F3 implementadas (flows/tasks, resiliencia e idempotencia, tests SQLite/PostgreSQL); pendiente instrumentación de origen y fases 4–6 |
 
 ## Últimas decisiones
 
@@ -556,4 +556,57 @@ G1–G4.
 - F2 resiliencia (advisory lock, watchdog, DLQ, circuit breaker, congelación
   operativa), F3 idempotencia avanzada, F4 backfill histórico, F5 Prefect
   self-hosted + deployment, F6 API `/reporting/*` y backoffice.
+
+## Pipeline de desempeño — F2 + F3 implementadas (resiliencia e idempotencia)
+
+### Resiliencia (F2)
+
+- `locks.py` — advisory lock de sesión por `(pipeline, week_start)`
+  (`pg_try_advisory_lock` / `pg_advisory_unlock`); no-op en SQLite. El lock se
+  mantiene durante toda la corrida y se libera al cerrar la conexión si el
+  worker muere.
+- `execute_week` ahora: marca zombies → adquiere lock → comprueba circuit
+  breaker → arranca la corrida. Una semana bloqueada devuelve `skipped: locked`.
+- `mark_zombie_runs` — watchdog: `running` con `heartbeat_at` > 2 h ⇒ `failed`;
+  `record_step` renueva el heartbeat en cada etapa.
+- `source_is_tripped` — circuit breaker: 3 fallos consecutivos de `extract` ⇒
+  `source_unavailable`; `--force` lo salta para permitir recuperación manual.
+- `replay_rejects` + CLI `replay --run-id` — reprocesa la semana y marca los
+  rechazos como rejugados.
+- `freeze_week`, `maybe_freeze_week` y `snapshot_week` — auto-freeze tras 2
+  corridas exitosas posteriores al cierre; al forzar una semana congelada se
+  guarda una revisión inmutable con `reason` y `forced_by`.
+- `tasks.py` — `retry_condition_fn`: solo reintenta `OperationalError`,
+  `DBAPIError` con conexión invalidada, `TimeoutError` y `ConnectionError`.
+- `prefect.yaml` — deployment base; el work pool se crea con
+  `--concurrency-limit 1` (segunda barrera además del advisory lock).
+- CLI nueva: `replay`, `relay`, `freeze`, `watchdog`.
+
+### Idempotencia (F3)
+
+- Dedupe por `event_id` en `normalize_validate` (además de la PK de origen).
+- Semana calculada desde el `timestamp` del evento, nunca desde `now()`.
+- Upsert por `(warehouse, client_id, week_start)` + `reconcile_week`.
+- `week_watermarks` + fingerprint ⇒ `skipped: fingerprint_unchanged`.
+- `outbox.py` — relay `FOR UPDATE SKIP LOCKED` (PostgreSQL) con
+  `ON CONFLICT (event_id) DO NOTHING`; reintentar no duplica y los pendientes
+  quedan para la siguiente pasada.
+- Discrepancias: una por `order_id` (D2), tasa ≤ 1.
+
+### Verificación
+
+- `pytest pipelines/weekly_performance/tests` → **39 passed, 3 skipped**
+  (los 3 de PostgreSQL se saltan sin `TEST_POSTGRES_URL`).
+- Con PostgreSQL 16 real (contenedor efímero, `TEST_POSTGRES_URL`):
+  **3 passed** — UUID, JSONB, upsert, advisory lock exclusivo y relay
+  idempotente verificados.
+- `npm run typecheck` OK y `compileall` OK.
+- API sin cambios; sigue en **192 passed**.
+
+### Pendiente
+
+- F4 backfill histórico completo y runbook.
+- F5 Prefect self-hosted + worker + alertas.
+- F6 API `/reporting/*`, backoffice y lectura degradada (`stale`).
+- Instrumentación de origen G1–G4 (sigue siendo el bloqueante de producción).
 

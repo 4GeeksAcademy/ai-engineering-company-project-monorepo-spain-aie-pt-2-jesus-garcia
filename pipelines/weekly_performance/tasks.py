@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from prefect import task
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from .core import (
     NormalizeResult,
@@ -24,11 +25,23 @@ from .core import (
 from .db import get_engine
 
 
+def _is_transient(_task, _task_run, state) -> bool:
+    """Solo reintenta fallos de conexión/timeout, nunca datos inválidos."""
+
+    exc = getattr(state, "data", None)
+    if isinstance(exc, OperationalError):
+        return True
+    if isinstance(exc, DBAPIError):
+        return bool(getattr(exc, "connection_invalidated", False))
+    return isinstance(exc, (TimeoutError, ConnectionError))
+
+
 @task(
     name="extract-week",
     retries=3,
     retry_delay_seconds=[30, 120, 300],
     retry_jitter_factor=0.1,
+    retry_condition_fn=_is_transient,
 )
 def extract_task(week_start: date) -> list[dict]:
     return extract_week(get_engine(), week_start)
@@ -64,11 +77,21 @@ def quality_task(
     )
 
 
-@task(name="load-week", retries=2, retry_delay_seconds=[15, 60])
+@task(
+    name="load-week",
+    retries=2,
+    retry_delay_seconds=[15, 60],
+    retry_condition_fn=_is_transient,
+)
 def load_task(kpis: list[dict], week_start: date, run_id: str) -> int:
     return load_week(get_engine(), kpis, week_start, run_id)
 
 
-@task(name="reconcile-week", retries=2, retry_delay_seconds=[15, 60])
+@task(
+    name="reconcile-week",
+    retries=2,
+    retry_delay_seconds=[15, 60],
+    retry_condition_fn=_is_transient,
+)
 def reconcile_task(kpis: list[dict], week_start: date) -> int:
     return reconcile_week(get_engine(), kpis, week_start)

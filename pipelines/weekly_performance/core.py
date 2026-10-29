@@ -18,11 +18,12 @@ from typing import Any, Callable
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import Engine, delete, insert, select, tuple_, update
+from sqlalchemy import Engine, delete, func, insert, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .db import get_engine
+from .locks import week_lock
 from .schema import telemetry_table
 from .settings import (
     DEFAULT_LOOKBACK_WEEKS,
@@ -574,6 +575,7 @@ def record_step(
     detail: dict | None = None,
 ) -> None:
     tables = tables_for(engine)
+    now = datetime.now(timezone.utc)
     with engine.begin() as conn:
         conn.execute(
             insert(tables.steps).values(
@@ -581,9 +583,14 @@ def record_step(
                 step=step,
                 status=status,
                 started_at=started_at,
-                finished_at=datetime.now(timezone.utc),
+                finished_at=now,
                 detail=detail,
             )
+        )
+        conn.execute(
+            update(tables.runs)
+            .where(tables.runs.c.run_id == run_id)
+            .values(heartbeat_at=now)
         )
 
 
@@ -662,6 +669,208 @@ def store_rejects(
         conn.execute(insert(tables.rejects), rows)
 
 
+def heartbeat(engine: Engine, run_id: str) -> None:
+    """Renueva el latido de una corrida (watchdog de zombies)."""
+
+    tables = tables_for(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            update(tables.runs)
+            .where(tables.runs.c.run_id == run_id)
+            .values(heartbeat_at=datetime.now(timezone.utc))
+        )
+
+
+def mark_zombie_runs(
+    engine: Engine,
+    max_age_minutes: int = 120,
+    now: datetime | None = None,
+) -> int:
+    """Marca como ``failed`` las corridas ``running`` sin latido reciente."""
+
+    tables = tables_for(engine)
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=max_age_minutes)
+    with engine.begin() as conn:
+        result = conn.execute(
+            update(tables.runs)
+            .where(
+                tables.runs.c.status == "running",
+                tables.runs.c.heartbeat_at < cutoff,
+            )
+            .values(
+                status="failed",
+                finished_at=now,
+                error_message="watchdog: heartbeat timeout",
+            )
+        )
+    return int(result.rowcount or 0)
+
+
+def source_is_tripped(engine: Engine, threshold: int = 3) -> bool:
+    """Circuit breaker: las últimas ``threshold`` corridas fallaron en extract."""
+
+    tables = tables_for(engine)
+    with engine.connect() as conn:
+        recent = conn.execute(
+            select(tables.runs.c.run_id, tables.runs.c.status)
+            .where(tables.runs.c.pipeline_name == PIPELINE_NAME)
+            .order_by(tables.runs.c.started_at.desc())
+            .limit(threshold)
+        ).all()
+        if len(recent) < threshold or any(status != "failed" for _, status in recent):
+            return False
+        run_ids = [row[0] for row in recent]
+        failed_extract = conn.execute(
+            select(tables.steps.c.run_id).where(
+                tables.steps.c.run_id.in_(run_ids),
+                tables.steps.c.step == "extract",
+                tables.steps.c.status == "failed",
+            )
+        ).scalars().all()
+    return len(set(failed_extract)) >= threshold
+
+
+def freeze_week(
+    engine: Engine,
+    week_start: date,
+    published_by: str = "auto",
+) -> None:
+    """Congela una semana para que el lookback no la reescriba."""
+
+    tables = tables_for(engine)
+    now = datetime.now(timezone.utc)
+    values = {
+        "week_start": week_start,
+        "published_at": now,
+        "published_by": published_by,
+        "frozen": True,
+    }
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        stmt = postgresql_insert(tables.published).on_conflict_do_update(
+            index_elements=["week_start"], set_=values
+        )
+    elif dialect == "sqlite":
+        stmt = sqlite_insert(tables.published).on_conflict_do_update(
+            index_elements=["week_start"], set_=values
+        )
+    else:
+        stmt = insert(tables.published)
+    with engine.begin() as conn:
+        conn.execute(stmt, values)
+
+
+def maybe_freeze_week(
+    engine: Engine,
+    week_start: date,
+    min_successful_runs: int = 2,
+) -> bool:
+    """Congela la semana tras N corridas exitosas posteriores a su cierre."""
+
+    tables = tables_for(engine)
+    close_at = datetime.combine(
+        week_start + timedelta(days=7), time.min, tzinfo=timezone.utc
+    )
+    with engine.connect() as conn:
+        successful = conn.execute(
+            select(func.count())
+            .select_from(tables.runs)
+            .where(
+                tables.runs.c.pipeline_name == PIPELINE_NAME,
+                tables.runs.c.week_start == week_start,
+                tables.runs.c.status == "success",
+                tables.runs.c.started_at >= close_at,
+            )
+        ).scalar()
+
+    if int(successful or 0) >= min_successful_runs:
+        freeze_week(engine, week_start, published_by="auto")
+        return True
+    return False
+
+
+def snapshot_week(
+    engine: Engine,
+    week_start: date,
+    run_id: str,
+    reason: str,
+    forced_by: str,
+) -> int:
+    """Guarda una revisión inmutable antes de reescribir una semana congelada."""
+
+    tables = tables_for(engine)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(tables.performance).where(
+                tables.performance.c.week_start == week_start
+            )
+        ).mappings().all()
+
+    snapshot = [_jsonable_row(dict(row)) for row in rows]
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.revisions).values(
+                week_start=week_start,
+                run_id=run_id,
+                reason=reason[:512],
+                forced_by=forced_by[:128],
+                snapshot=snapshot,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+    return len(snapshot)
+
+
+def _jsonable_row(row: dict) -> dict:
+    result = {}
+    for key, value in row.items():
+        if hasattr(value, "isoformat"):
+            result[key] = value.isoformat()
+        elif hasattr(value, "__float__"):
+            result[key] = float(value)
+        else:
+            result[key] = value
+    return result
+
+
+def replay_rejects(
+    engine: Engine,
+    run_id: str,
+    *,
+    triggered_by: str = "replay",
+) -> WeekResult:
+    """Reprocesa la semana de una corrida y marca sus rechazos como rejugados."""
+
+    tables = tables_for(engine)
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.week_start).where(tables.runs.c.run_id == run_id)
+        ).first()
+    if row is None or row[0] is None:
+        raise ValueError(f"No existe una corrida con week_start: {run_id}")
+
+    week_start = row[0]
+    result = execute_week(
+        engine,
+        week_start,
+        triggered_by=triggered_by,
+        force=True,
+        reason=f"replay rejects from {run_id}",
+    )
+    if result.status in {"success", "skipped"}:
+        with engine.begin() as conn:
+            conn.execute(
+                update(tables.rejects)
+                .where(
+                    tables.rejects.c.run_id == run_id,
+                    tables.rejects.c.replayed_at.is_(None),
+                )
+                .values(replayed_at=datetime.now(timezone.utc))
+            )
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Orquestación
 # ---------------------------------------------------------------------------
@@ -680,6 +889,24 @@ def default_steps(engine: Engine) -> WeekSteps:
     )
 
 
+def _record_skipped_run(
+    engine: Engine,
+    run_id: str,
+    week_start: date,
+    triggered_by: str,
+    instrumentation_since: date | None,
+    reason: str,
+) -> WeekResult:
+    start_run(engine, run_id, week_start, triggered_by, instrumentation_since)
+    finish_run(engine, run_id, status="skipped", quality_status=reason)
+    return WeekResult(
+        run_id=run_id,
+        week_start=week_start,
+        status="skipped",
+        skipped_reason=reason,
+    )
+
+
 def execute_week(
     engine: Engine | None,
     week_start: date,
@@ -691,7 +918,7 @@ def execute_week(
     steps: WeekSteps | None = None,
     run_id: str | None = None,
 ) -> WeekResult:
-    """Ejecuta una semana completa y devuelve el resultado sin lanzar.
+    """Ejecuta una semana con lock, circuit breaker y watchdog.
 
     El flow de Prefect convierte un ``status="failed"`` en excepción; el CLI lo
     traduce a exit code 1. Así los tests pueden inspeccionar el fallo sin
@@ -699,18 +926,91 @@ def execute_week(
     """
 
     engine = engine or get_engine()
+    run_id = run_id or str(uuid4())
+
+    mark_zombie_runs(engine)
+
+    with week_lock(engine, week_start) as acquired:
+        if not acquired:
+            return _record_skipped_run(
+                engine,
+                run_id,
+                week_start,
+                triggered_by,
+                instrumentation_since,
+                "locked",
+            )
+
+        if not force and source_is_tripped(engine):
+            start_run(engine, run_id, week_start, triggered_by, instrumentation_since)
+            record_step(
+                engine,
+                run_id,
+                "extract",
+                "failed",
+                datetime.now(timezone.utc),
+                detail={"error": "source_unavailable"},
+            )
+            finish_run(
+                engine,
+                run_id,
+                status="failed",
+                error_message="source_unavailable",
+            )
+            return WeekResult(
+                run_id=run_id,
+                week_start=week_start,
+                status="failed",
+                error="source_unavailable",
+            )
+
+        return _execute_week_inner(
+            engine,
+            week_start,
+            triggered_by=triggered_by,
+            force=force,
+            reason=reason,
+            instrumentation_since=instrumentation_since,
+            steps=steps,
+            run_id=run_id,
+        )
+
+
+def _execute_week_inner(
+    engine: Engine | None,
+    week_start: date,
+    *,
+    triggered_by: str = "manual",
+    force: bool = False,
+    reason: str | None = None,
+    instrumentation_since: date | None = None,
+    steps: WeekSteps | None = None,
+    run_id: str | None = None,
+) -> WeekResult:
+    """Cuerpo de la corrida, ya protegido por el lock de la semana."""
+
+    engine = engine or get_engine()
     steps = steps or default_steps(engine)
     run_id = run_id or str(uuid4())
 
     start_run(engine, run_id, week_start, triggered_by, instrumentation_since)
 
-    if is_frozen(engine, week_start) and not force:
+    frozen = is_frozen(engine, week_start)
+    if frozen and not force:
         finish_run(engine, run_id, status="skipped", quality_status="frozen")
         return WeekResult(
             run_id=run_id,
             week_start=week_start,
             status="skipped",
             skipped_reason="frozen",
+        )
+    if frozen and force:
+        snapshot_week(
+            engine,
+            week_start,
+            run_id,
+            reason or "forced backfill",
+            triggered_by,
         )
 
     try:
@@ -814,6 +1114,10 @@ def execute_week(
             source_fingerprint=fingerprint,
             quality_status=quality.status,
         )
+        try:
+            maybe_freeze_week(engine, week_start)
+        except Exception:  # pragma: no cover - la congelación no invalida la carga
+            logger.exception("No se pudo congelar la semana %s", week_start)
         return WeekResult(
             run_id=run_id,
             week_start=week_start,
