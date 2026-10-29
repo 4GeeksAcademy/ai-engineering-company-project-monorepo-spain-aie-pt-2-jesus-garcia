@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { fetchSuppliers, fetchSupplier, createSupplier, updateSupplier, deleteSupplier, friendlyError } from "@/lib/api";
 import type { Supplier, SupplierCreate, SupplierListItem, SupplierUpdate } from "@/lib/types";
@@ -10,6 +10,8 @@ import {
   COUNTRY_FLAGS,
 } from "@/lib/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagination } from "@/hooks/usePagination";
 import { useAuth } from "@/contexts/AuthContext";
 
 const SupplierForm = dynamic(
@@ -44,6 +46,11 @@ export default function SuppliersPage() {
   const [confirmDelete, setConfirmDelete] = useState<SupplierListItem | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const pagination = usePagination(suppliers, {
+    resetKey: `${countryFilter}|${statusFilter}|${categoryFilter}|${debouncedSearch}`,
+  });
 
   async function refresh() {
     const fresh = await fetchSuppliers({
@@ -228,7 +235,10 @@ export default function SuppliersPage() {
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
+          <div
+            ref={tableRef}
+            className="scroll-mt-6 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/60"
+          >
             <table className="w-full text-left text-sm">
               <thead className="border-b border-white/10 bg-slate-800/50">
                 <tr>
@@ -253,7 +263,7 @@ export default function SuppliersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {suppliers.map((supplier) => (
+                {pagination.pageItems.map((supplier) => (
                   <tr
                     key={supplier.id}
                     className="transition hover:bg-white/5"
@@ -362,9 +372,15 @@ export default function SuppliersPage() {
         )}
 
         {!loading && suppliers.length > 0 && (
-          <p className="mt-4 text-sm text-slate-500">
-            {suppliers.length} proveedor{suppliers.length !== 1 ? "es" : ""}
-          </p>
+          <Pagination
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            scrollTargetRef={tableRef}
+            label="proveedores"
+          />
         )}
 
       {showForm && (

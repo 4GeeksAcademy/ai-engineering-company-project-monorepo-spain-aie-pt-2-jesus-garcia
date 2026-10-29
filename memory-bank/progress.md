@@ -408,3 +408,61 @@ El stub del colector se sustituye por el endpoint real que valida, persiste y re
 - `test_telemetry.py` y `test_telemetry_barriers.py` actualizados al nuevo contrato (los 422 por evento pasan a rechazo parcial).
 - Verificado contra Supabase real en transacción con rollback: `rowcount = 1` para dos filas con el mismo `event_id`, `tags` JSONB correcto y `received_at` rellenado por `now()`.
 - Suites: **178 passed** en `services/api`. Frontend intacto (sin cambios en `uis/` ni `shared/`).
+
+## Telemetría — Reporte técnico operativo (Phase 4) + dashboard
+
+`telemetry_events` se transforma en métricas **técnicas/operativas** con Pandas y se expone en `GET /telemetry/report`. No hay KPIs de negocio (ventas, conversión, ingresos): volumen, errores, latencia y autenticación.
+
+### Backend (`services/api`)
+
+- `app/telemetry/analysis.py` (nuevo) — pipeline por métrica: **load** (SQL con push-down de `event_type IN (...)` y `timestamp >= start` / `< end`) → **refine** (tags + columnas derivadas) → `pd.to_datetime(..., utc=True)` → `date` (`YYYY-MM-DD`) → `groupby` → agregación → `list[dict]`.
+  - `fetch_events()` devuelve solo `event_type`, `timestamp`, `tags`; nunca escanea la tabla completa.
+  - 5 funciones puras `(session, start_date, end_date)`:
+    - `events_per_day` — ¿qué eventos ocurren y con qué volumen? (`groupby date + event_type`, count).
+    - `error_rate_by_day` — ¿los fallos crecen respecto al tráfico? (`is_failure` sobre `FAILURE_EVENT_TYPES`, `error_count/event_count`).
+    - `errors_by_type` — ¿dónde se concentran los fallos? (`date + event_type`, count).
+    - `latency_per_day` — ¿se degrada la latencia? (`api_response_time.tags.duration_ms` → media, p50, p95, muestras).
+    - `auth_failure_rate` — ¿aumentan los logins fallidos? (`login_failed/(login_failed+login_succeeded)`, `[0,1]`).
+  - Sin bucles por fila para agregar; periodo vacío → `[]`.
+  - `FAILURE_EVENT_TYPES`: `direct_stock_edit_rejected`, `stock_validation_failed`, `outbound_rejected_insufficient_stock`, `login_failed`, `incident_validation_failed`, `incident_transition_rejected`, `frontend_error_uncaught`.
+- `schemas.py` — `TelemetryPeriod` (alias `from`/`to`) y `TelemetryReportResponse` (`period`, `metrics`).
+- `app/routes/telemetry.py` — `GET /telemetry/report` público, params opcionales `start_date`/`end_date` (ISO 8601 UTC). Defaults: últimos 7 días (`now` truncado a minuto para que el default también cachee). `start >= end` → 400. Caché en memoria `telemetry:report:<start>:<end>` con TTL **60 s** reutilizando `app/core/cache.py`; en hit no se ejecuta Pandas.
+- `tests/test_telemetry_report.py` (14 casos): agrupaciones por fecha, error rate, errores por tipo, latencia/p95, auth failure rate, conversión UTC antes de agrupar, periodo vacío, push-down SQL (`EVENT_TYPE IN` + `TIMESTAMP >=`), `end` exclusivo, defaults de 7 días, 400 y cache hit (spy sobre `build_metrics`).
+
+### Frontend (`uis/backoffice`)
+
+- `lib/types.ts` — `TelemetryReport`, filas de las 5 métricas y `computeTelemetrySummary()` (totales y tasas ponderadas por sus denominadores).
+- `lib/api.ts` — `fetchTelemetryReport({ start_date, end_date })` contra `/api/telemetry/report` (rewrite existente; endpoint público).
+- `app/(protected)/telemetry/page.tsx` — rango de fechas (por defecto últimos 7 días), `period.from`/`period.to`, tarjetas resumen y tablas con barras CSS para eventos por día, tasa de error, errores por tipo, latencia y fallos de login. Estado vacío cuando no hay eventos.
+- `components/Sidebar.tsx` — entrada “Telemetría” → `/telemetry`.
+- Tests: `lib/__tests__/api.test.ts`, `lib/__tests__/types.test.ts` y `app/(protected)/telemetry/page.test.tsx` (periodo, resumen, 5 secciones, cambio de rango, vacío y error con reintento).
+
+### Verificación
+
+- `pytest` en `services/api`: **192 passed** (178 + 14 nuevos).
+- `uis/backoffice`: **59 tests Vitest**, lint y build OK; ruta `/telemetry` en el build.
+- Tipo-check raíz (`npm run typecheck`) OK.
+- Contra Supabase real (`2026-10-25T00:00:00Z` → `2026-10-26T00:00:00Z`, 27 eventos): la respuesta incluye las 5 métricas; cold ≈ 443 ms, warm ≈ 3 ms (caché 60 s).
+
+## Backoffice — Paginación de tablas y sidebar fija
+
+Dos mejoras de UI en `uis/backoffice` (solo frontend, sin cambios de API).
+
+### Sidebar siempre visible
+
+- `app/(protected)/layout.tsx` — shell `flex h-dvh overflow-hidden`: el scroll pasa a `<main className="flex-1 overflow-y-auto">`. Antes (`min-h-screen` + `overflow-auto`) el `<aside>` crecía con el contenido y el bloque inferior del sidebar (“Cerrar sesión”) quedaba fuera del viewport en páginas largas.
+- `components/Sidebar.tsx` — `aside` con `h-full shrink-0`; `nav` con `flex-1 overflow-y-auto` (si el menú crece, scrollea solo esa zona); bloque de usuario/logout con `mt-auto shrink-0`.
+
+### Paginación reutilizable (cliente)
+
+- `hooks/usePagination.ts` (nuevo) — `usePagination(items, { initialPageSize = 25, resetKey })`: `page`, `setPage`, `pageSize`, `setPageSize` (vuelve a página 1), `total`, `totalPages`, `pageItems`, `start`, `end`. Ajusta el estado durante el render para acotar la página si la lista se acorta y para resetear a 1 cuando cambia `resetKey` (filtros).
+- `components/ui/Pagination.tsx` (nuevo) — texto “Mostrando X–Y de Z <sustantivo>”, anterior/siguiente, números con elipsis (`aria-current="page"`), selector 10/25/50 (oculto si `total <= 10`), navegación oculta con una sola página. `scrollTargetRef` lleva la tabla a la vista al cambiar de página.
+- Aplicado a las 5 tablas: `suppliers` (reset por país/estado/categoría/búsqueda), `incidents` (reset por los 4 filtros), `inventory` (productos con reset por almacén, e historial de órdenes, cada uno con su propia paginación) y `telemetry` (`PagedSection` genérica con paginación independiente por métrica, reset al cambiar el rango de fechas).
+- Contenedores de tabla: `overflow-x-auto` + `scroll-mt-6` (scroll horizontal en pantallas estrechas en lugar de deformar el layout).
+
+### Verificación
+
+- `uis/backoffice`: **73 tests Vitest** (14 nuevos: `hooks/usePagination.test.ts` 7, `components/ui/Pagination.test.tsx` 6, integración de paginación en `inventory/page.test.tsx` 1), lint y build OK; typecheck raíz OK.
+- Comprobado contra el stack Docker real (admin, :3001): `/incidents` 95 registros → 25 por página (“Mostrando 1–25 de 95” → “26–50”), `aside` = altura del viewport y “Cerrar sesión” visible con `<main>` scrolleado al final; `/inventory` 25 de 28 órdenes; `/suppliers` 15 de 15 y `/telemetry` paginada por sección.
+- Pendiente/futuro: paginación **server-side** (`limit`/`offset` + `total`) para no descargar listados completos (hoy `GET /suppliers`, `/incidents`, `/inventory/products` y `/inventory/orders` devuelven todo).
+

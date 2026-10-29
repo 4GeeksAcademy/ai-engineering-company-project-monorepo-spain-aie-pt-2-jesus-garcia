@@ -56,9 +56,9 @@ export default function ProtectedLayout({
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-dvh overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-auto p-6 lg:p-10">{children}</main>
+      <main className="flex-1 overflow-y-auto p-6 lg:p-10">{children}</main>
     </div>
   );
 }

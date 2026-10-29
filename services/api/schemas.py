@@ -74,3 +74,13 @@ class TelemetryIngestResponse(BaseModel):
     received: int
     stored: int
     rejected: int
+
+
+class TelemetryPeriod(BaseModel):
+    period_from: datetime = Field(alias="from")
+    period_to: datetime = Field(alias="to")
+
+
+class TelemetryReportResponse(BaseModel):
+    period: TelemetryPeriod
+    metrics: dict[str, list[dict[str, Any]]]
