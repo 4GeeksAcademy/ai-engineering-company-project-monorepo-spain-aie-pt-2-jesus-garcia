@@ -10,6 +10,7 @@ deployments:
     work_pool:
       name: trackflow-pool
       work_queue_name: default
+    concurrency_limit: 1
     schedules:
       - cron: "0 8 * * 1"
         timezone: UTC
@@ -26,6 +27,7 @@ deployments:
     work_pool:
       name: trackflow-pool
       work_queue_name: default
+    concurrency_limit: 1
     schedules:
       - cron: "0 7 * * *"
         timezone: UTC

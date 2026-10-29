@@ -14,9 +14,11 @@ RUN pip install --no-cache-dir \
     "pandas>=2" \
     "SQLAlchemy>=2" \
     "psycopg2-binary" \
-    "python-dotenv"
+    "python-dotenv" \
+    "httpx"
 
 COPY pipelines ./pipelines
+COPY pipelines/weekly_performance/prefect.yaml ./prefect.yaml
 
 # El worker de Prefect se lanza aparte; este CMD permite ejecutar por script.
 CMD ["python", "-m", "pipelines.weekly_performance", "run"]

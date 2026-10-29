@@ -9,7 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
-| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F4 implementadas (flows/tasks, resiliencia, idempotencia, calidad/reconciliación); pendiente F5–F6 e instrumentación de origen |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F5 implementadas (flows/tasks, resiliencia, idempotencia, calidad, Prefect self-hosted); pendiente F6 e instrumentación de origen |
 
 ## Últimas decisiones
 
@@ -629,5 +629,35 @@ G1–G4.
 ### Verificación F4
 
 - `pytest pipelines/weekly_performance/tests` → **45 passed, 3 skipped**.
+- `compileall` y `git diff --check` OK.
+
+## Pipeline de desempeño — F5 implementada (orquestación y operación)
+
+- `docker-compose.yml` — perfil opcional `prefect` con:
+  - `prefect-server` (UI/API en `:4200`, SQLite en volumen `prefect-data`,
+    healthcheck y `restart: unless-stopped`);
+  - `prefect-init` (crea el work pool `trackflow-pool`);
+  - `prefect-deploy` (despliega `prefect.yaml` con concurrencia 1);
+  - `prefect-worker` (imagen del pipeline, `DATABASE_URL_PIPELINE` y alertas).
+- `prefect.yaml` — deployments `weekly-prod` (lunes 08:00 UTC) y
+  `source-reconciliation-daily` (07:00 UTC), `concurrency_limit: 1`.
+- `alerts.py` — `send_alert()` con `PIPELINE_ALERT_WEBHOOK`; se invoca en fallo
+  de quality gate, excepción, advertencia, circuit breaker y fuente bloqueada.
+  Sin webhook solo loguea; nunca tumba el pipeline.
+- `flow.py` — artefacto Markdown por corrida (`create_markdown_artifact`) solo
+  dentro de un flow run real.
+- `RUNBOOK.md` — 9 procedimientos (corrida fallida, semana vacía, rechazo
+  masivo, backfill congelado, replay, lock colgado, circuit breaker, Prefect
+  caído, alertas).
+- `Dockerfile` — instala `httpx` y copia `prefect.yaml` al root de la imagen.
+- Imports de `flow.py`/`tasks.py` pasan a absolutos para que Prefect pueda
+  cargar el entrypoint por ruta de archivo.
+
+### Verificación F5
+
+- `pytest pipelines/weekly_performance/tests` → **46 passed, 3 skipped**.
+- `docker compose --profile prefect config` OK.
+- `prefect deploy --all` parsea `prefect.yaml` y carga `weekly-prod` (falla solo
+  porque el work pool no existe en el servidor temporal, como se espera).
 - `compileall` y `git diff --check` OK.
 

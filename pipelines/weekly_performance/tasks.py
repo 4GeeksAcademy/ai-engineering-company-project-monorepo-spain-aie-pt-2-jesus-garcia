@@ -12,7 +12,7 @@ from datetime import date
 from prefect import task
 from sqlalchemy.exc import DBAPIError, OperationalError
 
-from .core import (
+from pipelines.weekly_performance.core import (
     NormalizeResult,
     QualityReport,
     aggregate_kpis,
@@ -23,7 +23,7 @@ from .core import (
     reconcile_source,
     reconcile_week,
 )
-from .db import get_engine
+from pipelines.weekly_performance.db import get_engine
 
 
 def _is_transient(_task, _task_run, state) -> bool:

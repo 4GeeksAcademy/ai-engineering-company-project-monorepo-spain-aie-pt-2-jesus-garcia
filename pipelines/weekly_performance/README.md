@@ -34,6 +34,8 @@ no necesitan servidor. `tasks.py` y `flow.py` son la capa de orquestación.
 | `PIPELINE_REPORTING_SCHEMA` | Esquema destino | `reporting` |
 | `PIPELINE_OPS_SCHEMA` | Esquema del outbox | `ops` |
 | `PIPELINE_INSTRUMENTATION_SINCE` | Fecha desde la que existen quiebres/discrepancias | vacío |
+| `PIPELINE_ALERT_WEBHOOK` | Webhook de alertas (Slack/Teams compatible) | vacío |
+| `PREFECT_API_URL` | URL del servidor Prefect (self-hosted o Cloud) | `http://localhost:4200/api` |
 
 ## Ejecución por script
 
@@ -62,8 +64,33 @@ python -c "from pipelines.weekly_performance.flow import weekly_flow; weekly_flo
 ```
 
 El flow padre procesa la última semana cerrada y el lookback; cada semana es un
-subflow aislado. El deployment y el worker self-hosted llegan en la fase de
-orquestación.
+subflow aislado.
+
+### Prefect self-hosted (Docker Compose)
+
+```bash
+# servidor + work pool + deployment + worker (perfil opcional)
+docker compose --profile prefect up -d \
+  prefect-server prefect-init prefect-deploy prefect-worker
+
+# UI/API
+open http://localhost:4200
+```
+
+- `prefect.yaml` define `weekly-prod` (lunes 08:00 UTC) y
+  `source-reconciliation-daily` (07:00 UTC), ambos con `concurrency_limit: 1`.
+- El servidor usa SQLite en el volumen `prefect-data`; para producción se
+  cambia `PREFECT_API_DATABASE_CONNECTION_URL` a PostgreSQL.
+- Para Prefect Cloud solo hay que cambiar `PREFECT_API_URL` y `PREFECT_API_KEY`.
+- Cada corrida genera un artefacto Markdown con el resumen de la semana.
+
+### Alertas
+
+`PIPELINE_ALERT_WEBHOOK` recibe un POST `{"text": "..."}` en fallos, gates
+bloqueantes, advertencias y circuit breaker abierto. Sin webhook, solo se
+registra en el log.
+
+Ver [`RUNBOOK.md`](./RUNBOOK.md) para los procedimientos operativos.
 
 ## Tests
 

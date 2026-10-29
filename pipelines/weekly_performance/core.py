@@ -22,6 +22,7 @@ from sqlalchemy import Engine, delete, func, insert, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from .alerts import send_alert
 from .db import get_engine
 from .locks import week_lock
 from .schema import stock_table, telemetry_table
@@ -1106,6 +1107,11 @@ def execute_week(
                 status="failed",
                 error_message="source_unavailable",
             )
+            send_alert(
+                "Circuit breaker abierto",
+                f"3 fallos consecutivos de extract; semana {week_start} bloqueada. "
+                "Usa backfill --force --reason para reintentar.",
+            )
             return WeekResult(
                 run_id=run_id,
                 week_start=week_start,
@@ -1236,6 +1242,10 @@ def _execute_week_inner(
                 quality_status=quality.status,
                 error_message=quality.summary,
             )
+            send_alert(
+                "Quality gate bloqueante",
+                f"Semana {week_start}: {quality.summary}",
+            )
             return WeekResult(
                 run_id=run_id,
                 week_start=week_start,
@@ -1273,6 +1283,12 @@ def _execute_week_inner(
             source_fingerprint=fingerprint,
             quality_status=quality.status,
         )
+        if quality.status == "warning":
+            send_alert(
+                "Pipeline semanal con advertencias",
+                f"Semana {week_start}: {quality.summary}",
+                level="warning",
+            )
         try:
             maybe_freeze_week(engine, week_start)
         except Exception:  # pragma: no cover - la congelación no invalida la carga
@@ -1290,6 +1306,7 @@ def _execute_week_inner(
         )
     except Exception as exc:  # noqa: BLE001 - se registra en el ledger
         logger.exception("Fallo procesando la semana %s", week_start)
+        send_alert("Pipeline semanal falló", f"Semana {week_start}: {exc}")
         try:
             finish_run(
                 engine,

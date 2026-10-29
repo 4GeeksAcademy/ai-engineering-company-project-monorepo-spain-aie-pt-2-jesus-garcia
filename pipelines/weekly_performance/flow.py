@@ -10,12 +10,22 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from prefect import flow
+from prefect.artifacts import create_markdown_artifact
+from prefect.runtime import flow_run
 
-from .core import WeekSteps, execute_week, resolve_target_weeks
-from .db import get_engine
-from .settings import DEFAULT_LOOKBACK_WEEKS, get_instrumentation_since
-from .sql import create_reporting_schema
-from .tasks import (
+from pipelines.weekly_performance.core import (
+    WeekResult,
+    WeekSteps,
+    execute_week,
+    resolve_target_weeks,
+)
+from pipelines.weekly_performance.db import get_engine
+from pipelines.weekly_performance.settings import (
+    DEFAULT_LOOKBACK_WEEKS,
+    get_instrumentation_since,
+)
+from pipelines.weekly_performance.sql import create_reporting_schema
+from pipelines.weekly_performance.tasks import (
     aggregate_task,
     extract_task,
     load_task,
@@ -59,7 +69,30 @@ def process_week(
         raise ValueError(
             f"Semana {week_start} falló: {result.error or 'error desconocido'}"
         )
+    if flow_run.get_id():
+        try:
+            create_markdown_artifact(
+                key=f"weekly-performance-{result.week_start}",
+                markdown=_markdown_summary(result),
+                description=f"Resumen de la semana {result.week_start}",
+            )
+        except Exception:  # pragma: no cover - el artefacto es evidencia, no bloquea
+            pass
     return result
+
+
+def _markdown_summary(result: WeekResult) -> str:
+    return (
+        f"## Semana {result.week_start}\n\n"
+        f"- Estado: **{result.status}**\n"
+        f"- Calidad: **{result.quality_status or '-'}**\n"
+        f"- Filas extraídas: {result.rows_extracted}\n"
+        f"- Filas válidas: {result.rows_valid}\n"
+        f"- Filas rechazadas: {result.rows_rejected}\n"
+        f"- Filas escritas: {result.rows_written}\n"
+        f"- Fingerprint: `{result.source_fingerprint or '-'}`\n"
+        + (f"\n**Error:** {result.error}\n" if result.error else "")
+    )
 
 
 @flow(name="weekly-warehouse-client-performance")
