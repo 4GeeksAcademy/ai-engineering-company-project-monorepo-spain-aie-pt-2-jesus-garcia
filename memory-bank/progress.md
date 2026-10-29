@@ -9,6 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | Plan cerrado con 6 decisiones; pendiente implementación (Fase 0) |
 
 ## Últimas decisiones
 
@@ -465,4 +466,39 @@ Dos mejoras de UI en `uis/backoffice` (solo frontend, sin cambios de API).
 - `uis/backoffice`: **73 tests Vitest** (14 nuevos: `hooks/usePagination.test.ts` 7, `components/ui/Pagination.test.tsx` 6, integración de paginación en `inventory/page.test.tsx` 1), lint y build OK; typecheck raíz OK.
 - Comprobado contra el stack Docker real (admin, :3001): `/incidents` 95 registros → 25 por página (“Mostrando 1–25 de 95” → “26–50”), `aside` = altura del viewport y “Cerrar sesión” visible con `<main>` scrolleado al final; `/inventory` 25 de 28 órdenes; `/suppliers` 15 de 15 y `/telemetry` paginada por sección.
 - Pendiente/futuro: paginación **server-side** (`limit`/`offset` + `total`) para no descargar listados completos (hoy `GET /suppliers`, `/incidents`, `/inventory/products` y `/inventory/orders` devuelven todo).
+
+## Pipeline de desempeño de negocio — Plan resiliente (PIPELINE_2)
+
+Entregable de **diseño/planificación** (sin código de pipeline todavía). El briefing
+`docs/pipeline/PIPELINE_2.md` es idéntico a `PIPELINE_1.md`; se interpreta como una
+segunda iteración centrada en resiliencia sobre el diseño previo
+(`data/pipelines/PIPELINE_DESIGN.md`).
+
+- `docs/pipeline/PIPELINE_2_PLAN.md` (nuevo) — plan de ejecución en 8 fases
+  (F0 fundaciones → F7 endurecimiento), con criterios medibles R1–R10, matriz de
+  fallos, 13 quality gates, modelo de datos ampliado, observabilidad/SLO, 11 PRs
+  secuenciados y estimación de **18–22 días-persona**.
+- **Brechas de origen identificadas** (bloqueantes de producción): `emitter.py`
+  solo escribe en log; `SKU` no tiene `client_id`; no existe `min_stock`;
+  `inventory_discrepancy_detected` no está instrumentado y `IncidentCreate` no
+  tiene campos estructurados (`order_id`, `sku_code`, cantidades).
+- **Decisiones cerradas:**
+  - **D1** — throughput con `count(distinct coalesce(order_id, event_id))`
+    (pedidos únicos, inmune a reintentos).
+  - **D2** — un evento de discrepancia por pedido afectado, emitido desde
+    `POST /inventory/discrepancies` (discrepancia SQL + outbox en la misma
+    transacción); la incidencia queda como efecto secundario opcional.
+  - **D3** — congelar semanas tras 2 corridas exitosas (W+2); backfill explícito
+    con `--force --reason` y snapshot en `weekly_performance_revisions`.
+  - **D4** — Prefect self-hosted en Docker Compose (servidor + worker); migrable
+    a Cloud cambiando `PREFECT_API_URL`.
+  - **D5** — módulo en `services/api/app/reporting/` (mapeo documentado desde el
+    `services/reporting/` del briefing).
+  - **D6** — backfill solo inbound/outbound desde `stock_entry`/`stock_exit`;
+    quiebres y discrepancias empiezan en `instrumentation_since`.
+- **Pendiente (P1):** ubicación de la UI de discrepancias — recomendado un botón
+  "Registrar discrepancia" en `/inventory` (la incidencia se crea como efecto
+  secundario).
+- **Siguiente paso:** Fase 0 — esqueleto `pipelines/weekly_performance/`, DDL de
+  `reporting.*` y PostgreSQL efímero para tests.
 
