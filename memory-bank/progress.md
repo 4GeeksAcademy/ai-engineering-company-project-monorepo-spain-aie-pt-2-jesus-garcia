@@ -9,7 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
-| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F5 implementadas (flows/tasks, resiliencia, idempotencia, calidad, Prefect self-hosted); pendiente F6 e instrumentación de origen |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas (pipeline, Prefect, API `/reporting` y backoffice); pendiente instrumentación de origen G1–G4 |
 
 ## Últimas decisiones
 
@@ -660,4 +660,48 @@ G1–G4.
 - `prefect deploy --all` parsea `prefect.yaml` y carga `weekly-prod` (falla solo
   porque el work pool no existe en el servidor temporal, como se espera).
 - `compileall` y `git diff --check` OK.
+
+## Pipeline de desempeño — F6 implementada (API y backoffice)
+
+### Backend (`services/api`)
+
+- `app/reporting/` nuevo:
+  - `schemas.py` — `WeeklyPerformanceEntry`, `WeeklyPerformanceResponse`
+    (incluye `frozen`, `stale`, `computed_at`), `PipelineRunLatest`,
+    `PipelineRunTriggerRequest/Response`.
+  - `service.py` — consultas de solo lectura sobre `reporting.*` con
+    prefijo de esquema según dialecto; `ReportNotFound` para 404;
+    `has_running_run()` para 409.
+  - `prefect_client.py` — `httpx` contra `PREFECT_API_URL`; busca el deployment
+    `weekly-prod`, crea el flow run y traduce fallos a `PrefectUnavailable`
+    (503). Soporta `PREFECT_API_KEY`.
+  - `router.py` — 3 endpoints con `require_manager` y caché en memoria
+    (`GET` semanal 60 s, `latest` 5 s).
+- `main.py` registra `reporting_router`.
+- `services/api/README.md` documenta el módulo.
+- `tests/test_reporting.py` (12 casos): auth 401/403, última semana, filtro por
+  semana, `frozen`/`stale`, 404, `latest`, 409, 503, 202 y caché.
+
+### Frontend (`uis/backoffice`)
+
+- `lib/types.ts` — tipos de reporting y `computeWeeklyTotals()` (tasa ponderada).
+- `lib/api.ts` — `fetchWeeklyPerformance`, `fetchLatestPipelineRun`,
+  `triggerPipelineRun`.
+- `app/(protected)/reporting/page.tsx` — selector de semana, tarjetas de
+  totales, tabla por almacén/cliente, estado de la última corrida, badges
+  `frozen`/`stale`, botón "Ejecutar ahora" con `ConfirmDialog` y polling cada
+  5 s mientras la corrida está `running`.
+- `components/Sidebar.tsx` — entrada "Desempeño" → `/reporting`.
+- `next.config.ts` — rewrite `/api/reporting/:path*` → `BACKEND_URL/reporting/:path*`.
+- `app/(protected)/reporting/page.test.tsx` (5 casos): resumen/tabla, estado del
+  pipeline, estado vacío, disparo manual y filtro por semana.
+
+### Verificación F6
+
+- `services/api` → **204 passed** (192 previos + 12 de reporting).
+- `uis/backoffice` → **78 tests Vitest** (73 + 5), `npm run lint` y
+  `npm run build` OK; ruta `/reporting` en el build.
+- `npm run typecheck` raíz OK.
+- Servicio de reporting validado contra PostgreSQL real (esquema `reporting`,
+  `date`/`timestamptz` y `Session` SQLModel).
 

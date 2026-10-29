@@ -27,6 +27,8 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
     volumes:
       - ./services/api:/app
     networks: [monorepo-dev]

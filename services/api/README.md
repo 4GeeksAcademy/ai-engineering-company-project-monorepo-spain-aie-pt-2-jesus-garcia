@@ -44,6 +44,20 @@ curl -F "file=@COMPANY.csv" http://localhost:8000/api/incidents/analyze
 curl http://localhost:8000/api/incidents/results/export -o results.csv
 ```
 
+## Reporting (desempeño semanal)
+
+Módulo `app/reporting/` — solo lectura sobre el esquema `reporting` que escribe
+el pipeline (`pipelines/weekly_performance`). Requiere rol `manager`/`admin`.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/reporting/weekly-warehouse-client-performance?week_start=YYYY-MM-DD` | Reporte de la semana (por defecto, la última calculada) |
+| GET | `/reporting/pipeline-runs/latest` | Estado y metadata de la última corrida |
+| POST | `/reporting/pipeline-runs` | Dispara una corrida manual (`202`; `409` si hay una en curso; `503` si Prefect no responde) |
+
+`PREFECT_API_URL` (por defecto `http://localhost:4200/api`) apunta al servidor
+Prefect self-hosted o a Prefect Cloud.
+
 ## Errores HTTP
 
 | Código | Situación |
