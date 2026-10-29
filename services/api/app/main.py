@@ -13,6 +13,7 @@ from sqlmodel import SQLModel
 
 from database import engine
 from models import HealthResponse
+from app.telemetry.outbox import create_outbox_table
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
 from .routes.inventory import router as inventory_router
@@ -37,6 +38,7 @@ TELEMETRY_ENDPOINT = os.getenv("TELEMETRY_ENDPOINT")
 async def lifespan(app: FastAPI):
     if engine is not None:
         SQLModel.metadata.create_all(engine)
+        create_outbox_table(engine)
     logger.info("Telemetry endpoint configured: %s", TELEMETRY_ENDPOINT or "<unset>")
     yield
 

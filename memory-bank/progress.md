@@ -9,7 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
-| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas (pipeline, Prefect, API `/reporting` y backoffice); pendiente instrumentación de origen G1–G4 |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
 
 ## Últimas decisiones
 
@@ -704,4 +704,54 @@ G1–G4.
 - `npm run typecheck` raíz OK.
 - Servicio de reporting validado contra PostgreSQL real (esquema `reporting`,
   `date`/`timestamptz` y `Session` SQLModel).
+
+## Pipeline de desempeño — G1–G4 (instrumentación de origen)
+
+### Esquema y migración
+
+- `services/api/migrations/0001_g1_g4.sql` (aditiva e idempotente):
+  - G1: `ops.telemetry_outbox` (ya existía; `if not exists`).
+  - G2: `sku.client_id` **nullable** (pendiente de mapeo).
+  - G3: `sku.min_stock` **nullable** (`NULL` = no configurado; `0` = umbral cero).
+  - G4: `inventory_discrepancy` + `client_id` snapshot en `stock_entry`/`stock_exit`.
+- **Migración aplicada en producción (Supabase)** con backup previo:
+  - backup custom `pg_dump` (PostgreSQL 17.4 client) verificado con
+    `pg_restore --list`; 323 KiB.
+  - aplicada por conexión directa (`db.<ref>.supabase.co:5432`), no por el
+    transaction pooler 6543.
+  - verificado: `sku` tiene `client_id`/`min_stock`; existen
+    `inventory_discrepancy` y `ops.telemetry_outbox`; 12 SKUs sin mapeo (esperado).
+- `migrations/README.md` documenta backup, aplicación y rollback.
+
+### Código
+
+- `app/telemetry/emitter.py` — `build_event()` (sin persistir) + `log_event()`.
+- `app/telemetry/outbox.py` — tabla `ops.telemetry_outbox` (PostgreSQL) /
+  tabla plana (SQLite), `enqueue_event()` y `create_outbox_table()`.
+- `inventory_service.py` — orden + evento en la misma transacción; snapshot de
+  `client_id`; `stock_threshold_triggered` al cruzar `min_stock`;
+  `create_discrepancy()` con un evento por `order_id`.
+- `app/routes/inventory.py` — `POST /inventory/discrepancies`; `SKURead` expone
+  `client_id` y `min_stock`.
+- `models.py` — `SKU.client_id/min_stock`, snapshot en órdenes y
+  `InventoryDiscrepancy`; `schema_version` 2.0.0.
+- Catálogo y `docs/telemetry/event-schemas.json` — `order_id` requerido para
+  discrepancias y `manual_audit` en `detection_source`.
+- `import_sku_mapping.py` — CSV `sku_code,client_id,min_stock` con `--dry-run`,
+  `--allow-remote-db`, validación y resumen; ejemplo en
+  `data/sku_mapping.example.csv`.
+- Pipeline: gate `client_mapping_missing` cuando todos los rechazos son
+  `missing_client_id`; aviso `configuration_gaps:client=X,min_stock=Y`.
+
+### Verificación G1–G4
+
+- `services/api` → **213 passed** (208 previos + 5 del importador).
+- `pipelines/weekly_performance` → **50 passed, 3 skipped**.
+- API validada contra PostgreSQL 17 real: inbound + discrepancia escriben en
+  `ops.telemetry_outbox` con JSONB y `client_id`.
+- Migración validada primero en PostgreSQL 17 efímero y luego aplicada a
+  Supabase producción.
+- Pendiente: cargar el CSV real cuando exista, fijar
+  `PIPELINE_INSTRUMENTATION_SINCE` y ejecutar backfill; desplegar el código API
+  con la nueva versión.
 

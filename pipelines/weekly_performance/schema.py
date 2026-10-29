@@ -255,6 +255,19 @@ def telemetry_table() -> Table:
     )
 
 
+def sku_config_table() -> Table:
+    """Vista de solo lectura de la configuración de SKU (cliente/umbral)."""
+
+    metadata = MetaData()
+    return Table(
+        "sku",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("client_id", String(128)),
+        Column("min_stock", Integer),
+    )
+
+
 def stock_table(name: str) -> Table:
     """Vista de solo lectura de ``stock_entry``/``stock_exit`` (reconciliación)."""
 

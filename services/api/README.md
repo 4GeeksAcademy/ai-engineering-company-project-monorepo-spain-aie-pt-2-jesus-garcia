@@ -44,6 +44,25 @@ curl -F "file=@COMPANY.csv" http://localhost:8000/api/incidents/analyze
 curl http://localhost:8000/api/incidents/results/export -o results.csv
 ```
 
+## Inventario: cliente, umbral y discrepancias
+
+- `SKU.client_id` y `SKU.min_stock` son **nullable**: `NULL` significa “pendiente
+  de mapeo” / “umbral no configurado”. El pipeline manda esos eventos a
+  cuarentena y no publica ceros.
+- `POST /inventory/discrepancies` registra el detalle SQL y emite un único evento
+  `inventory_discrepancy_detected` por `order_id` (manager/admin).
+- Las órdenes y discrepancias escriben su evento en `ops.telemetry_outbox` en la
+  misma transacción; el relay del pipeline lo mueve a `telemetry_events`.
+- Mapeo masivo por CSV:
+
+```bash
+python import_sku_mapping.py --file data/sku_mapping.csv --dry-run
+python import_sku_mapping.py --file data/sku_mapping.csv --allow-remote-db
+```
+
+Formato: `sku_code,client_id,min_stock` (ver
+`data/sku_mapping.example.csv`). Migración: `migrations/0001_g1_g4.sql`.
+
 ## Reporting (desempeño semanal)
 
 Módulo `app/reporting/` — solo lectura sobre el esquema `reporting` que escribe

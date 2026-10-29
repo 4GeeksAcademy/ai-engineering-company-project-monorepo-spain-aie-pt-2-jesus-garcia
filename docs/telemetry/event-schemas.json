@@ -270,23 +270,24 @@
       "processing_rationale": "Drives weekly audit prioritization; no real-time operational action is taken per event.",
       "high_frequency": false,
       "golden_rule": "We capture inventory_discrepancy_detected because we need to know in which SKUs and warehouses discrepancies occur most, which lets us prioritize inventory audits on the SKUs with the highest discrepancy rate (Ana).",
-      "required_properties": ["warehouse", "client_id", "product_id", "product_category", "quantity"],
+      "required_properties": ["warehouse", "client_id", "product_id", "product_category", "quantity", "order_id"],
       "allowlist": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["warehouse", "client_id", "product_id", "product_category", "quantity"],
+        "required": ["warehouse", "client_id", "product_id", "product_category", "quantity", "order_id"],
         "properties": {
           "warehouse": { "$ref": "#/definitions/warehouse" },
           "client_id": { "$ref": "#/definitions/client_id" },
           "product_id": { "$ref": "#/definitions/product_id" },
           "product_category": { "$ref": "#/definitions/product_category" },
           "quantity": { "type": "integer", "description": "Counted quantity reported by the audit." },
+          "order_id": { "type": "string", "description": "Outbound order affected by the discrepancy; one event per order." },
           "system_quantity": { "type": "integer" },
           "physical_quantity": { "type": "integer" },
           "discrepancy_delta": { "type": "integer", "description": "physical_quantity - system_quantity." },
           "detection_source": {
             "type": "string",
-            "enum": ["physical_count", "audit", "system_reconciliation"]
+            "enum": ["physical_count", "audit", "system_reconciliation", "manual_audit"]
           },
           "incident_id": { "type": "string" }
         }

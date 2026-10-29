@@ -69,6 +69,8 @@ def quality_task(
     instrumentation_since: date | None = None,
     previous_kpis: list[dict] | None = None,
     source_freshness_hours: float | None = None,
+    reject_reasons: dict[str, int] | None = None,
+    configuration_gaps: dict | None = None,
 ) -> QualityReport:
     return evaluate_quality(
         kpis,
@@ -79,6 +81,8 @@ def quality_task(
         instrumentation_since=instrumentation_since,
         previous_kpis=previous_kpis,
         source_freshness_hours=source_freshness_hours,
+        reject_reasons=reject_reasons,
+        configuration_gaps=configuration_gaps,
     )
 
 

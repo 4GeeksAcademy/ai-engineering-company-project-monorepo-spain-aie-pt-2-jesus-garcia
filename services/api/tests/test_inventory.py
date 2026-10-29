@@ -1,10 +1,12 @@
 import pytest
 
+from sqlalchemy import delete as sql_delete
 from sqlmodel import Session, delete, select
 
 from database import engine
-from models import SKU, StockEntry, StockExit
+from models import InventoryDiscrepancy, SKU, StockEntry, StockExit
 from app.services.inventory_service import compute_stock, compute_stock_by_warehouse
+from app.telemetry.outbox import outbox_table
 
 WAREHOUSES = ("los_angeles", "zaragoza")
 
@@ -12,15 +14,19 @@ WAREHOUSES = ("los_angeles", "zaragoza")
 @pytest.fixture(autouse=True)
 def _clean_inventory(client):
     with Session(engine) as session:
+        session.exec(delete(InventoryDiscrepancy))
         session.exec(delete(StockExit))
         session.exec(delete(StockEntry))
         session.exec(delete(SKU))
+        session.execute(sql_delete(outbox_table(engine)))
         session.commit()
     yield
     with Session(engine) as session:
+        session.exec(delete(InventoryDiscrepancy))
         session.exec(delete(StockExit))
         session.exec(delete(StockEntry))
         session.exec(delete(SKU))
+        session.execute(sql_delete(outbox_table(engine)))
         session.commit()
 
 

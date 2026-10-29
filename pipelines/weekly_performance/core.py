@@ -25,7 +25,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from .alerts import send_alert
 from .db import get_engine
 from .locks import week_lock
-from .schema import stock_table, telemetry_table
+from .schema import sku_config_table, stock_table, telemetry_table
 from .settings import (
     DEFAULT_LOOKBACK_WEEKS,
     DISCREPANCY,
@@ -325,6 +325,8 @@ def evaluate_quality(
     instrumentation_since: date | None = None,
     previous_kpis: list[dict] | None = None,
     source_freshness_hours: float | None = None,
+    reject_reasons: dict[str, int] | None = None,
+    configuration_gaps: dict | None = None,
 ) -> QualityReport:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -352,6 +354,17 @@ def evaluate_quality(
 
     if not kpis:
         warnings.append("empty_week")
+        if reject_reasons and set(reject_reasons) == {"missing_client_id"}:
+            blockers.append("client_mapping_missing")
+
+    if configuration_gaps:
+        without_client = int(configuration_gaps.get("without_client", 0))
+        without_min_stock = int(configuration_gaps.get("without_min_stock", 0))
+        if without_client or without_min_stock:
+            warnings.append(
+                "configuration_gaps:"
+                f"client={without_client},min_stock={without_min_stock}"
+            )
 
     if total_rows and reject_rate > REJECT_BLOCK_RATE:
         if total_rows >= REJECT_MIN_ROWS_FOR_BLOCK:
@@ -931,6 +944,41 @@ def _as_utc(value: Any) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def sku_configuration_gaps(engine: Engine) -> dict:
+    """Cuenta SKUs sin cliente y/o sin umbral configurado.
+
+    No bloquea la corrida por sí solo: es una señal de configuración. El gate
+    `client_mapping_missing` bloquea cuando además no hay ninguna fila válida.
+    """
+
+    table = sku_config_table()
+    with engine.connect() as conn:
+        total = int(
+            conn.execute(select(func.count()).select_from(table)).scalar() or 0
+        )
+        without_client = int(
+            conn.execute(
+                select(func.count())
+                .select_from(table)
+                .where(table.c.client_id.is_(None))
+            ).scalar()
+            or 0
+        )
+        without_min_stock = int(
+            conn.execute(
+                select(func.count())
+                .select_from(table)
+                .where(table.c.min_stock.is_(None))
+            ).scalar()
+            or 0
+        )
+    return {
+        "total": total,
+        "without_client": without_client,
+        "without_min_stock": without_min_stock,
+    }
+
+
 def reconcile_source(
     engine: Engine,
     start_date: date,
@@ -1213,6 +1261,10 @@ def _execute_week_inner(
             if week_start == resolve_target_weeks(1)[0]
             else None
         )
+        reject_reasons = Counter(
+            reject["reason"] for reject in normalized.rejects
+        )
+        configuration_gaps = sku_configuration_gaps(engine)
 
         quality = _run_step(
             engine,
@@ -1227,6 +1279,8 @@ def _execute_week_inner(
                 instrumentation_since=instrumentation_since,
                 previous_kpis=previous,
                 source_freshness_hours=freshness,
+                reject_reasons=dict(reject_reasons),
+                configuration_gaps=configuration_gaps,
             ),
         )
 

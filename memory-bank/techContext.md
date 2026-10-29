@@ -69,6 +69,11 @@ services/api/venv/bin/python -m pytest pipelines/weekly_performance/tests -q
   backoffice en `/reporting` (rewrite `/api/reporting/*`).
 - Env: `DATABASE_URL_PIPELINE`, `PREFECT_API_URL`, `PIPELINE_ALERT_WEBHOOK`,
   `PIPELINE_INSTRUMENTATION_SINCE`.
+- Migración G1–G4: `services/api/migrations/0001_g1_g4.sql` (aplicar por
+  conexión directa 5432 con backup previo; ver `migrations/README.md`).
+- Mapeo SKU → cliente/umbral: `python import_sku_mapping.py --file ...`
+  (`--dry-run`, `--allow-remote-db`). Columnas nullable hasta que exista el
+  mapeo; el pipeline bloquea con `client_mapping_missing`.
 
 ### Frontend `uis/backoffice` (puerto 3001 en Docker)
 

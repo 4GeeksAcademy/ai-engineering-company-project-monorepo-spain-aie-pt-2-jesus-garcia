@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
 
-from sqlalchemy import insert
+from sqlalchemy import delete, insert
 
 from pipelines.weekly_performance.core import (
     evaluate_quality,
     previous_week_kpis,
     reconcile_source,
     run_week,
+    sku_configuration_gaps,
 )
-from pipelines.weekly_performance.schema import stock_table
+from pipelines.weekly_performance.schema import sku_config_table, stock_table, telemetry_table
 from pipelines.weekly_performance.tests.factories import WEEKS
 
 W1 = WEEKS[0]
@@ -63,6 +64,85 @@ def test_quality_warns_on_stale_source():
     )
     assert report.status == "warning"
     assert any("stale_source" in warning for warning in report.warnings)
+
+
+def test_quality_blocks_missing_client_mapping():
+    report = evaluate_quality(
+        [],
+        rejects=2,
+        total_rows=2,
+        week_start=W1,
+        reject_reasons={"missing_client_id": 2},
+    )
+    assert report.status == "failed"
+    assert "client_mapping_missing" in report.blockers
+
+
+def test_quality_warns_on_configuration_gaps():
+    report = evaluate_quality(
+        [_kpi()],
+        rejects=0,
+        total_rows=1,
+        week_start=W1,
+        configuration_gaps={
+            "total": 2,
+            "without_client": 2,
+            "without_min_stock": 2,
+        },
+    )
+    assert report.status == "warning"
+    assert any("configuration_gaps" in warning for warning in report.warnings)
+
+
+def test_sku_configuration_gaps_counts_missing_values(seeded):
+    table = sku_config_table()
+    with seeded.begin() as conn:
+        conn.execute(
+            insert(table),
+            [
+                {"id": 1, "client_id": "fashion-co", "min_stock": 10},
+                {"id": 2, "client_id": None, "min_stock": None},
+                {"id": 3, "client_id": "home-deco", "min_stock": None},
+            ],
+        )
+
+    gaps = sku_configuration_gaps(seeded)
+
+    assert gaps == {"total": 3, "without_client": 1, "without_min_stock": 2}
+
+
+def test_run_week_without_client_mapping_fails(seeded):
+    table = telemetry_table()
+    with seeded.begin() as conn:
+        conn.execute(
+            delete(table).where(
+                table.c.timestamp
+                >= datetime.combine(W1, time.min, tzinfo=timezone.utc),
+                table.c.timestamp
+                < datetime.combine(W1, time.min, tzinfo=timezone.utc)
+                + timedelta(days=7),
+            )
+        )
+        conn.execute(
+            insert(table).values(
+                event_id="00000000-0000-0000-0000-000000000099",
+                timestamp=datetime.combine(W1, time.min, tzinfo=timezone.utc),
+                event_type="inbound_order_created",
+                session_id="seed",
+                user_id=None,
+                schema_version="2.0.0",
+                request_id=None,
+                source="backend",
+                service="backoffice",
+                tags={"warehouse": "los_angeles", "quantity": 1},
+                received_at=datetime.combine(W1, time.min, tzinfo=timezone.utc),
+            )
+        )
+
+    result = run_week(seeded, W1, triggered_by="test")
+
+    assert result.status == "failed"
+    assert "client_mapping_missing" in (result.error or "")
 
 
 def test_previous_week_kpis_returns_persisted_rows(seeded):

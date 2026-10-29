@@ -13,6 +13,7 @@ from .schema import (
     ReportingTables,
     get_reporting_tables,
     outbox_table,
+    sku_config_table,
     stock_table,
     telemetry_table,
 )
@@ -58,6 +59,7 @@ def create_telemetry_table(engine: Engine) -> None:
 def create_inventory_tables(engine: Engine) -> None:
     """Solo para tests: crea ``stock_entry``/``stock_exit`` mínimas."""
 
+    sku_config_table().metadata.create_all(engine)
     stock_table("stock_entry").metadata.create_all(engine)
     stock_table("stock_exit").metadata.create_all(engine)
 
