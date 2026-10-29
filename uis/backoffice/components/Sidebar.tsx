@@ -70,11 +70,11 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col border-r border-white/10 bg-slate-900/60 transition-all duration-300 ${
+      className={`flex h-full shrink-0 flex-col border-r border-white/10 bg-slate-900/60 transition-all duration-300 ${
         collapsed ? "w-16" : "w-56"
       }`}
     >
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-4">
         {!collapsed && (
           <span className="text-sm font-bold uppercase italic tracking-wide text-white">
             TrackFlow
@@ -90,7 +90,7 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
-      <nav className="flex flex-col gap-1 p-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -110,7 +110,7 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="mt-auto border-t border-white/10 p-3">
+      <div className="mt-auto shrink-0 border-t border-white/10 p-3">
         {!collapsed && user && (
           <p className="mb-2 truncate px-3 text-xs text-slate-300">
             {user.email}

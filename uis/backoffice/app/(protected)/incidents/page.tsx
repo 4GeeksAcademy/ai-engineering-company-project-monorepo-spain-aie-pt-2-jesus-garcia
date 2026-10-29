@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   fetchIncidents,
@@ -19,6 +19,8 @@ import {
   nextStatuses,
 } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagination } from "@/hooks/usePagination";
 import { track } from "@/src/services/telemetry";
 
 const IncidentForm = dynamic(
@@ -54,6 +56,11 @@ export default function IncidentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [flowTarget, setFlowTarget] = useState<IncidentListItem | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const pagination = usePagination(incidents, {
+    resetKey: `${statusFilter}|${originFilter}|${branchFilter}|${categoryFilter}`,
+  });
 
   async function refresh() {
     try {
@@ -222,7 +229,10 @@ export default function IncidentsPage() {
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60">
+        <div
+          ref={tableRef}
+          className="scroll-mt-6 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/60"
+        >
           <table className="w-full text-left text-sm">
             <thead className="border-b border-white/10 bg-slate-800/50">
               <tr>
@@ -235,7 +245,7 @@ export default function IncidentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {incidents.map((incident) => (
+              {pagination.pageItems.map((incident) => (
                 <tr key={incident.id} className="transition hover:bg-white/5">
                   <td className="px-4 py-3">
                     <div className="font-medium text-white">{incident.title}</div>
@@ -299,9 +309,15 @@ export default function IncidentsPage() {
       )}
 
       {!loading && incidents.length > 0 && (
-        <p className="mt-4 text-sm text-slate-300">
-          {incidents.length} incidencia{incidents.length !== 1 ? "s" : ""}
-        </p>
+        <Pagination
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          total={pagination.total}
+          onPageChange={pagination.setPage}
+          onPageSizeChange={pagination.setPageSize}
+          scrollTargetRef={tableRef}
+          label="incidencias"
+        />
       )}
 
       {showForm && <IncidentForm onSubmit={handleCreate} onClose={() => setShowForm(false)} />}

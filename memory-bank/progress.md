@@ -443,3 +443,26 @@ El stub del colector se sustituye por el endpoint real que valida, persiste y re
 - `uis/backoffice`: **59 tests Vitest**, lint y build OK; ruta `/telemetry` en el build.
 - Tipo-check raíz (`npm run typecheck`) OK.
 - Contra Supabase real (`2026-10-25T00:00:00Z` → `2026-10-26T00:00:00Z`, 27 eventos): la respuesta incluye las 5 métricas; cold ≈ 443 ms, warm ≈ 3 ms (caché 60 s).
+
+## Backoffice — Paginación de tablas y sidebar fija
+
+Dos mejoras de UI en `uis/backoffice` (solo frontend, sin cambios de API).
+
+### Sidebar siempre visible
+
+- `app/(protected)/layout.tsx` — shell `flex h-dvh overflow-hidden`: el scroll pasa a `<main className="flex-1 overflow-y-auto">`. Antes (`min-h-screen` + `overflow-auto`) el `<aside>` crecía con el contenido y el bloque inferior del sidebar (“Cerrar sesión”) quedaba fuera del viewport en páginas largas.
+- `components/Sidebar.tsx` — `aside` con `h-full shrink-0`; `nav` con `flex-1 overflow-y-auto` (si el menú crece, scrollea solo esa zona); bloque de usuario/logout con `mt-auto shrink-0`.
+
+### Paginación reutilizable (cliente)
+
+- `hooks/usePagination.ts` (nuevo) — `usePagination(items, { initialPageSize = 25, resetKey })`: `page`, `setPage`, `pageSize`, `setPageSize` (vuelve a página 1), `total`, `totalPages`, `pageItems`, `start`, `end`. Ajusta el estado durante el render para acotar la página si la lista se acorta y para resetear a 1 cuando cambia `resetKey` (filtros).
+- `components/ui/Pagination.tsx` (nuevo) — texto “Mostrando X–Y de Z <sustantivo>”, anterior/siguiente, números con elipsis (`aria-current="page"`), selector 10/25/50 (oculto si `total <= 10`), navegación oculta con una sola página. `scrollTargetRef` lleva la tabla a la vista al cambiar de página.
+- Aplicado a las 5 tablas: `suppliers` (reset por país/estado/categoría/búsqueda), `incidents` (reset por los 4 filtros), `inventory` (productos con reset por almacén, e historial de órdenes, cada uno con su propia paginación) y `telemetry` (`PagedSection` genérica con paginación independiente por métrica, reset al cambiar el rango de fechas).
+- Contenedores de tabla: `overflow-x-auto` + `scroll-mt-6` (scroll horizontal en pantallas estrechas en lugar de deformar el layout).
+
+### Verificación
+
+- `uis/backoffice`: **73 tests Vitest** (14 nuevos: `hooks/usePagination.test.ts` 7, `components/ui/Pagination.test.tsx` 6, integración de paginación en `inventory/page.test.tsx` 1), lint y build OK; typecheck raíz OK.
+- Comprobado contra el stack Docker real (admin, :3001): `/incidents` 95 registros → 25 por página (“Mostrando 1–25 de 95” → “26–50”), `aside` = altura del viewport y “Cerrar sesión” visible con `<main>` scrolleado al final; `/inventory` 25 de 28 órdenes; `/suppliers` 15 de 15 y `/telemetry` paginada por sección.
+- Pendiente/futuro: paginación **server-side** (`limit`/`offset` + `total`) para no descargar listados completos (hoy `GET /suppliers`, `/incidents`, `/inventory/products` y `/inventory/orders` devuelven todo).
+
