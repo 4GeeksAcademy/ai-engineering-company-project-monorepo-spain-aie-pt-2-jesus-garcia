@@ -9,6 +9,7 @@
 | MILESTONE_3 — Talent Tracker | 🔄 En progreso | Next.js scaffolding creado, pendiente implementación de componentes |
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
+| Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
 
 ## Últimas decisiones
 
@@ -465,4 +466,313 @@ Dos mejoras de UI en `uis/backoffice` (solo frontend, sin cambios de API).
 - `uis/backoffice`: **73 tests Vitest** (14 nuevos: `hooks/usePagination.test.ts` 7, `components/ui/Pagination.test.tsx` 6, integración de paginación en `inventory/page.test.tsx` 1), lint y build OK; typecheck raíz OK.
 - Comprobado contra el stack Docker real (admin, :3001): `/incidents` 95 registros → 25 por página (“Mostrando 1–25 de 95” → “26–50”), `aside` = altura del viewport y “Cerrar sesión” visible con `<main>` scrolleado al final; `/inventory` 25 de 28 órdenes; `/suppliers` 15 de 15 y `/telemetry` paginada por sección.
 - Pendiente/futuro: paginación **server-side** (`limit`/`offset` + `total`) para no descargar listados completos (hoy `GET /suppliers`, `/incidents`, `/inventory/products` y `/inventory/orders` devuelven todo).
+
+## Pipeline de desempeño de negocio — Plan resiliente (PIPELINE_2)
+
+Entregable de **diseño/planificación** (sin código de pipeline todavía). El briefing
+`docs/pipeline/PIPELINE_2.md` es idéntico a `PIPELINE_1.md`; se interpreta como una
+segunda iteración centrada en resiliencia sobre el diseño previo
+(`data/pipelines/PIPELINE_DESIGN.md`).
+
+- `docs/pipeline/PIPELINE_2_PLAN.md` (nuevo) — plan de ejecución en 8 fases
+  (F0 fundaciones → F7 endurecimiento), con criterios medibles R1–R10, matriz de
+  fallos, 13 quality gates, modelo de datos ampliado, observabilidad/SLO, 11 PRs
+  secuenciados y estimación de **18–22 días-persona**.
+- **Brechas de origen identificadas** (bloqueantes de producción): `emitter.py`
+  solo escribe en log; `SKU` no tiene `client_id`; no existe `min_stock`;
+  `inventory_discrepancy_detected` no está instrumentado y `IncidentCreate` no
+  tiene campos estructurados (`order_id`, `sku_code`, cantidades).
+- **Decisiones cerradas:**
+  - **D1** — throughput con `count(distinct coalesce(order_id, event_id))`
+    (pedidos únicos, inmune a reintentos).
+  - **D2** — un evento de discrepancia por pedido afectado, emitido desde
+    `POST /inventory/discrepancies` (discrepancia SQL + outbox en la misma
+    transacción); la incidencia queda como efecto secundario opcional.
+  - **D3** — congelar semanas tras 2 corridas exitosas (W+2); backfill explícito
+    con `--force --reason` y snapshot en `weekly_performance_revisions`.
+  - **D4** — Prefect self-hosted en Docker Compose (servidor + worker); migrable
+    a Cloud cambiando `PREFECT_API_URL`.
+  - **D5** — módulo en `services/reporting/` (ruta de entrega; la API lo importa
+    como `services.reporting`).
+  - **D6** — backfill solo inbound/outbound desde `stock_entry`/`stock_exit`;
+    quiebres y discrepancias empiezan en `instrumentation_since`.
+- **Pendiente (P1):** ubicación de la UI de discrepancias — recomendado un botón
+  "Registrar discrepancia" en `/inventory` (la incidencia se crea como efecto
+  secundario).
+- **Siguiente paso:** Fase 0 — esqueleto `pipelines/weekly_performance/`, DDL de
+  `reporting.*` y PostgreSQL efímero para tests.
+
+## Pipeline de desempeño — F0 + F1 implementadas (`pipelines/weekly_performance/`)
+
+Implementación del esqueleto y del núcleo flows/tasks contra datos sembrados.
+Todavía **no** hay instrumentación de origen: el pipeline lee `telemetry_events`
+tal cual y en producción seguirá fallando el gate de cobertura hasta cerrar
+G1–G4.
+
+### Estructura y modelo
+
+- `settings.py` — `DATABASE_URL_PIPELINE` (fallback `DATABASE_URL`), lookback,
+  esquemas `reporting`/`ops`, `PIPELINE_INSTRUMENTATION_SINCE`, eventos y
+  almacenes.
+- `db.py` — engine SQLAlchemy con `pool_pre_ping`, UTC en PostgreSQL y caché
+  limpiable para tests.
+- `schema.py` — tablas portables PostgreSQL/SQLite: `weekly_warehouse_client_performance`,
+  `pipeline_runs`, `pipeline_run_steps`, `weekly_performance_rejects`,
+  `week_watermarks`, `published_weeks`, `weekly_performance_revisions`,
+  `telemetry_events` (solo lectura) y `ops.telemetry_outbox`.
+- `sql.py` — DDL idempotente (`CREATE SCHEMA IF NOT EXISTS`, `create_all`) y
+  helpers para tests.
+- `core.py` — lógica pura sin Prefect: `resolve_target_weeks`, `extract_week`
+  (push-down SQL), `normalize_validate` (dedupe por `event_id` + cuarentena),
+  `aggregate_kpis` (D1: `count(distinct coalesce(order_id, event_id))`),
+  `evaluate_quality` (G1–G6, G9, G12), `load_week` (upsert atómico),
+  `reconcile_week`, ledger, watermarks, congelación y `execute_week`.
+- `tasks.py` — tasks de Prefect; `extract` con 3 reintentos y backoff, `load` y
+  `reconcile` con 2.
+- `flow.py` — `process_week` (subflow) y `weekly_flow` (padre; una semana rota
+  no aborta las demás).
+- `cli.py` / `__main__.py` — `run` y `backfill` con `--week`, `--lookback`,
+  `--force --reason`, `--dry-run`, `--json`.
+- `pyproject.toml`, `Dockerfile` (contexto raíz) y `README.md`.
+
+### Verificación
+
+- `services/api/venv/bin/python -m pytest pipelines/weekly_performance/tests -q`
+  → **26 passed**. Cubre fronteras ISO (incluido cambio de año), normalización y
+  cuarentena, agregación contra totales conocidos, idempotencia del upsert,
+  skip por fingerprint, congelación, reconciliación, gates, acumulación de 3
+  semanas y smoke del flow.
+- E2E manual con SQLite sembrado:
+  `python -m pipelines.weekly_performance backfill --week 2026-07-06 --json`
+  → `success`, 10 extraídas / 10 válidas / 2 escritas; segunda corrida
+  `skipped` por fingerprint. Totales: LA 150/3/1/1 (rate 0.333333), ZG 70/2/0/0.
+- Regresión API: `services/api` → **192 passed** (Prefect instalado solo en el
+  venv local, no se añadió a `requirements.txt`).
+- `compileall` OK. Sin cambios en frontends.
+
+### Pendiente
+
+- Cerrar G1–G4 (outbox, `client_id`, `min_stock`, `POST /inventory/discrepancies`).
+- F2 resiliencia (advisory lock, watchdog, DLQ, circuit breaker, congelación
+  operativa), F3 idempotencia avanzada, F4 backfill histórico, F5 Prefect
+  self-hosted + deployment, F6 API `/reporting/*` y backoffice.
+
+## Pipeline de desempeño — F2 + F3 implementadas (resiliencia e idempotencia)
+
+### Resiliencia (F2)
+
+- `locks.py` — advisory lock de sesión por `(pipeline, week_start)`
+  (`pg_try_advisory_lock` / `pg_advisory_unlock`); no-op en SQLite. El lock se
+  mantiene durante toda la corrida y se libera al cerrar la conexión si el
+  worker muere.
+- `execute_week` ahora: marca zombies → adquiere lock → comprueba circuit
+  breaker → arranca la corrida. Una semana bloqueada devuelve `skipped: locked`.
+- `mark_zombie_runs` — watchdog: `running` con `heartbeat_at` > 2 h ⇒ `failed`;
+  `record_step` renueva el heartbeat en cada etapa.
+- `source_is_tripped` — circuit breaker: 3 fallos consecutivos de `extract` ⇒
+  `source_unavailable`; `--force` lo salta para permitir recuperación manual.
+- `replay_rejects` + CLI `replay --run-id` — reprocesa la semana y marca los
+  rechazos como rejugados.
+- `freeze_week`, `maybe_freeze_week` y `snapshot_week` — auto-freeze tras 2
+  corridas exitosas posteriores al cierre; al forzar una semana congelada se
+  guarda una revisión inmutable con `reason` y `forced_by`.
+- `tasks.py` — `retry_condition_fn`: solo reintenta `OperationalError`,
+  `DBAPIError` con conexión invalidada, `TimeoutError` y `ConnectionError`.
+- `prefect.yaml` — deployment base; el work pool se crea con
+  `--concurrency-limit 1` (segunda barrera además del advisory lock).
+- CLI nueva: `replay`, `relay`, `freeze`, `watchdog`.
+
+### Idempotencia (F3)
+
+- Dedupe por `event_id` en `normalize_validate` (además de la PK de origen).
+- Semana calculada desde el `timestamp` del evento, nunca desde `now()`.
+- Upsert por `(warehouse, client_id, week_start)` + `reconcile_week`.
+- `week_watermarks` + fingerprint ⇒ `skipped: fingerprint_unchanged`.
+- `outbox.py` — relay `FOR UPDATE SKIP LOCKED` (PostgreSQL) con
+  `ON CONFLICT (event_id) DO NOTHING`; reintentar no duplica y los pendientes
+  quedan para la siguiente pasada.
+- Discrepancias: una por `order_id` (D2), tasa ≤ 1.
+
+### Verificación
+
+- `pytest pipelines/weekly_performance/tests` → **39 passed, 3 skipped**
+  (los 3 de PostgreSQL se saltan sin `TEST_POSTGRES_URL`).
+- Con PostgreSQL 16 real (contenedor efímero, `TEST_POSTGRES_URL`):
+  **3 passed** — UUID, JSONB, upsert, advisory lock exclusivo y relay
+  idempotente verificados.
+- `npm run typecheck` OK y `compileall` OK.
+- API sin cambios; sigue en **192 passed**.
+
+### Pendiente
+
+- F5 Prefect self-hosted + worker + alertas.
+- F6 API `/reporting/*`, backoffice y lectura degradada (`stale`).
+- Instrumentación de origen G1–G4 (sigue siendo el bloqueante de producción).
+
+## Pipeline de desempeño — F4 implementada (calidad y reconciliación)
+
+- **G7** — variación de volumen > ±50 % vs semana anterior ⇒ `warning`.
+- **G8** — caída de combinaciones activas > 30 % ⇒ `warning`.
+- **G11** — frescura de fuente > 24 h ⇒ `warning`; solo se evalúa en la última
+  semana cerrada (en backfill histórico la antigüedad es esperada).
+- `previous_week_kpis()` lee los KPIs persistidos de `W-1` para G7/G8.
+- `source_freshness_hours()` calcula la antigüedad del `received_at` más reciente.
+- `reconcile_source()` compara por día `stock_entry`/`stock_exit` con los eventos
+  `inbound_order_created`/`outbound_order_created`; devuelve deltas y `ok`.
+- `reconcile_source_task` + `source_reconciliation_flow` (cron diario 07:00 UTC)
+  y CLI `reconcile-source --days 7`.
+- `schema.py` añade vistas de solo lectura de `stock_entry`/`stock_exit`;
+  `sql.create_inventory_tables()` solo se usa en tests.
+- Tests nuevos en `tests/test_data_quality.py` (G7, G8, G11, W-1 y
+  reconciliación con/sin eventos faltantes).
+
+### Verificación F4
+
+- `pytest pipelines/weekly_performance/tests` → **45 passed, 3 skipped**.
+- `compileall` y `git diff --check` OK.
+
+## Pipeline de desempeño — F5 implementada (orquestación y operación)
+
+- `docker-compose.yml` — perfil opcional `prefect` con:
+  - `prefect-server` (UI/API en `:4200`, SQLite en volumen `prefect-data`,
+    healthcheck y `restart: unless-stopped`);
+  - `prefect-init` (crea el work pool `trackflow-pool`);
+  - `prefect-deploy` (despliega `prefect.yaml` con concurrencia 1);
+  - `prefect-worker` (imagen del pipeline, `DATABASE_URL_PIPELINE` y alertas).
+- `prefect.yaml` — deployments `weekly-prod` (lunes 08:00 UTC) y
+  `source-reconciliation-daily` (07:00 UTC), `concurrency_limit: 1`.
+- `alerts.py` — `send_alert()` con `PIPELINE_ALERT_WEBHOOK`; se invoca en fallo
+  de quality gate, excepción, advertencia, circuit breaker y fuente bloqueada.
+  Sin webhook solo loguea; nunca tumba el pipeline.
+- `flow.py` — artefacto Markdown por corrida (`create_markdown_artifact`) solo
+  dentro de un flow run real.
+- `RUNBOOK.md` — 9 procedimientos (corrida fallida, semana vacía, rechazo
+  masivo, backfill congelado, replay, lock colgado, circuit breaker, Prefect
+  caído, alertas).
+- `Dockerfile` — instala `httpx` y copia `prefect.yaml` al root de la imagen.
+- Imports de `flow.py`/`tasks.py` pasan a absolutos para que Prefect pueda
+  cargar el entrypoint por ruta de archivo.
+
+### Verificación F5
+
+- `pytest pipelines/weekly_performance/tests` → **46 passed, 3 skipped**.
+- `docker compose --profile prefect config` OK.
+- `prefect deploy --all` parsea `prefect.yaml` y carga `weekly-prod` (falla solo
+  porque el work pool no existe en el servidor temporal, como se espera).
+- `compileall` y `git diff --check` OK.
+
+## Pipeline de desempeño — F6 implementada (API y backoffice)
+
+### Backend (`services/api`)
+
+- `services/reporting/` nuevo (importado como `services.reporting`):
+  - `schemas.py` — `WeeklyPerformanceEntry`, `WeeklyPerformanceResponse`
+    (incluye `frozen`, `stale`, `computed_at`), `PipelineRunLatest`,
+    `PipelineRunTriggerRequest/Response`.
+  - `service.py` — consultas de solo lectura sobre `reporting.*` con
+    prefijo de esquema según dialecto; `ReportNotFound` para 404;
+    `has_running_run()` para 409.
+  - `prefect_client.py` — `httpx` contra `PREFECT_API_URL`; busca el deployment
+    `weekly-prod`, crea el flow run y traduce fallos a `PrefectUnavailable`
+    (503). Soporta `PREFECT_API_KEY`.
+  - `router.py` — 3 endpoints con `require_manager` y caché en memoria
+    (`GET` semanal 60 s, `latest` 5 s).
+- `main.py` registra `reporting_router`.
+- `services/api/README.md` documenta el módulo.
+- `tests/test_reporting.py` (12 casos): auth 401/403, última semana, filtro por
+  semana, `frozen`/`stale`, 404, `latest`, 409, 503, 202 y caché.
+
+### Frontend (`uis/backoffice`)
+
+- `lib/types.ts` — tipos de reporting y `computeWeeklyTotals()` (tasa ponderada).
+- `lib/api.ts` — `fetchWeeklyPerformance`, `fetchLatestPipelineRun`,
+  `triggerPipelineRun`.
+- `app/(protected)/reporting/page.tsx` — selector de semana, tarjetas de
+  totales, tabla por almacén/cliente, estado de la última corrida, badges
+  `frozen`/`stale`, botón "Ejecutar ahora" con `ConfirmDialog` y polling cada
+  5 s mientras la corrida está `running`.
+- `components/Sidebar.tsx` — entrada "Desempeño" → `/reporting`.
+- `next.config.ts` — rewrite `/api/reporting/:path*` → `BACKEND_URL/reporting/:path*`.
+- `app/(protected)/reporting/page.test.tsx` (5 casos): resumen/tabla, estado del
+  pipeline, estado vacío, disparo manual y filtro por semana.
+
+### Verificación F6
+
+- `services/api` → **204 passed** (192 previos + 12 de reporting).
+- `uis/backoffice` → **78 tests Vitest** (73 + 5), `npm run lint` y
+  `npm run build` OK; ruta `/reporting` en el build.
+- `npm run typecheck` raíz OK.
+- Servicio de reporting validado contra PostgreSQL real (esquema `reporting`,
+  `date`/`timestamptz` y `Session` SQLModel).
+
+## Pipeline de desempeño — G1–G4 (instrumentación de origen)
+
+### Esquema y migración
+
+- `services/api/migrations/0001_g1_g4.sql` (aditiva e idempotente):
+  - G1: `ops.telemetry_outbox` (ya existía; `if not exists`).
+  - G2: `sku.client_id` **nullable** (pendiente de mapeo).
+  - G3: `sku.min_stock` **nullable** (`NULL` = no configurado; `0` = umbral cero).
+  - G4: `inventory_discrepancy` + `client_id` snapshot en `stock_entry`/`stock_exit`.
+- **Migración aplicada en producción (Supabase)** con backup previo:
+  - backup custom `pg_dump` (PostgreSQL 17.4 client) verificado con
+    `pg_restore --list`; 323 KiB.
+  - aplicada por conexión directa (`db.<ref>.supabase.co:5432`), no por el
+    transaction pooler 6543.
+  - verificado: `sku` tiene `client_id`/`min_stock`; existen
+    `inventory_discrepancy` y `ops.telemetry_outbox`; 12 SKUs sin mapeo (esperado).
+- `migrations/README.md` documenta backup, aplicación y rollback.
+
+### Código
+
+- `app/telemetry/emitter.py` — `build_event()` (sin persistir) + `log_event()`.
+- `app/telemetry/outbox.py` — tabla `ops.telemetry_outbox` (PostgreSQL) /
+  tabla plana (SQLite), `enqueue_event()` y `create_outbox_table()`.
+- `inventory_service.py` — orden + evento en la misma transacción; snapshot de
+  `client_id`; `stock_threshold_triggered` al cruzar `min_stock`;
+  `create_discrepancy()` con un evento por `order_id`.
+- `app/routes/inventory.py` — `POST /inventory/discrepancies`; `SKURead` expone
+  `client_id` y `min_stock`.
+- `models.py` — `SKU.client_id/min_stock`, snapshot en órdenes y
+  `InventoryDiscrepancy`; `schema_version` 2.0.0.
+- Catálogo y `docs/telemetry/event-schemas.json` — `order_id` requerido para
+  discrepancias y `manual_audit` en `detection_source`.
+- `import_sku_mapping.py` — CSV `sku_code,client_id,min_stock` con `--dry-run`,
+  `--allow-remote-db`, validación y resumen; ejemplo en
+  `data/sku_mapping.example.csv`.
+- Pipeline: gate `client_mapping_missing` cuando todos los rechazos son
+  `missing_client_id`; aviso `configuration_gaps:client=X,min_stock=Y`.
+
+### Verificación G1–G4
+
+- `services/api` → **213 passed** (208 previos + 5 del importador).
+- `pipelines/weekly_performance` → **50 passed, 3 skipped**.
+- API validada contra PostgreSQL 17 real: inbound + discrepancia escriben en
+  `ops.telemetry_outbox` con JSONB y `client_id`.
+- Migración validada primero en PostgreSQL 17 efímero y luego aplicada a
+  Supabase producción.
+- Pendiente: cargar el CSV real cuando exista, fijar
+  `PIPELINE_INSTRUMENTATION_SINCE` y ejecutar backfill; desplegar el código API
+  con la nueva versión.
+
+## Entrega de la tarea — rutas finales
+
+- **`data/pipelines/pipeline.py`** — entrypoint de entrega; expone los flows y
+  el CLI (`run`, `backfill`, `reconcile-source`, etc.) sin duplicar lógica.
+- **`services/reporting/`** — módulo canónico de endpoints
+  (`router.py`, `schemas.py`, `service.py`, `prefect_client.py`, `README.md`).
+  La API lo importa como `services.reporting`; se añadió la raíz del monorepo a
+  `sys.path` en `app/main.py`.
+- `services/api/app/reporting/` se movió a `services/reporting/` (sin duplicar
+  código).
+- `services/Dockerfile` copia `reporting/` a `/services/reporting` y fija
+  `PYTHONPATH=/app:/`; `docker-compose.yml` monta `./services/reporting` y
+  `./services/__init__.py`.
+- `services/api/database.py` fija el driver `postgresql+psycopg2://` para que
+  SQLAlchemy no resuelva a psycopg3 en imágenes nuevas.
+- Verificado: API en Docker con `/reporting/*` y `/inventory/discrepancies`;
+  API **213 passed**, pipeline **50 passed + 3 skipped**; entrypoint
+  `python data/pipelines/pipeline.py --help` OK.
+- Commit de entrega con el mensaje exacto:
+  `feat: implement resilient business performance pipeline`.
 
