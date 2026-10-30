@@ -210,7 +210,7 @@ def test_trigger_returns_409_when_running(client, auth_headers):
 def test_trigger_returns_503_when_prefect_unavailable(
     client, auth_headers, monkeypatch
 ):
-    from app.reporting import prefect_client
+    from services.reporting import prefect_client
 
     def _raise(*_args, **_kwargs):
         raise prefect_client.PrefectUnavailable("down")
@@ -223,7 +223,7 @@ def test_trigger_returns_503_when_prefect_unavailable(
 
 
 def test_trigger_returns_202(client, auth_headers, monkeypatch):
-    from app.reporting import prefect_client
+    from services.reporting import prefect_client
 
     monkeypatch.setattr(
         prefect_client,
@@ -246,7 +246,7 @@ def test_trigger_returns_202(client, auth_headers, monkeypatch):
 
 
 def test_weekly_response_is_cached(client, auth_headers, monkeypatch):
-    from app.reporting import service
+    from services.reporting import service
 
     _performance(W2)
     calls = {"count": 0}

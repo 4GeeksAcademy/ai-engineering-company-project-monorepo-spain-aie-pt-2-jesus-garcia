@@ -65,7 +65,7 @@ Formato: `sku_code,client_id,min_stock` (ver
 
 ## Reporting (desempeño semanal)
 
-Módulo `app/reporting/` — solo lectura sobre el esquema `reporting` que escribe
+Módulo `services/reporting/` — solo lectura sobre el esquema `reporting` que escribe
 el pipeline (`pipelines/weekly_performance`). Requiere rol `manager`/`admin`.
 
 | Método | Ruta | Descripción |

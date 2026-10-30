@@ -492,8 +492,8 @@ segunda iteración centrada en resiliencia sobre el diseño previo
     con `--force --reason` y snapshot en `weekly_performance_revisions`.
   - **D4** — Prefect self-hosted en Docker Compose (servidor + worker); migrable
     a Cloud cambiando `PREFECT_API_URL`.
-  - **D5** — módulo en `services/api/app/reporting/` (mapeo documentado desde el
-    `services/reporting/` del briefing).
+  - **D5** — módulo en `services/reporting/` (ruta de entrega; la API lo importa
+    como `services.reporting`).
   - **D6** — backfill solo inbound/outbound desde `stock_entry`/`stock_exit`;
     quiebres y discrepancias empiezan en `instrumentation_since`.
 - **Pendiente (P1):** ubicación de la UI de discrepancias — recomendado un botón
@@ -665,7 +665,7 @@ G1–G4.
 
 ### Backend (`services/api`)
 
-- `app/reporting/` nuevo:
+- `services/reporting/` nuevo (importado como `services.reporting`):
   - `schemas.py` — `WeeklyPerformanceEntry`, `WeeklyPerformanceResponse`
     (incluye `frozen`, `stale`, `computed_at`), `PipelineRunLatest`,
     `PipelineRunTriggerRequest/Response`.
@@ -754,4 +754,25 @@ G1–G4.
 - Pendiente: cargar el CSV real cuando exista, fijar
   `PIPELINE_INSTRUMENTATION_SINCE` y ejecutar backfill; desplegar el código API
   con la nueva versión.
+
+## Entrega de la tarea — rutas finales
+
+- **`data/pipelines/pipeline.py`** — entrypoint de entrega; expone los flows y
+  el CLI (`run`, `backfill`, `reconcile-source`, etc.) sin duplicar lógica.
+- **`services/reporting/`** — módulo canónico de endpoints
+  (`router.py`, `schemas.py`, `service.py`, `prefect_client.py`, `README.md`).
+  La API lo importa como `services.reporting`; se añadió la raíz del monorepo a
+  `sys.path` en `app/main.py`.
+- `services/api/app/reporting/` se movió a `services/reporting/` (sin duplicar
+  código).
+- `services/Dockerfile` copia `reporting/` a `/services/reporting` y fija
+  `PYTHONPATH=/app:/`; `docker-compose.yml` monta `./services/reporting` y
+  `./services/__init__.py`.
+- `services/api/database.py` fija el driver `postgresql+psycopg2://` para que
+  SQLAlchemy no resuelva a psycopg3 en imágenes nuevas.
+- Verificado: API en Docker con `/reporting/*` y `/inventory/discrepancies`;
+  API **213 passed**, pipeline **50 passed + 3 skipped**; entrypoint
+  `python data/pipelines/pipeline.py --help` OK.
+- Commit de entrega con el mensaje exacto:
+  `feat: implement resilient business performance pipeline`.
 

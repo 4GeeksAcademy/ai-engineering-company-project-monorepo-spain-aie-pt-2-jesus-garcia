@@ -2,9 +2,20 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
 import os
+from pathlib import Path
+import sys
 import time
 
 load_dotenv()
+
+# `services/reporting` vive fuera de `services/api`; se añade la raíz del
+# monorepo para poder importarlo tanto en local como en Docker.
+try:
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+except IndexError:  # Docker: /app/app/main.py -> raíz /
+    _REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +33,7 @@ from .routes.auth import router as auth_router
 from .routes.users import router as users_router
 from .routes.profiles import router as profiles_router
 from .routes.telemetry import router as telemetry_router
-from .reporting.router import router as reporting_router
+from services.reporting.router import router as reporting_router
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s:%(name)s:%(message)s")

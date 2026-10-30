@@ -65,7 +65,7 @@ services/api/venv/bin/python -m pytest pipelines/weekly_performance/tests -q
   no se añade a `services/api/requirements.txt`.
 - Prefect self-hosted opcional: `docker compose --profile prefect up -d`
   (UI/API en `http://localhost:4200`).
-- API de reporte: `GET/POST /reporting/*` en `services/api/app/reporting/`;
+- API de reporte: `GET/POST /reporting/*` en `services/reporting/`;
   backoffice en `/reporting` (rewrite `/api/reporting/*`).
 - Env: `DATABASE_URL_PIPELINE`, `PREFECT_API_URL`, `PIPELINE_ALERT_WEBHOOK`,
   `PIPELINE_INSTRUMENTATION_SINCE`.

@@ -16,6 +16,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# `services/reporting` está fuera de services/api; se importa como
+# `services.reporting` con la raíz del monorepo en sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from app.main import create_app  # noqa: E402
 from app.core.security import hash_password, create_token  # noqa: E402

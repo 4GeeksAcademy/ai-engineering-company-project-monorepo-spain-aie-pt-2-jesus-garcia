@@ -29,8 +29,11 @@ services:
     env_file: .env
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
+      PYTHONPATH: /app:/
     volumes:
       - ./services/api:/app
+      - ./services/reporting:/services/reporting
+      - ./services/__init__.py:/services/__init__.py
     networks: [monorepo-dev]
 
   # Prefect self-hosted (perfil opcional: docker compose --profile prefect up)
