@@ -1,0 +1,11 @@
+# Cron del proceso nocturno de TrackFlow (lo ejecuta supercronic en el
+# contenedor `scheduler`). Zona horaria explícita: UTC.
+#
+# 15 2 * * *  ->  todos los días a las 02:15 UTC.
+#   - el día UTC ya cerró a las 00:00 (target_date = ayer);
+#   - margen para la ingesta de telemetría del día anterior;
+#   - minuto 15 para no coincidir con el pico de tareas "en punto".
+#
+# Reejecutar es inocuo: lock vía `processing` + idempotencia por target_date.
+CRON_TZ=UTC
+15 2 * * * python /app/scripts/nightly_export.py

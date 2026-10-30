@@ -36,6 +36,31 @@ services:
       - ./services/__init__.py:/services/__init__.py
     networks: [monorepo-dev]
 
+  # Job nocturno: export de telemetría + pipeline de desempeño.
+  # El cron vive en `scripts/crontab` (02:15 UTC) y NO toca el proceso de la API.
+  scheduler:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile
+    env_file: .env
+    environment:
+      TZ: UTC
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL_PIPELINE: ${DATABASE_URL_PIPELINE:-}
+      TARGET_DATE: ${TARGET_DATE:-}
+      JOB_STALE_MINUTES: ${JOB_STALE_MINUTES:-60}
+      PIPELINE_TIMEOUT_SECONDS: ${PIPELINE_TIMEOUT_SECONDS:-1800}
+      PIPELINE_INSTRUMENTATION_SINCE: ${PIPELINE_INSTRUMENTATION_SINCE:-}
+    volumes:
+      - ./scripts:/app/scripts
+      - ./services/job_runner:/app/services/job_runner
+      - ./services/__init__.py:/app/services/__init__.py
+      - ./pipelines:/app/pipelines
+      - ./data/pipelines:/app/data/pipelines
+      - ./data/raw:/app/data/raw
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
   # Prefect self-hosted (perfil opcional: docker compose --profile prefect up)
   prefect-server:
     image: prefecthq/prefect:3.9.0-python3.12
