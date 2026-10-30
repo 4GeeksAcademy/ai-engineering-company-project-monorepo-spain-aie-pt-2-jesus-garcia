@@ -770,9 +770,17 @@ G1–G4.
   `./services/__init__.py`.
 - `services/api/database.py` fija el driver `postgresql+psycopg2://` para que
   SQLAlchemy no resuelva a psycopg3 en imágenes nuevas.
+- **`tests/pipelines/test_pipeline.py`** — unitarias del entrypoint: contrato de
+  flows/CLI, bootstrap de `sys.path` desde cualquier cwd, `--dry-run` sin BD,
+  una ejecución aislada de `process_week` por semana, propagación del fallo sin
+  abortar el resto y backfill idempotente sobre SQLite.
+- **`uis/backoffice/app/(protected)/reporting/`** — página `/reporting`
+  (selector de semana, totales, estado de la última corrida, disparo manual con
+  polling) y su test Vitest.
 - Verificado: API en Docker con `/reporting/*` y `/inventory/discrepancies`;
-  API **213 passed**, pipeline **50 passed + 3 skipped**; entrypoint
+  API **213 passed**, pipeline + entrypoint **58 passed + 3 skipped**;
+  backoffice `reporting` **5 passed**, lint y typecheck OK; entrypoint
   `python data/pipelines/pipeline.py --help` OK.
 - Commit de entrega con el mensaje exacto:
-  `feat: implement resilient business performance pipeline`.
+  `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard.`
 
