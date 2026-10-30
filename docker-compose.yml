@@ -27,8 +27,111 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PYTHONPATH: /app:/
     volumes:
       - ./services/api:/app
+      - ./services/reporting:/services/reporting
+      - ./services/__init__.py:/services/__init__.py
+    networks: [monorepo-dev]
+
+  # Job nocturno: export de telemetría + pipeline de desempeño.
+  # El cron vive en `scripts/crontab` (02:15 UTC) y NO toca el proceso de la API.
+  scheduler:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile
+    env_file: .env
+    environment:
+      TZ: UTC
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL_PIPELINE: ${DATABASE_URL_PIPELINE:-}
+      TARGET_DATE: ${TARGET_DATE:-}
+      JOB_STALE_MINUTES: ${JOB_STALE_MINUTES:-60}
+      PIPELINE_TIMEOUT_SECONDS: ${PIPELINE_TIMEOUT_SECONDS:-1800}
+      PIPELINE_INSTRUMENTATION_SINCE: ${PIPELINE_INSTRUMENTATION_SINCE:-}
+    volumes:
+      - ./scripts:/app/scripts
+      - ./services/job_runner:/app/services/job_runner
+      - ./services/__init__.py:/app/services/__init__.py
+      - ./pipelines:/app/pipelines
+      - ./data/pipelines:/app/data/pipelines
+      - ./data/raw:/app/data/raw
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
+  # Prefect self-hosted (perfil opcional: docker compose --profile prefect up)
+  prefect-server:
+    image: prefecthq/prefect:3.9.0-python3.12
+    profiles: ["prefect"]
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: sqlite+aiosqlite:////data/prefect.db
+      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+    volumes:
+      - prefect-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
+  prefect-init:
+    image: prefecthq/prefect:3.9.0-python3.12
+    profiles: ["prefect"]
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    command: >
+      sh -c "prefect work-pool create trackflow-pool --type process --overwrite || true"
+    networks: [monorepo-dev]
+
+  prefect-deploy:
+    build:
+      context: .
+      dockerfile: pipelines/weekly_performance/Dockerfile
+    profiles: ["prefect"]
+    depends_on:
+      prefect-init:
+        condition: service_completed_successfully
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+    working_dir: /app
+    command: >
+      sh -c "prefect deploy --all --no-prompt --pool trackflow-pool --concurrency-limit 1"
+    networks: [monorepo-dev]
+
+  prefect-worker:
+    build:
+      context: .
+      dockerfile: pipelines/weekly_performance/Dockerfile
+    profiles: ["prefect"]
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+      prefect-init:
+        condition: service_completed_successfully
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      DATABASE_URL_PIPELINE: ${DATABASE_URL_PIPELINE}
+      PIPELINE_LOOKBACK_WEEKS: ${PIPELINE_LOOKBACK_WEEKS:-3}
+      PIPELINE_INSTRUMENTATION_SINCE: ${PIPELINE_INSTRUMENTATION_SINCE:-}
+      PIPELINE_ALERT_WEBHOOK: ${PIPELINE_ALERT_WEBHOOK:-}
+    volumes:
+      - ./pipelines:/app/pipelines
+    command: prefect worker start --pool trackflow-pool --type process
+    restart: unless-stopped
     networks: [monorepo-dev]
 
 networks:
@@ -40,3 +143,4 @@ volumes:
   ui-node-backoffice:
   ui-next-website:
   ui-next-backoffice:
+  prefect-data:

@@ -105,6 +105,7 @@ export const EVENT_CATALOG: Record<string, TelemetryEventDefinition> = {
       "product_id",
       "product_category",
       "quantity",
+      "order_id",
     ],
     allowlist: [
       "warehouse",
@@ -112,6 +113,7 @@ export const EVENT_CATALOG: Record<string, TelemetryEventDefinition> = {
       "product_id",
       "product_category",
       "quantity",
+      "order_id",
       "system_quantity",
       "physical_quantity",
       "discrepancy_delta",
