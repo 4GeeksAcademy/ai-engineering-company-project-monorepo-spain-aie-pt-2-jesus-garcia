@@ -10,6 +10,10 @@ COPY api/requirements.txt ./requirements.txt
 RUN uv pip install --system -r requirements.txt
 
 COPY api/ .
+COPY reporting /services/reporting
+COPY __init__.py /services/__init__.py
+
+ENV PYTHONPATH=/app:/
 
 EXPOSE 8000
 

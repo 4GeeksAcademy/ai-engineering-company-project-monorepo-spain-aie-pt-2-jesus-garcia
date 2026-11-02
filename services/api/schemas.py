@@ -8,6 +8,8 @@ class SKUCreate(BaseModel):
     name: str
     sku_code: str
     warehouse: str
+    client_id: str | None = None
+    min_stock: int | None = Field(default=None, ge=0)
 
 
 class SKURead(BaseModel):
@@ -15,6 +17,8 @@ class SKURead(BaseModel):
     name: str
     sku_code: str
     warehouse: str
+    client_id: str | None = None
+    min_stock: int | None = None
     current_stock: int = 0
     current_stock_by_warehouse: dict[str, int] = {}
 
@@ -46,6 +50,28 @@ class StockExitRead(BaseModel):
     quantity: int
     warehouse: str
     user_uuid: str
+    created_at: datetime
+
+
+class InventoryDiscrepancyCreate(BaseModel):
+    order_id: str = Field(min_length=1)
+    sku_id: int
+    warehouse: str
+    system_quantity: int = Field(ge=0)
+    physical_quantity: int = Field(ge=0)
+    incident_id: str | None = None
+
+
+class InventoryDiscrepancyRead(BaseModel):
+    id: str
+    order_id: str
+    sku_id: int
+    warehouse: str
+    client_id: str | None = None
+    system_quantity: int
+    physical_quantity: int
+    discrepancy_delta: int
+    incident_id: str | None = None
     created_at: datetime
 
 

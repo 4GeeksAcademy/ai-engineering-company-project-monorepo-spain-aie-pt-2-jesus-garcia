@@ -6,10 +6,19 @@ from pathlib import Path
 os.environ["SECRET_KEY"] = os.environ.get("SECRET_KEY", "test-secret-key")
 os.environ["DATABASE_URL"] = "sqlite:///./test_inventory.db"
 
+# El fichero SQLite es un artefacto de test: se recrea en cada sesión para que
+# `SQLModel.metadata.create_all` aplique las columnas nuevas de los modelos.
+_TEST_DB = Path(__file__).resolve().parent.parent / "test_inventory.db"
+if _TEST_DB.exists():
+    _TEST_DB.unlink()
+
 import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# `services/reporting` está fuera de services/api; se importa como
+# `services.reporting` con la raíz del monorepo en sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from app.main import create_app  # noqa: E402
 from app.core.security import hash_password, create_token  # noqa: E402
