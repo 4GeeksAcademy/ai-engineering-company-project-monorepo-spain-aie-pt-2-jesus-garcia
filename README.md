@@ -64,6 +64,42 @@ ai-engineering-company-project-monorepo/
 
 ---
 
+## Tareas asíncronas (Redis + Celery)
+
+Las operaciones pesadas se desacoplan de la API con una cola Redis y workers
+Celery independientes. El análisis de CSV de incidencias
+(`POST /api/incidents/analyze`) devuelve `202 {"task_id": ...}` y el cliente
+consulta `GET /tasks/{task_id}`.
+
+```bash
+# Levantar broker, API, worker y monitor
+docker compose up --build -d redis services worker flower
+
+# Ver que el worker se ha conectado al broker
+docker compose logs worker | grep -i "ready"
+
+# Detener worker y monitor (Redis puede seguir arriba)
+docker compose stop worker flower
+```
+
+- **Flower**: `http://localhost:5555` (cola, tareas en proceso y completadas).
+- **DLQ**: los fallos definitivos se guardan en `dead_letter_tasks` y en la lista
+  Redis `dlq:trackflow`.
+  ```bash
+  redis-cli LRANGE dlq:trackflow 0 -1
+  ```
+- **Ejecución local del worker** (sin Docker):
+  ```bash
+  cd services/api
+  source venv/bin/activate
+  REDIS_URL=redis://localhost:6379/0 \
+  INCIDENT_UPLOAD_DIR=/tmp/trackflow/uploads \
+  celery -A celery_app worker --loglevel=INFO
+  ```
+- Variables: `REDIS_URL`, `INCIDENT_UPLOAD_DIR`, `CELERY_TASK_TIME_LIMIT`,
+  `CELERY_TASK_SOFT_TIME_LIMIT`, `CELERY_RETRY_BACKOFF_SECONDS`.
+- Runbook detallado: [`docs/asynchronous/CELERY.md`](docs/asynchronous/CELERY.md).
+
 ## Milestones (reference)
 
 | Milestone | Focus        | Typical deliverables                        |

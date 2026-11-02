@@ -1,4 +1,28 @@
 services:
+  # Broker y result backend de Celery. Política noeviction: Redis nunca
+  # descarta mensajes por presión de memoria.
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        "redis-server",
+        "--maxmemory-policy",
+        "noeviction",
+        "--appendonly",
+        "yes",
+      ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
   uis:
     build: ./uis
     ports:
@@ -30,10 +54,56 @@ services:
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
       PYTHONPATH: /app:/
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      INCIDENT_UPLOAD_DIR: /uploads
     volumes:
       - ./services/api:/app
       - ./services/reporting:/services/reporting
       - ./services/__init__.py:/services/__init__.py
+      - task-uploads:/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [monorepo-dev]
+
+  # Worker Celery: proceso independiente del servidor FastAPI.
+  worker:
+    build: ./services
+    command: celery -A celery_app worker --loglevel=INFO --concurrency=1
+    env_file: .env
+    environment:
+      PYTHONPATH: /app:/
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      INCIDENT_UPLOAD_DIR: /uploads
+    volumes:
+      - ./services/api:/app
+      - ./services/reporting:/services/reporting
+      - ./services/__init__.py:/services/__init__.py
+      - task-uploads:/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
+  # Monitorización de la cola durante el desarrollo.
+  flower:
+    build: ./services
+    command: celery -A celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    env_file: .env
+    environment:
+      PYTHONPATH: /app:/
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - ./services/api:/app
+      - ./services/reporting:/services/reporting
+      - ./services/__init__.py:/services/__init__.py
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
     networks: [monorepo-dev]
 
   # Job nocturno: export de telemetría + pipeline de desempeño.
@@ -144,3 +214,5 @@ volumes:
   ui-next-website:
   ui-next-backoffice:
   prefect-data:
+  redis-data:
+  task-uploads:

@@ -1,5 +1,5 @@
 import type {
-  AnalysisResponse,
+  AnalyzeTaskAccepted,
   Incident,
   IncidentCreate,
   IncidentListItem,
@@ -13,6 +13,7 @@ import type {
   SupplierCreate,
   SupplierListItem,
   SupplierUpdate,
+  TaskStatusResponse,
   TelemetryReport,
   PipelineRunLatest,
   PipelineRunTriggerResponse,
@@ -130,20 +131,34 @@ export async function apiRequest<T>(
 export async function analyzeCsv(
   file: File,
   token?: string | null,
-): Promise<AnalysisResponse> {
+): Promise<AnalyzeTaskAccepted> {
   const formData = new FormData();
   formData.append("file", file);
 
-  return request<AnalysisResponse>("/api/incidents/analyze", {
+  return request<AnalyzeTaskAccepted>("/api/incidents/analyze", {
     method: "POST",
     headers: authHeaders(token),
     body: formData,
   });
 }
 
-export async function fetchExportCsv(token?: string | null): Promise<Blob> {
+export async function fetchTaskStatus(
+  taskId: string,
+  token?: string | null,
+): Promise<TaskStatusResponse> {
+  return request<TaskStatusResponse>(
+    `/api/tasks/${encodeURIComponent(taskId)}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function fetchExportCsv(
+  taskId: string,
+  token?: string | null,
+): Promise<Blob> {
+  const query = new URLSearchParams({ task_id: taskId }).toString();
   return request<Blob>(
-    "/api/incidents/results/export",
+    `/api/incidents/results/export?${query}`,
     { headers: authHeaders(token) },
     "blob",
   );

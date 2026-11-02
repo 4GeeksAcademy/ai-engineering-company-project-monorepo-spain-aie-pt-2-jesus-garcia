@@ -125,6 +125,37 @@ def sample_csv_bytes() -> bytes:
     return SAMPLE_CSV.encode("utf-8")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_uploads(tmp_path, monkeypatch):
+    """Aísla el volumen de CSV encolados por test."""
+
+    from app.routes import incidents as incidents_route
+
+    upload_dir = tmp_path / "uploads"
+    monkeypatch.setattr(incidents_route, "UPLOAD_DIR", upload_dir)
+    return upload_dir
+
+
+@pytest.fixture()
+def enqueued_tasks(monkeypatch):
+    """Captura los encolados sin hablar con Redis."""
+
+    from app.routes import incidents as incidents_route
+
+    calls: list[dict] = []
+
+    def fake_apply_async(*args, **kwargs):
+        calls.append(kwargs)
+        return None
+
+    monkeypatch.setattr(
+        incidents_route.analyze_incidents_csv,
+        "apply_async",
+        fake_apply_async,
+    )
+    return calls
+
+
 @pytest.fixture()
 def empty_csv_bytes() -> bytes:
     return EMPTY_CSV.encode("utf-8")

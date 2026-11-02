@@ -4,7 +4,11 @@ import { useState } from "react";
 import { fetchExportCsv, friendlyError } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
-export function ExportLink() {
+interface ExportLinkProps {
+  taskId: string;
+}
+
+export function ExportLink({ taskId }: ExportLinkProps) {
   const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +17,7 @@ export function ExportLink() {
     setLoading(true);
     setError(null);
     try {
-      const blob = await fetchExportCsv(token);
+      const blob = await fetchExportCsv(taskId, token);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

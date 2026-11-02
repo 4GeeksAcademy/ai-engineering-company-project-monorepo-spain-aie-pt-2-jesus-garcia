@@ -33,6 +33,7 @@ from .routes.auth import router as auth_router
 from .routes.users import router as users_router
 from .routes.profiles import router as profiles_router
 from .routes.telemetry import router as telemetry_router
+from .routes.tasks import router as tasks_router
 from services.reporting.router import router as reporting_router
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router)
     app.include_router(profiles_router)
     app.include_router(telemetry_router)
+    app.include_router(tasks_router)
     app.include_router(reporting_router)
 
     @app.exception_handler(Exception)

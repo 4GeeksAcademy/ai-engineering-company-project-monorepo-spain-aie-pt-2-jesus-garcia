@@ -25,6 +25,38 @@ conexión directa o session pooler (puerto 5432), nunca por el transaction poole
 No se fusiona con `reporting.pipeline_runs`: capas distintas (intento de disparo
 diario vs. ejecución semanal del pipeline).
 
+## 0003_dead_letter_tasks.sql
+
+- Tabla `public.dead_letter_tasks`: tareas Celery que agotaron sus reintentos.
+- Columnas: `task_id` (único), `task_name`, `attempts`, `max_retries`,
+  `error_message`, `created_at`.
+- Índice único `ux_dead_letter_tasks_task_id`.
+
+El worker también crea la tabla con `SQLModel.metadata.create_all` al arrancar;
+la migración es la vía explícita para entornos donde no se quiera depender de
+`create_all`.
+
+```bash
+# 1. backup (mismo procedimiento que 0001)
+pg_dump "$SUPABASE_DB_URL_DIRECT" \
+  --format=custom --no-owner --no-privileges \
+  --file="/ruta/segura/supabase-$(date +%Y%m%d-%H%M).dump"
+pg_restore --list "/ruta/segura/supabase-....dump" > /dev/null
+
+# 2. aplicar (idempotente)
+psql "$SUPABASE_DB_URL_DIRECT" -v ON_ERROR_STOP=1 \
+  -f services/api/migrations/0003_dead_letter_tasks.sql
+
+# 3. verificar
+psql "$SUPABASE_DB_URL_DIRECT" -c "\d public.dead_letter_tasks"
+```
+
+Rollback:
+
+```sql
+drop table if exists public.dead_letter_tasks;
+```
+
 ## Aplicar en producción
 
 ```bash
