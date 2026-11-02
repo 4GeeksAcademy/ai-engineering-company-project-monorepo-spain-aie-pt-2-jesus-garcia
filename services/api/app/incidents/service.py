@@ -1,5 +1,6 @@
 import csv
 import io
+from pathlib import Path
 
 import pandas as pd
 
@@ -24,8 +25,12 @@ def get_last_analysis() -> AnalysisResponse:
 
 def export_last_analysis_csv() -> str:
     """Return the last analysis summary as CSV text."""
-    stats = get_last_analysis().model_dump()
-    rows = metrics_to_csv_rows(stats)
+    return export_analysis_csv(get_last_analysis())
+
+
+def export_analysis_csv(stats: AnalysisResponse) -> str:
+    """Render an analysis summary as CSV text."""
+    rows = metrics_to_csv_rows(stats.model_dump())
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=["metrica", "valor"])
     writer.writeheader()
@@ -33,8 +38,12 @@ def export_last_analysis_csv() -> str:
     return buffer.getvalue()
 
 
-def analyze_upload(raw: bytes) -> AnalysisResponse:
-    """Validate the uploaded CSV content and run the shared analysis."""
+def validate_upload(raw: bytes) -> str:
+    """Validate encoding and required header; return the decoded CSV text.
+
+    Only the cheap checks stay in the request path. The pandas analysis runs
+    in the Celery worker.
+    """
     if not raw or not raw.strip():
         raise EmptyFileError("El archivo está vacío.")
 
@@ -44,7 +53,6 @@ def analyze_upload(raw: bytes) -> AnalysisResponse:
         raise InvalidFormatError(
             "El archivo no tiene una codificación UTF-8 válida."
         ) from exc
-    stream = io.StringIO(content)
 
     try:
         first_lines = content.splitlines()[:1]
@@ -63,6 +71,14 @@ def analyze_upload(raw: bytes) -> AnalysisResponse:
             f"Formato incorrecto: faltan columnas obligatorias: {', '.join(missing)}."
         )
 
+    return content
+
+
+def analyze_upload(raw: bytes) -> AnalysisResponse:
+    """Validate the uploaded CSV content and run the shared analysis."""
+    content = validate_upload(raw)
+    stream = io.StringIO(content)
+
     try:
         stats = analyze_file(stream)
     except (pd.errors.ParserError, pd.errors.EmptyDataError):
@@ -73,3 +89,8 @@ def analyze_upload(raw: bytes) -> AnalysisResponse:
     global _last_analysis
     _last_analysis = AnalysisResponse(**stats)
     return _last_analysis
+
+
+def analyze_path(path: str | Path) -> AnalysisResponse:
+    """Read a CSV saved by the API and run the analysis (worker entrypoint)."""
+    return analyze_upload(Path(path).read_bytes())

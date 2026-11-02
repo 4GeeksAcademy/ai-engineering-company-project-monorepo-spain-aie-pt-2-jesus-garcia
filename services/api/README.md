@@ -4,13 +4,17 @@ Servicio backend para el análisis de incidentes del departamento de **Experienc
 
 ## Objetivo
 
-- **`POST /api/incidents/analyze`** — Recibe un CSV (`multipart/form-data`, campo `file`), ejecuta la
-  validación y el análisis de incidentes y devuelve el resumen en JSON.
-- **`GET /api/incidents/results/export`** — Devuelve el último análisis en formato CSV descargable
-  (métricas resumen).
+- **`POST /api/incidents/analyze`** — Recibe un CSV (`multipart/form-data`, campo `file`),
+  valida cabecera/codificación y **encola** el análisis. Devuelve `202 {"task_id": "..."}`
+  inmediatamente.
+- **`GET /tasks/{task_id}`** — Devuelve `{"task_id", "status", "result"}` con los estados
+  `pending`, `started`, `success` o `failure`.
+- **`GET /api/incidents/results/export?task_id=...`** — Devuelve el análisis de esa tarea
+  en formato CSV descargable.
 
 La lógica de validación/análisis es compartida con el script CLI `analyze.py` (raíz del monorepo)
-a través del módulo `app/incidents/analyzer.py`.
+a través del módulo `app/incidents/analyzer.py`. El análisis pesado (pandas) se ejecuta en un
+worker Celery independiente, no en el proceso de FastAPI.
 
 ## Requisitos
 
@@ -37,19 +41,81 @@ Documentación interactiva: `http://localhost:8000/docs`.
 ## Uso
 
 ```bash
-# Analizar un CSV
-curl -F "file=@COMPANY.csv" http://localhost:8000/api/incidents/analyze
+# 1. Encolar el análisis (requiere token Bearer de manager/admin)
+curl -X POST http://localhost:8000/api/incidents/analyze \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@COMPANY.csv"
+# → 202 {"task_id": "..."}
 
-# Exportar el último análisis en CSV
-curl http://localhost:8000/api/incidents/results/export -o results.csv
+# 2. Consultar el estado
+curl http://localhost:8000/tasks/$TASK_ID -H "Authorization: Bearer $TOKEN"
+
+# 3. Exportar el resultado cuando status = success
+curl "http://localhost:8000/api/incidents/results/export?task_id=$TASK_ID" \
+  -H "Authorization: Bearer $TOKEN" -o results.csv
 ```
+
+## Tareas asíncronas (Redis + Celery)
+
+```bash
+# Worker + Flower (Docker)
+docker compose up -d redis worker flower
+docker compose logs -f worker
+
+# Worker local
+REDIS_URL=redis://localhost:6379/0 \
+INCIDENT_UPLOAD_DIR=/tmp/trackflow/uploads \
+celery -A celery_app worker --loglevel=INFO
+```
+
+- Flower: `http://localhost:5555`.
+- Reintentos: `max_retries=3` con backoff 5/10/20 s y timeouts de 600/540 s.
+- Fallo definitivo: tabla `dead_letter_tasks` + lista Redis `dlq:trackflow`.
+- Runbook: [`docs/asynchronous/CELERY.md`](../../docs/asynchronous/CELERY.md).
+
+## Inventario: cliente, umbral y discrepancias
+
+- `SKU.client_id` y `SKU.min_stock` son **nullable**: `NULL` significa “pendiente
+  de mapeo” / “umbral no configurado”. El pipeline manda esos eventos a
+  cuarentena y no publica ceros.
+- `POST /inventory/discrepancies` registra el detalle SQL y emite un único evento
+  `inventory_discrepancy_detected` por `order_id` (manager/admin).
+- Las órdenes y discrepancias escriben su evento en `ops.telemetry_outbox` en la
+  misma transacción; el relay del pipeline lo mueve a `telemetry_events`.
+- Mapeo masivo por CSV:
+
+```bash
+python import_sku_mapping.py --file data/sku_mapping.csv --dry-run
+python import_sku_mapping.py --file data/sku_mapping.csv --allow-remote-db
+```
+
+Formato: `sku_code,client_id,min_stock` (ver
+`data/sku_mapping.example.csv`). Migración: `migrations/0001_g1_g4.sql`.
+
+## Reporting (desempeño semanal)
+
+Módulo `services/reporting/` — solo lectura sobre el esquema `reporting` que escribe
+el pipeline (`pipelines/weekly_performance`). Requiere rol `manager`/`admin`.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/reporting/weekly-warehouse-client-performance?week_start=YYYY-MM-DD` | Reporte de la semana (por defecto, la última calculada) |
+| GET | `/reporting/pipeline-runs/latest` | Estado y metadata de la última corrida |
+| POST | `/reporting/pipeline-runs` | Dispara una corrida manual (`202`; `409` si hay una en curso; `503` si Prefect no responde) |
+
+`PREFECT_API_URL` (por defecto `http://localhost:4200/api`) apunta al servidor
+Prefect self-hosted o a Prefect Cloud.
 
 ## Errores HTTP
 
 | Código | Situación |
 |---|---|
+| 202 | Análisis encolado correctamente; el body incluye `task_id` |
 | 400 | Falta `file`, archivo vacío, o formato incorrecto (CSV inválido / columnas faltantes) |
-| 404 | No hay análisis previo al intentar exportar |
+| 401/403 | Sin token o rol insuficiente (manager/admin) |
+| 404 | No hay análisis previo (export sin `task_id`) o el resultado de la tarea no está disponible |
+| 409 | La tarea aún no ha terminado con éxito al exportar |
+| 503 | Redis/cola de tareas no disponible |
 
 ## Tests
 

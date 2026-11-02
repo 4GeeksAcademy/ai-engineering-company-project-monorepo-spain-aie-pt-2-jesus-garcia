@@ -13,3 +13,5 @@ psycopg2-binary
 passlib[bcrypt]
 python-jose[cryptography]
 resend
+celery[redis]
+flower

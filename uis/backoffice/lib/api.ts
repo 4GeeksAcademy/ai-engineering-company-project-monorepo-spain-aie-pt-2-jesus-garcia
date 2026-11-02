@@ -1,5 +1,5 @@
 import type {
-  AnalysisResponse,
+  AnalyzeTaskAccepted,
   Incident,
   IncidentCreate,
   IncidentListItem,
@@ -13,7 +13,11 @@ import type {
   SupplierCreate,
   SupplierListItem,
   SupplierUpdate,
+  TaskStatusResponse,
   TelemetryReport,
+  PipelineRunLatest,
+  PipelineRunTriggerResponse,
+  WeeklyPerformanceReport,
 } from "./types";
 
 export class ApiRequestError extends Error {
@@ -127,20 +131,34 @@ export async function apiRequest<T>(
 export async function analyzeCsv(
   file: File,
   token?: string | null,
-): Promise<AnalysisResponse> {
+): Promise<AnalyzeTaskAccepted> {
   const formData = new FormData();
   formData.append("file", file);
 
-  return request<AnalysisResponse>("/api/incidents/analyze", {
+  return request<AnalyzeTaskAccepted>("/api/incidents/analyze", {
     method: "POST",
     headers: authHeaders(token),
     body: formData,
   });
 }
 
-export async function fetchExportCsv(token?: string | null): Promise<Blob> {
+export async function fetchTaskStatus(
+  taskId: string,
+  token?: string | null,
+): Promise<TaskStatusResponse> {
+  return request<TaskStatusResponse>(
+    `/api/tasks/${encodeURIComponent(taskId)}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function fetchExportCsv(
+  taskId: string,
+  token?: string | null,
+): Promise<Blob> {
+  const query = new URLSearchParams({ task_id: taskId }).toString();
   return request<Blob>(
-    "/api/incidents/results/export",
+    `/api/incidents/results/export?${query}`,
     { headers: authHeaders(token) },
     "blob",
   );
@@ -323,4 +341,38 @@ export async function fetchTelemetryReport(params?: {
   const url = `/api/telemetry/report${query ? `?${query}` : ""}`;
 
   return request<TelemetryReport>(url, { headers: {} });
+}
+
+// ---------------------------------------------------------------------------
+// Reporting — desempeño semanal por almacén y cliente
+// ---------------------------------------------------------------------------
+
+export async function fetchWeeklyPerformance(
+  params?: { week_start?: string },
+  token?: string | null,
+): Promise<WeeklyPerformanceReport> {
+  const searchParams = new URLSearchParams();
+  if (params?.week_start) searchParams.set("week_start", params.week_start);
+  const query = searchParams.toString();
+  const url = `/api/reporting/weekly-warehouse-client-performance${query ? `?${query}` : ""}`;
+  return request<WeeklyPerformanceReport>(url, { headers: authHeaders(token) });
+}
+
+export async function fetchLatestPipelineRun(
+  token?: string | null,
+): Promise<PipelineRunLatest> {
+  return request<PipelineRunLatest>("/api/reporting/pipeline-runs/latest", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function triggerPipelineRun(
+  data?: { week_start?: string; lookback_weeks?: number },
+  token?: string | null,
+): Promise<PipelineRunTriggerResponse> {
+  return request<PipelineRunTriggerResponse>("/api/reporting/pipeline-runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data ?? {}),
+  });
 }

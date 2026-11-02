@@ -5,3 +5,7 @@ uis/talent-pipeline-tracker/node_modules/
 uis/talent-pipeline-tracker/.next/
 uis/talent-pipeline-tracker/tsconfig.tsbuildinfo
 __pycache__/
+
+# Snapshots del job nocturno (`scripts/nightly_export.py`): artefactos de
+# ejecución con `session_id`/`user_id`, no se versionan.
+data/raw/telemetry_*.csv
