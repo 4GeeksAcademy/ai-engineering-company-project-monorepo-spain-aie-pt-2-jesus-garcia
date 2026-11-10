@@ -55,6 +55,16 @@ const navItems = [
       </svg>
     ),
   },
+  {
+    href: "/reporting",
+    label: "Desempeño",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
+        <path d="M3 3.75A.75.75 0 0 1 3.75 3h16.5a.75.75 0 0 1 0 1.5H4.5v15.75a.75.75 0 0 1-1.5 0V3.75Z" />
+        <path d="M7.5 18a.75.75 0 0 0 .75-.75v-4.5a.75.75 0 0 0-1.5 0v4.5c0 .414.336.75.75.75ZM12 18a.75.75 0 0 0 .75-.75V8.25a.75.75 0 0 0-1.5 0v9c0 .414.336.75.75.75ZM16.5 18a.75.75 0 0 0 .75-.75v-6a.75.75 0 0 0-1.5 0v6c0 .414.336.75.75.75Z" />
+      </svg>
+    ),
+  },
 ];
 
 export function Sidebar() {

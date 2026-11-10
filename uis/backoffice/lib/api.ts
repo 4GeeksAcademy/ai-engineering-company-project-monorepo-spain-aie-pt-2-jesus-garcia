@@ -14,6 +14,9 @@ import type {
   SupplierListItem,
   SupplierUpdate,
   TelemetryReport,
+  PipelineRunLatest,
+  PipelineRunTriggerResponse,
+  WeeklyPerformanceReport,
 } from "./types";
 
 export class ApiRequestError extends Error {
@@ -323,4 +326,38 @@ export async function fetchTelemetryReport(params?: {
   const url = `/api/telemetry/report${query ? `?${query}` : ""}`;
 
   return request<TelemetryReport>(url, { headers: {} });
+}
+
+// ---------------------------------------------------------------------------
+// Reporting — desempeño semanal por almacén y cliente
+// ---------------------------------------------------------------------------
+
+export async function fetchWeeklyPerformance(
+  params?: { week_start?: string },
+  token?: string | null,
+): Promise<WeeklyPerformanceReport> {
+  const searchParams = new URLSearchParams();
+  if (params?.week_start) searchParams.set("week_start", params.week_start);
+  const query = searchParams.toString();
+  const url = `/api/reporting/weekly-warehouse-client-performance${query ? `?${query}` : ""}`;
+  return request<WeeklyPerformanceReport>(url, { headers: authHeaders(token) });
+}
+
+export async function fetchLatestPipelineRun(
+  token?: string | null,
+): Promise<PipelineRunLatest> {
+  return request<PipelineRunLatest>("/api/reporting/pipeline-runs/latest", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function triggerPipelineRun(
+  data?: { week_start?: string; lookback_weeks?: number },
+  token?: string | null,
+): Promise<PipelineRunTriggerResponse> {
+  return request<PipelineRunTriggerResponse>("/api/reporting/pipeline-runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(data ?? {}),
+  });
 }

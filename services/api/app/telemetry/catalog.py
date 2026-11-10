@@ -56,8 +56,8 @@ EVENT_METADATA: dict[str, dict] = {
         "source": "backend",
         "processing": "batch",
         "high_frequency": False,
-        "required_properties": ["warehouse", "client_id", "product_id", "product_category", "quantity"],
-        "allowlist": ["warehouse", "client_id", "product_id", "product_category", "quantity", "system_quantity", "physical_quantity", "discrepancy_delta", "detection_source", "incident_id"],
+        "required_properties": ["warehouse", "client_id", "product_id", "product_category", "quantity", "order_id"],
+        "allowlist": ["warehouse", "client_id", "product_id", "product_category", "quantity", "order_id", "system_quantity", "physical_quantity", "discrepancy_delta", "detection_source", "incident_id"],
     },
     "session_started": {
         "source": "frontend",

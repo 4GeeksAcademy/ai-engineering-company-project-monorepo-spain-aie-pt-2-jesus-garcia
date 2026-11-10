@@ -373,3 +373,85 @@ export function computeTelemetrySummary(
 
   return { totalEvents, errorRate, avgLatency, authFailureRate };
 }
+
+// ---------------------------------------------------------------------------
+// Reporting — desempeño semanal por almacén y cliente
+// ---------------------------------------------------------------------------
+
+export interface WeeklyPerformanceEntry {
+  warehouse: string;
+  client_id: string;
+  inbound_units_count: number;
+  outbound_orders_count: number;
+  stockout_events_count: number;
+  discrepancy_events_count: number;
+  discrepancy_rate: number;
+}
+
+export interface WeeklyPerformanceReport {
+  week_start: string;
+  entries: WeeklyPerformanceEntry[];
+  frozen: boolean;
+  stale: boolean;
+  computed_at: string | null;
+}
+
+export interface PipelineRunLatest {
+  run_id: string;
+  status: "running" | "success" | "failed" | "skipped";
+  week_start: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  rows_extracted: number;
+  rows_valid: number;
+  rows_rejected: number;
+  rows_written: number;
+  quality_status: string | null;
+  error_message: string | null;
+  source_fingerprint: string | null;
+  instrumentation_since: string | null;
+  stale: boolean;
+}
+
+export interface PipelineRunTriggerResponse {
+  run_id: string;
+  flow_run_id: string | null;
+  status: string;
+}
+
+export interface WeeklyPerformanceTotals {
+  inboundUnits: number;
+  outboundOrders: number;
+  stockoutEvents: number;
+  discrepancyEvents: number;
+  discrepancyRate: number;
+}
+
+export function computeWeeklyTotals(
+  entries: readonly WeeklyPerformanceEntry[],
+): WeeklyPerformanceTotals {
+  const inboundUnits = entries.reduce(
+    (total, entry) => total + entry.inbound_units_count,
+    0,
+  );
+  const outboundOrders = entries.reduce(
+    (total, entry) => total + entry.outbound_orders_count,
+    0,
+  );
+  const stockoutEvents = entries.reduce(
+    (total, entry) => total + entry.stockout_events_count,
+    0,
+  );
+  const discrepancyEvents = entries.reduce(
+    (total, entry) => total + entry.discrepancy_events_count,
+    0,
+  );
+  return {
+    inboundUnits,
+    outboundOrders,
+    stockoutEvents,
+    discrepancyEvents,
+    discrepancyRate:
+      outboundOrders > 0 ? discrepancyEvents / outboundOrders : 0,
+  };
+}

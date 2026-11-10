@@ -2,9 +2,20 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
 import os
+from pathlib import Path
+import sys
 import time
 
 load_dotenv()
+
+# `services/reporting` vive fuera de `services/api`; se añade la raíz del
+# monorepo para poder importarlo tanto en local como en Docker.
+try:
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+except IndexError:  # Docker: /app/app/main.py -> raíz /
+    _REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +24,7 @@ from sqlmodel import SQLModel
 
 from database import engine
 from models import HealthResponse
+from app.telemetry.outbox import create_outbox_table
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
 from .routes.inventory import router as inventory_router
@@ -21,6 +33,7 @@ from .routes.auth import router as auth_router
 from .routes.users import router as users_router
 from .routes.profiles import router as profiles_router
 from .routes.telemetry import router as telemetry_router
+from services.reporting.router import router as reporting_router
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s:%(name)s:%(message)s")
@@ -36,6 +49,7 @@ TELEMETRY_ENDPOINT = os.getenv("TELEMETRY_ENDPOINT")
 async def lifespan(app: FastAPI):
     if engine is not None:
         SQLModel.metadata.create_all(engine)
+        create_outbox_table(engine)
     logger.info("Telemetry endpoint configured: %s", TELEMETRY_ENDPOINT or "<unset>")
     yield
 
@@ -77,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router)
     app.include_router(profiles_router)
     app.include_router(telemetry_router)
+    app.include_router(reporting_router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

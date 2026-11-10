@@ -5,6 +5,8 @@ from sqlmodel import Session, select
 from database import get_db, get_tinydb
 from models import SKU, StockEntry, StockExit
 from schemas import (
+    InventoryDiscrepancyCreate,
+    InventoryDiscrepancyRead,
     InventoryOrderItem,
     SKUCreate,
     SKURead,
@@ -17,6 +19,7 @@ from app.core.cache import cache
 from app.core.dependencies import get_current_user, require_manager
 from app.services.inventory_service import (
     compute_stock_by_warehouse,
+    create_discrepancy,
     create_inbound,
     create_outbound,
 )
@@ -34,6 +37,8 @@ def _sku_to_read(sku: SKU, session: Session) -> SKURead:
         name=sku.name,
         sku_code=sku.sku_code,
         warehouse=sku.warehouse,
+        client_id=sku.client_id,
+        min_stock=sku.min_stock,
         current_stock=sum(by_warehouse.values()),
         current_stock_by_warehouse=by_warehouse,
     )
@@ -95,6 +100,8 @@ def create_product(
         name=payload.name,
         sku_code=payload.sku_code,
         warehouse=payload.warehouse,
+        client_id=payload.client_id,
+        min_stock=payload.min_stock,
     )
     session.add(sku)
     session.commit()
@@ -146,6 +153,32 @@ def create_outbound_order(
         warehouse=exit_record.warehouse,
         user_uuid=exit_record.user_uuid,
         created_at=exit_record.created_at,
+    )
+
+
+@router.post(
+    "/discrepancies",
+    response_model=InventoryDiscrepancyRead,
+    status_code=201,
+    summary="Registrar una discrepancia de inventario y emitir su evento",
+)
+def create_inventory_discrepancy(
+    payload: InventoryDiscrepancyCreate,
+    current_user: dict = Depends(require_manager),
+    session: Session = Depends(get_db),
+) -> InventoryDiscrepancyRead:
+    record = create_discrepancy(session, payload, str(current_user["id"]))
+    return InventoryDiscrepancyRead(
+        id=record.id,
+        order_id=record.order_id,
+        sku_id=record.sku_id,
+        warehouse=record.warehouse,
+        client_id=record.client_id,
+        system_quantity=record.system_quantity,
+        physical_quantity=record.physical_quantity,
+        discrepancy_delta=record.discrepancy_delta,
+        incident_id=record.incident_id,
+        created_at=record.created_at,
     )
 
 

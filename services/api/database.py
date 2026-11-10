@@ -13,6 +13,12 @@ DB_DIR = os.path.join(os.path.dirname(__file__), "data")
 DB_PATH = os.path.join(DB_DIR, "suppliers.json")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    # SQLAlchemy 2.x puede resolver `postgresql://` a psycopg3; la API usa
+    # psycopg2, así que se fija el driver de forma explícita.
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://", "postgresql+psycopg2://", 1
+    )
 engine = create_engine(DATABASE_URL) if DATABASE_URL else None
 
 

@@ -2,10 +2,20 @@ import re
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import JSON, Column, DateTime, Index, String, Uuid, func, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Index,
+    String,
+    UniqueConstraint,
+    Uuid,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as ORMField, Relationship, SQLModel
 
@@ -296,7 +306,7 @@ class IncidentSummary(BaseModel):
     by_branch: dict[str, int]
 
 
-TELEMETRY_SCHEMA_VERSION = "1.0.0"
+TELEMETRY_SCHEMA_VERSION = "2.0.0"
 TELEMETRY_SCHEMA_VERSION_PATTERN = r"^\d+\.\d+\.\d+$"
 
 
@@ -392,6 +402,10 @@ class SKU(SQLModel, table=True):
     name: str
     sku_code: str = ORMField(index=True)
     warehouse: str
+    #: Cliente asignado. NULL = pendiente de mapeo (el pipeline lo cuarentena).
+    client_id: str | None = ORMField(default=None)
+    #: Umbral de stock. NULL = no configurado; 0 = umbral cero explícito.
+    min_stock: int | None = ORMField(default=None)
 
 
 class StockEntry(SQLModel, table=True):
@@ -401,6 +415,7 @@ class StockEntry(SQLModel, table=True):
     quantity: int
     warehouse: str
     user_uuid: str
+    client_id: str | None = ORMField(default=None)
     created_at: datetime = ORMField(default_factory=lambda: datetime.now(timezone.utc))
     product: SKU = Relationship()
 
@@ -412,8 +427,30 @@ class StockExit(SQLModel, table=True):
     quantity: int
     warehouse: str
     user_uuid: str
+    client_id: str | None = ORMField(default=None)
     created_at: datetime = ORMField(default_factory=lambda: datetime.now(timezone.utc))
     product: SKU = Relationship()
+
+
+class InventoryDiscrepancy(SQLModel, table=True):
+    """Detalle SQL de una discrepancia; el evento se emite una vez por pedido."""
+
+    __tablename__ = "inventory_discrepancy"
+    __table_args__ = (
+        UniqueConstraint(
+            "order_id", "sku_id", name="uq_inventory_discrepancy_order_sku"
+        ),
+    )
+    id: str = ORMField(default_factory=lambda: str(uuid4()), primary_key=True)
+    order_id: str
+    sku_id: int = ORMField(foreign_key="sku.id")
+    warehouse: str
+    client_id: str | None = ORMField(default=None)
+    system_quantity: int
+    physical_quantity: int
+    discrepancy_delta: int
+    incident_id: str | None = ORMField(default=None)
+    created_at: datetime = ORMField(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TelemetryEventRecord(SQLModel, table=True):
