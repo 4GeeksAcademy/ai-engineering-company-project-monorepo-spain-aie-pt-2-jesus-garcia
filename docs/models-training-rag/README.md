@@ -322,9 +322,9 @@ frecuentista.
 
 - Semilla única `SEED = 42` en `scripts/sales_forecast/config.py`, propagada a
   `RandomForestRegressor(random_state=42)` y al test de shuffling de K2.
-- Para que un entrenamiento sea bit a bit idéntico se usa `n_jobs=1`; con
-  `n_jobs=-1` la suma en paralelo de los árboles puede introducir diferencias de
-  ~1e-8, irrelevantes para el negocio pero detectables en un test estricto.
+- El modelo usa `n_jobs=1`: con varios hilos la suma en paralelo de las
+  predicciones de los árboles puede alterar los últimos decimales. Con un solo
+  hilo el entrenamiento y los artefactos son bit a bit reproducibles.
 - Comando de tests:
 
 ```bash

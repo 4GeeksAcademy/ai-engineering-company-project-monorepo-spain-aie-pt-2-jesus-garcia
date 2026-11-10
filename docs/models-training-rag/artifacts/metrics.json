@@ -69,12 +69,12 @@
   },
   "metrics": {
     "one_step": {
-      "mse": 1805452221.7011337,
-      "rmse": 42490.6133363727,
-      "mae": 37255.37385267468,
-      "mape_pct": 2.8828883159107668,
-      "mse_pct_of_train_mean_revenue": 0.17106060008372737,
-      "rmse_pct_of_train_mean_revenue": 4.135947292745972,
+      "mse": 1805452221.7011325,
+      "rmse": 42490.61333637269,
+      "mae": 37255.37385267467,
+      "mape_pct": 2.882888315910766,
+      "mse_pct_of_train_mean_revenue": 0.17106060008372725,
+      "rmse_pct_of_train_mean_revenue": 4.135947292745971,
       "train_mean_revenue_eur": 1027349.0044444446,
       "gini": 0.8472222222222223,
       "k2": {
@@ -101,12 +101,12 @@
       }
     },
     "recursive_24m": {
-      "mse": 2695371614.695183,
-      "rmse": 51916.96846595709,
-      "mae": 43471.14045412703,
-      "mape_pct": 3.3703501275078374,
-      "mse_pct_of_train_mean_revenue": 0.25537750615409355,
-      "rmse_pct_of_train_mean_revenue": 5.053488954713304,
+      "mse": 2695371614.695186,
+      "rmse": 51916.96846595712,
+      "mae": 43471.14045412706,
+      "mape_pct": 3.37035012750784,
+      "mse_pct_of_train_mean_revenue": 0.2553775061540939,
+      "rmse_pct_of_train_mean_revenue": 5.053488954713306,
       "train_mean_revenue_eur": 1027349.0044444446,
       "gini": 0.875,
       "k2": {

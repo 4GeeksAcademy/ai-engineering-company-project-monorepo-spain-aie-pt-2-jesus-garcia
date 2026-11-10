@@ -79,7 +79,10 @@ FEATURE_COLUMNS = (
 N_ESTIMATORS = 500
 MIN_SAMPLES_LEAF = 3
 MAX_FEATURES = 0.7
-N_JOBS = -1
+# ``n_jobs=1`` para que el entrenamiento sea bit a bit reproducible: la suma
+# en paralelo de las predicciones de los árboles puede alterar los últimos
+# decimales. El dataset es diminuto y el coste es despreciable.
+N_JOBS = 1
 
 # El target que aprende el modelo es el crecimiento interanual logarítmico
 # (estacionario). El pronóstico final se expresa en ``revenue_eur``.
