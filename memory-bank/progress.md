@@ -259,6 +259,18 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 - **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
 - **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
 
+## Evaluación temporal del modelo de ventas (CV + curva de aprendizaje)
+
+Entregable de `docs/models-training-rag/evaluating-regression-model.md`.
+
+- `scripts/sales_forecast/validation.py` (nuevo) — `TimeSeriesSplit` de **6 folds × 8 meses** sobre las 72 filas efectivas del train (2018-01 → 2023-12). Cada fold valida orden cronológico, ausencia de solape, ventana expansiva y que las features de lag/rolling no cambian al truncar la serie en `train_end` / `validation_end`. También reconstruye la fila de cada mes de validación usando solo datos hasta `t−1`.
+- `scripts/evaluate_sales_forecast.py` (nuevo) — genera `data/eval/cv_results.json`, `cv_folds.csv`, `learning_curve.csv` y `learning_curve.png`. La curva usa validación fija 2023 y tamaños de entrenamiento `[24, 30, 36, 42, 48, 54, 60]`.
+- Resultados CV (media ± std, 6 folds): train MAE **16.248 ± 974 EUR**, RMSE **21.275 ± 698 EUR**, MAPE **1,68 ± 0,06 %**; validación MAE **37.716 ± 9.839 EUR**, RMSE **46.224 ± 10.293 EUR**, MAPE **3,49 ± 0,62 %**.
+- Curva de aprendizaje: al pasar de 24 a 60 meses el RMSE de validación solo baja de 64.561 a 62.815 EUR (−2,7 %) mientras el de train cae de 30.558 a 22.032 EUR (−27,9 %). Diagnóstico explícito: **overfitting por varianza**, no underfitting ni falta de datos.
+- Acción propuesta (A/B sobre los mismos folds): `min_samples_leaf` 3 → 5. RMSE de validación prácticamente igual (46.224 → 46.289 EUR, +0,1 %), desviación entre folds −17,8 % (10.293 → 8.460 EUR) y brecha MAPE 1,81 → 1,25 pp. No se cambia el modelo de producción: queda como propuesta validada en CV.
+- Tests: `tests/pipelines/test_sales_forecast_cv.py` (9 casos; orden cronológico, causalidad en fronteras, media ± std, curva, rechazo de <5 folds). `pytest tests/pipelines/test_sales_forecast_cv.py tests/pipelines/test_sales_forecast_split.py -q` → **20 passed**.
+- Informe: `data/eval/evaluation_report.md`; enlace añadido en `docs/models-training-rag/README.md` §6.1.
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
