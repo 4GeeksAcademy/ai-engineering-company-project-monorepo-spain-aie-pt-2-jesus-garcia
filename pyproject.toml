@@ -1,0 +1,22 @@
+[project]
+name = "ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Jesús García Ortuño", email = "jesuscnnbs@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "pandas>=3.1.1",
+    "scikit-learn>=1.9.1",
+    "xgboost>=3.4.1",
+]
+
+[project.scripts]
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia = "ai_engineering_company_project_monorepo_spain_aie_pt_2_jesus_garcia:main"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"

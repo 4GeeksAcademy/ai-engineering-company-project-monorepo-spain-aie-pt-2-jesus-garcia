@@ -259,6 +259,18 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 - **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
 - **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
 
+## Evaluación temporal del modelo de ventas (CV + curva de aprendizaje)
+
+Entregable de `docs/models-training-rag/evaluating-regression-model.md`.
+
+- `scripts/sales_forecast/validation.py` (nuevo) — `TimeSeriesSplit` de **6 folds × 8 meses** sobre las 72 filas efectivas del train (2018-01 → 2023-12). Cada fold valida orden cronológico, ausencia de solape, ventana expansiva y que las features de lag/rolling no cambian al truncar la serie en `train_end` / `validation_end`. También reconstruye la fila de cada mes de validación usando solo datos hasta `t−1`.
+- `scripts/evaluate_sales_forecast.py` (nuevo) — genera `data/eval/cv_results.json`, `cv_folds.csv`, `learning_curve.csv` y `learning_curve.png`. La curva usa validación fija 2023 y tamaños de entrenamiento `[24, 30, 36, 42, 48, 54, 60]`.
+- Resultados CV (media ± std, 6 folds): train MAE **16.248 ± 974 EUR**, RMSE **21.275 ± 698 EUR**, MAPE **1,68 ± 0,06 %**; validación MAE **37.716 ± 9.839 EUR**, RMSE **46.224 ± 10.293 EUR**, MAPE **3,49 ± 0,62 %**.
+- Curva de aprendizaje: al pasar de 24 a 60 meses el RMSE de validación solo baja de 64.561 a 62.815 EUR (−2,7 %) mientras el de train cae de 30.558 a 22.032 EUR (−27,9 %). Diagnóstico explícito: **overfitting por varianza**, no underfitting ni falta de datos.
+- Acción propuesta (A/B sobre los mismos folds): `min_samples_leaf` 3 → 5. RMSE de validación prácticamente igual (46.224 → 46.289 EUR, +0,1 %), desviación entre folds −17,8 % (10.293 → 8.460 EUR) y brecha MAPE 1,81 → 1,25 pp. No se cambia el modelo de producción: queda como propuesta validada en CV.
+- Tests: `tests/pipelines/test_sales_forecast_cv.py` (9 casos; orden cronológico, causalidad en fronteras, media ± std, curva, rechazo de <5 folds). `pytest tests/pipelines/test_sales_forecast_cv.py tests/pipelines/test_sales_forecast_split.py -q` → **20 passed**.
+- Informe: `data/eval/evaluation_report.md`; enlace añadido en `docs/models-training-rag/README.md` §6.1.
+
 ## Siguientes pasos
 
 - [ ] Verificación E2E del flujo completo de inventario contra el backend real (logeado como admin/manager)
@@ -770,9 +782,175 @@ G1–G4.
   `./services/__init__.py`.
 - `services/api/database.py` fija el driver `postgresql+psycopg2://` para que
   SQLAlchemy no resuelva a psycopg3 en imágenes nuevas.
+- **`tests/pipelines/test_pipeline.py`** — unitarias del entrypoint: contrato de
+  flows/CLI, bootstrap de `sys.path` desde cualquier cwd, `--dry-run` sin BD,
+  una ejecución aislada de `process_week` por semana, propagación del fallo sin
+  abortar el resto y backfill idempotente sobre SQLite.
+- **`uis/backoffice/app/(protected)/reporting/`** — página `/reporting`
+  (selector de semana, totales, estado de la última corrida, disparo manual con
+  polling) y su test Vitest.
 - Verificado: API en Docker con `/reporting/*` y `/inventory/discrepancies`;
-  API **213 passed**, pipeline **50 passed + 3 skipped**; entrypoint
+  API **213 passed**, pipeline + entrypoint **58 passed + 3 skipped**;
+  backoffice `reporting` **5 passed**, lint y typecheck OK; entrypoint
   `python data/pipelines/pipeline.py --help` OK.
 - Commit de entrega con el mensaje exacto:
-  `feat: implement resilient business performance pipeline`.
+  `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard.`
 
+
+## Procesos en segundo plano — `nightly_export` con ciclo de vida en `job_runs`
+
+Implementación del brief `docs/asynchronous/BACKGROUND_PROCESSES.md`. El dato
+existe como **estado**: cada intento del job es una fila de `job_runs` que
+atraviesa `pending → processing → completed | failed`.
+
+### Modelo y migración
+
+- `services/api/migrations/0002_job_runs.sql` (aditiva e idempotente):
+  `public.job_runs` (`id`, `job_name`, `target_date`, `status`, `started_at`,
+  `finished_at`, `error_message`, `created_at`), `CHECK` de estados,
+  `ix_job_runs_job_target (job_name, target_date)` y dos índices parciales
+  únicos: `ux_job_runs_processing` (lock: un solo `processing` por job) y
+  `ux_job_runs_completed` (idempotencia: un solo `completed` por job y día).
+- `services/job_runner/models.py` replica el esquema con SQLModel (mismos
+  índices, con `sqlite_where`/`postgresql_where`) + `create_job_runs_table()`
+  idempotente para SQLite/tests. La tabla **no** se fusiona con
+  `reporting.pipeline_runs` (capas distintas: disparo diario vs. semana).
+
+### Módulo `services/job_runner/`
+
+- `repository.py` — `create_pending`, `mark_processing`, `mark_completed`,
+  `mark_failed`, `has_processing_lock`, `has_completed_for_date`,
+  `reconcile_stale_processing`, `get_run`, `list_runs`. Cada transición es su
+  propio `commit` y los `UPDATE` van guardados por el estado de origen (la
+  máquina de estados no se puede saltar).
+- `logs.py` — `UTCFormatter` + `JobLogger`: cada línea lleva timestamp ISO-8601
+  UTC, `job=`, `status=` y `msg=`. `configure_logging()` escribe a stdout.
+- `db.py` — `DATABASE_URL`/`JOB_DATABASE_URL` con el mismo fix de driver
+  (`postgresql+psycopg2`) que la API.
+
+### Script `scripts/nightly_export.py`
+
+Orden del ciclo (el orden es el diseño): reconciliar huérfanos → comprobar
+duplicado (`completed` para `target_date`) → comprobar lock (`processing`) →
+crear `pending` → `mark_processing` (commit) → export CSV → pipeline como
+subproceso → `completed` / `failed`.
+
+- `target_date` desde `TARGET_DATE` o ayer en UTC; inválida → exit 2.
+- CSV `data/raw/telemetry_<YYYY-MM-DD>.csv` (día UTC del `timestamp` del
+  evento), escritura atómica (`.tmp` + `os.replace`), cabecera incluso con 0
+  filas; si el archivo existe **no se sobrescribe** y el pipeline continúa.
+- Pipeline: `python data/pipelines/pipeline.py run --lookback 1 --json` con
+  timeout (`PIPELINE_TIMEOUT_SECONDS`) y captura de stderr.
+- Red de seguridad en `finally` + handler de `SIGTERM`: ninguna fila queda en
+  `processing` tras una ejecución fallida.
+- Exit codes: `0` completed/skipped/blocked · `1` failed · `2` configuración.
+
+### Disparador
+
+- `scripts/Dockerfile` (contexto raíz, `python:3.12-slim` + supercronic
+  v0.2.51 multi-arch + deps del pipeline).
+- `scripts/crontab`: `CRON_TZ=UTC` + `15 2 * * * python /app/scripts/nightly_export.py`.
+- `docker-compose.yml`: servicio `scheduler` (`restart: unless-stopped`,
+  `env_file: .env`, volumen `./data/raw:/app/data/raw`). No hay scheduler en
+  el proceso FastAPI.
+- `.env.example`: `TARGET_DATE`, `JOB_STALE_MINUTES`, `PIPELINE_TIMEOUT_SECONDS`,
+  `DATABASE_URL_PIPELINE`.
+
+### Tests
+
+`tests/jobs/` (SQLite temporal + subprocess y export inyectados): **46 tests**
+que cubren transiciones válidas e ilegales, orden `processing`-antes-del-trabajo,
+fallo de pipeline/export/timeout, lock, idempotencia por fecha, reintento tras
+fallo, recuperación de huérfanos, CSV (filtrado por día, cabecera, no
+sobrescritura), `TARGET_DATE` (env y CLI), contrato del DDL y formato de logs.
+
+### Verificación
+
+- `tests/jobs`: **46 passed**. Regresión: `services/api` **213 passed**,
+  `pipelines/weekly_performance` + `tests/pipelines` OK, `npm run typecheck` OK,
+  `docker compose config` OK, `compileall` OK.
+- Migración **aplicada en Supabase producción**: backup `pg_dump` custom
+  (332 KiB, 508 entradas verificadas con `pg_restore --list`) vía session pooler
+  5432; `0002` aplicada dos veces sin error (idempotente); verificados columnas,
+  `ck_job_runs_status` y los 5 índices.
+- E2E real contra Supabase:
+  - `TARGET_DATE=2026-10-29` → `completed`, CSV con 29 filas, pipeline `rc=0`
+    (semana 2026-10-19: 4 extraídas / 3 escritas / `warning`).
+  - `TARGET_DATE=2026-10-30` con `DATABASE_URL_PIPELINE` inválido → `failed`
+    con `error_message` (`OperationalError: connection refused`) y **0 filas en
+    `processing`**.
+  - Lock simulado (`processing` insertado) → `blocked` sin crear fila nueva.
+  - Repetición de una fecha completada → `skipped` sin reexportar ni relanzar.
+
+### Pendiente
+
+- Arrancar el contenedor `scheduler` (`docker compose up -d scheduler`).
+- Excluir `data/raw/telemetry_*.csv` en `.gitignore` (archivo protegido: requiere
+  confirmación explícita).
+
+## Tareas asíncronas — Cola Redis + Celery (DEV-55)
+
+Desacople del análisis pesado de CSV de incidencias: la API encola y devuelve
+`202`; un worker independiente ejecuta pandas; el cliente consulta el estado.
+Documentación: `docs/asynchronous/CELERY.md` y sección del `README.md` raíz.
+
+### Infraestructura
+- `docker-compose.yml` — `redis` (`redis:7-alpine`, `6379`, `--maxmemory-policy noeviction`, healthcheck, volumen `redis-data`), `worker` (`celery -A celery_app worker`, proceso separado de FastAPI), `flower` (`:5555`). API y worker comparten `task-uploads:/uploads` y `REDIS_URL`.
+- `.env.example` — `REDIS_URL`, `INCIDENT_UPLOAD_DIR`, `CELERY_TASK_TIME_LIMIT`, `CELERY_TASK_SOFT_TIME_LIMIT`, `CELERY_RETRY_BACKOFF_SECONDS`.
+- Dependencias: `celery[redis]` y `flower` en `services/api/requirements.txt` y `pyproject.toml`; instaladas en `services/api/venv` (Celery 5.6.3 sobre Python 3.14).
+
+### Backend (`services/api`)
+- `celery_app.py` — instancia Celery con Redis como broker y backend, JSON, UTC, `task_track_started`, `task_acks_late`, `task_reject_on_worker_lost`, `prefetch=1`, timeouts y `worker_ready` para crear tablas SQL.
+- `app/tasks/incidents.py` — tarea `incidents.analyze_csv` (`max_retries=3`, backoff 5/10/20 s). Log por intento: `task_id`, `attempt`, `status`, `duration_ms`; en fallo, traceback completo. Éxito: borra el CSV.
+- `app/tasks/dlq.py` — `record_dead_letter()`: fila en `dead_letter_tasks` + `RPUSH dlq:trackflow`; tolerante a fallos de SQL/Redis.
+- `models.py` — `DeadLetterTask` (`task_id` unique, `attempts`, `max_retries`, `error_message`, `created_at`).
+- `migrations/0003_dead_letter_tasks.sql` — DDL idempotente + índice único por `task_id`.
+- `app/routes/incidents.py` — `POST /api/incidents/analyze` valida cabecera/codificación, guarda el CSV atómicamente en `INCIDENT_UPLOAD_DIR/{task_id}.csv` y encola solo `{path, filename}` → `202 {"task_id"}`; `503` si la cola no acepta el mensaje. Export CSV acepta `?task_id=` y lee el resultado del backend de Celery (fallback en memoria para compatibilidad).
+- `app/routes/tasks.py` — `GET /tasks/{task_id}` con `AsyncResult`; mapea `PENDING/RECEIVED → pending`, `STARTED/RETRY → started`, `SUCCESS → success`, `FAILURE/REVOKED → failure`; `result` es el dict o el mensaje de error.
+- `app/incidents/service.py` — `validate_upload()` (checks baratos en la API), `analyze_path()` (worker) y `export_analysis_csv()`.
+- `schemas.py` — `AnalyzeTaskAccepted`, `TaskStatusResponse`.
+- Tests: `tests/test_tasks.py` (tarea, retries, DLQ SQL+Redis, mapeo de estados) y `test_incidents.py` actualizado al contrato 202; fixtures `_isolate_uploads` y `enqueued_tasks`. Suite completa: **227 passed**.
+
+### Frontend (`uis/backoffice`)
+- `lib/api.ts` — `analyzeCsv` devuelve `task_id`; `fetchTaskStatus()`; `fetchExportCsv(taskId)`.
+- `lib/types.ts` — `AnalyzeTaskAccepted`, `TaskStatus`, `TaskStatusResponse`.
+- `app/(protected)/page.tsx` — polling cada 1,5 s (timeout 2 min) con limpieza al desmontar; estados "En cola"/"Analizando"/"Completado"/"Fallido"; muestra `task_id`; exporta con `task_id`.
+- `components/ExportLink.tsx` — recibe `taskId`.
+- `next.config.ts` — rewrite `/api/tasks/:path*` → `BACKEND_URL/tasks/:path*`.
+- Tests: `app/(protected)/page.test.tsx` (3: éxito, fallo, error de encolado) y `lib/__tests__/api.test.ts` (+3). Vitest: **84 passed**; lint 0 warnings; build OK; `npm run typecheck` raíz OK.
+
+### Verificación E2E (Redis real + worker prefork)
+
+- `docker compose up -d redis` + worker local con SQLite temporal (`/tmp/trackflow-e2e.db`) y `REDIS_URL=redis://localhost:6379/0`.
+- Worker conectado (`Connected to redis://...` + `ready`). Tarea de éxito: `SUCCESS`, resultado del análisis y CSV borrado.
+- Tarea fallida (ruta inexistente): 4 intentos con backoff 5/10/20 s, `FAILURE`, fila en `dead_letter_tasks` (`attempts=4`, `max_retries=3`, `FileNotFoundError` completo) y `RPUSH dlq:trackflow`.
+- Logs por intento verificados: `task_id`, `attempt`, `status`, `duration_ms`, traceback y línea `status=dlq`.
+- **Fix de plataforma**: en macOS/Python 3.14 el atajo `fast_trace_task` de Celery falla porque `trace._localized` queda vacío. `celery_app.py` desactiva el atajo con `celeryd_after_setup` + `worker_process_init` (`reset_worker_optimizations`), forzando `trace_task_ret`.
+- **Docker E2E**: `docker compose up --build -d redis services worker flower` → API `:8000/health` 200, Flower `:5555` 200, worker conectado a `redis://redis:6379/0`. Login admin → `POST /api/incidents/analyze` devuelve `202` + `task_id`; `GET /tasks/{id}` pasa a `success`; export CSV correcto; el worker borra el CSV de `/uploads`.
+- Tabla `dead_letter_tasks` creada en Supabase por `create_all` (0 filas tras el E2E); la migración `0003` queda como vía explícita/idempotente para otros entornos.
+
+## Modelo de pronóstico de ventas — Random Forest (rama `feature/sales-forecast-model`)
+
+Implementación del entregable `docs/models-training-rag/sales-forecasting-regression.md`
+sobre `data/raw/trackflow_sales.csv` (120 meses consolidados, 2016-01 → 2025-12).
+
+### Implementación
+- `scripts/train_sales_forecast.py` — CLI reproducible (`python -m scripts.train_sales_forecast`).
+- `scripts/sales_forecast/` — paquete con `config` (SEED=42), `data` (esquema + limpieza), `features` (causales), `split` (8/2 + guardas anti-leakage), `model` (Random Forest + banda), `metrics` (MSE/PSI/Gini/K2), `plots` y `pipeline`.
+- Target aprendido: crecimiento interanual logarítmico `log(rev_t) − log(rev_{t−12})` (estacionario); el pronóstico se reconstruye como `exp(crecimiento) × rev_{t−12}`. Evita la incapacidad de los árboles de extrapolar niveles.
+- Features: calendario (sin/cos, pico nov-dic, febrero) + lags 1/2/3/12 del crecimiento + medias rodantes 3/6. Todas causales; el test perturba 2024–2025 y comprueba que 2016–2023 no cambia.
+- Split: train 96 meses (2016-01→2023-12, 72 filas efectivas) / test 24 meses (2024-01→2025-12). Semilla fija 42; `StandardScaler` en el pipeline.
+- Evaluación doble: walk-forward one-step y recursivo 24 pasos, ambas solo sobre test.
+
+### Resultados test (one-step / recursivo)
+- MSE 1.805.452.221,70 EUR² (0,171% del ingreso medio) / 2.695.371.614,70 EUR² (0,255%).
+- RMSE 42.490,61 € / 51.916,97 €; MAPE 2,88% / 3,37%.
+- PSI revenue 8,67 (esperado por crecimiento), PSI crecimiento interanual 0,125 (moderado), PSI shipments 5,85.
+- Gini 0,847 / 0,875; K2 normalizado 0,398 / 0,349.
+
+### Artefactos y verificación
+- `docs/models-training-rag/README.md` — decisión de algoritmo, features, métricas explicadas y resultados.
+- `docs/models-training-rag/figures/sales_forecast_test_2024_2025.png` — real vs predicción con bandas p10–p90 y p5–p95.
+- `docs/models-training-rag/artifacts/metrics.json` y `predictions_test.csv`.
+- `tests/pipelines/test_sales_forecast_split.py` — 11 tests (split 8/2, sin solape, causalidad, reproducibilidad y sanidad de métricas): **11 passed**.
+- `npm run typecheck` raíz OK. La suite completa `tests/pipelines` no colecciona por falta de `sqlalchemy` en el `.venv` raíz (dependencia preexistente del pipeline semanal, ajena a este cambio).

@@ -1,0 +1,143 @@
+{
+  "experiment": {
+    "seed": 42,
+    "market": "consolidated",
+    "target": "revenue_eur",
+    "learned_target": "yoy_log_growth",
+    "base_lag_months": 12,
+    "model": "RandomForestRegressor",
+    "model_params": {
+      "n_estimators": 500,
+      "min_samples_leaf": 3,
+      "max_features": 0.7,
+      "random_state": 42,
+      "bootstrap": true
+    },
+    "features": [
+      "month_sin",
+      "month_cos",
+      "is_peak_season",
+      "is_february_dip",
+      "yoy_growth_lag_1",
+      "yoy_growth_lag_2",
+      "yoy_growth_lag_3",
+      "yoy_growth_lag_12",
+      "yoy_rolling_mean_3",
+      "yoy_rolling_mean_6"
+    ],
+    "feature_importances": {
+      "yoy_growth_lag_12": 0.5170550983120776,
+      "yoy_rolling_mean_6": 0.10013121804690557,
+      "yoy_rolling_mean_3": 0.09391507778878505,
+      "yoy_growth_lag_1": 0.08623118538068833,
+      "yoy_growth_lag_2": 0.07915516532262182,
+      "yoy_growth_lag_3": 0.05552457479195457,
+      "month_cos": 0.03195052571271641,
+      "month_sin": 0.031252811837122266,
+      "is_peak_season": 0.004435964327323305,
+      "is_february_dip": 0.0003483784798049961
+    },
+    "k2_bins": 4
+  },
+  "dataset": {
+    "source": "/Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/data/raw/trackflow_sales.csv",
+    "rows_raw": 120,
+    "markets": [
+      "consolidated"
+    ],
+    "duplicates_removed": 0,
+    "missing_months_detected": 0,
+    "nulls_imputed": {},
+    "rows_clean": 120,
+    "first_month": "2016-01",
+    "last_month": "2025-12",
+    "months_total": 120
+  },
+  "split": {
+    "train_rows": 96,
+    "test_rows": 24,
+    "train_years": 8,
+    "test_years": 2,
+    "train_start": "2016-01",
+    "train_end": "2023-12",
+    "test_start": "2024-01",
+    "test_end": "2025-12"
+  },
+  "training": {
+    "rows_used": 72,
+    "rows_dropped_for_lags": 24
+  },
+  "metrics": {
+    "one_step": {
+      "mse": 1805452221.7011325,
+      "rmse": 42490.61333637269,
+      "mae": 37255.37385267467,
+      "mape_pct": 2.882888315910766,
+      "mse_pct_of_train_mean_revenue": 0.17106060008372725,
+      "rmse_pct_of_train_mean_revenue": 4.135947292745971,
+      "train_mean_revenue_eur": 1027349.0044444446,
+      "gini": 0.8472222222222223,
+      "k2": {
+        "k2": -30.81723109825589,
+        "k2_per_sample": -1.284051295760662,
+        "k2_normalized": 0.3983128197111769,
+        "bins": 4,
+        "samples": 24
+      },
+      "psi_revenue": {
+        "psi": 8.667138466186339,
+        "interpretation": "cambio significativo",
+        "bins": 5
+      },
+      "psi_yoy_growth": {
+        "psi": 0.12509698539019828,
+        "interpretation": "cambio moderado",
+        "bins": 5
+      },
+      "psi_shipments": {
+        "psi": 5.849480473197636,
+        "interpretation": "cambio significativo",
+        "bins": 5
+      }
+    },
+    "recursive_24m": {
+      "mse": 2695371614.695186,
+      "rmse": 51916.96846595712,
+      "mae": 43471.14045412706,
+      "mape_pct": 3.37035012750784,
+      "mse_pct_of_train_mean_revenue": 0.2553775061540939,
+      "rmse_pct_of_train_mean_revenue": 5.053488954713306,
+      "train_mean_revenue_eur": 1027349.0044444446,
+      "gini": 0.875,
+      "k2": {
+        "k2": -31.61606942763918,
+        "k2_per_sample": -1.3173362261516324,
+        "k2_normalized": 0.3486329516704881,
+        "bins": 4,
+        "samples": 24
+      }
+    }
+  },
+  "distribution_shift": {
+    "revenue_eur": {
+      "psi": 8.667138466186339,
+      "interpretation": "cambio significativo",
+      "bins": 5
+    },
+    "yoy_growth": {
+      "psi": 0.12509698539019828,
+      "interpretation": "cambio moderado",
+      "bins": 5
+    },
+    "shipments_processed": {
+      "psi": 5.849480473197636,
+      "interpretation": "cambio significativo",
+      "bins": 5
+    }
+  },
+  "artifacts": {
+    "predictions": "artifacts/predictions_test.csv",
+    "metrics": "artifacts/metrics.json",
+    "figure": "figures/sales_forecast_test_2024_2025.png"
+  }
+}

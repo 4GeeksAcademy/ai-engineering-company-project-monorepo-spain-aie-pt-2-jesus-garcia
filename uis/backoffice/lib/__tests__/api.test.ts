@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  analyzeCsv,
   ApiRequestError,
   createInboundOrder,
   createInventoryProduct,
   createOutboundOrder,
+  fetchExportCsv,
   fetchInventoryOrders,
   fetchInventoryProduct,
   fetchInventoryProducts,
+  fetchTaskStatus,
   fetchTelemetryReport,
   friendlyError,
 } from "@/lib/api";
@@ -221,5 +224,61 @@ describe("fetchTelemetryReport", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/telemetry/report", {
       headers: {},
     });
+  });
+});
+
+function blobResponse(blob: Blob): Response {
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    json: () => Promise.reject(new Error("not json")),
+    blob: () => Promise.resolve(blob),
+  } as unknown as Response;
+}
+
+describe("analyzeCsv (async)", () => {
+  it("hace POST del CSV y devuelve el task_id", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(202, { task_id: "task-123" }));
+    const file = new File(["a,b\n1,2"], "COMPANY.csv", { type: "text/csv" });
+
+    const result = await analyzeCsv(file, "tok123");
+
+    expect(result).toEqual({ task_id: "task-123" });
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/incidents/analyze");
+    expect(options.method).toBe("POST");
+    expect(options.headers).toEqual({ Authorization: "Bearer tok123" });
+    expect(options.body).toBeInstanceOf(FormData);
+    expect((options.body as FormData).get("file")).toBe(file);
+  });
+});
+
+describe("fetchTaskStatus", () => {
+  it("consulta /api/tasks/{id} con Bearer", async () => {
+    const payload = { task_id: "task-123", status: "started", result: null };
+    fetchMock.mockResolvedValue(jsonResponse(200, payload));
+
+    const result = await fetchTaskStatus("task-123", "tok123");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/task-123", {
+      headers: { Authorization: "Bearer tok123" },
+    });
+    expect(result).toEqual(payload);
+  });
+});
+
+describe("fetchExportCsv (con task_id)", () => {
+  it("pide el CSV de la tarea indicada", async () => {
+    const blob = new Blob(["metrica,valor"], { type: "text/csv" });
+    fetchMock.mockResolvedValue(blobResponse(blob));
+
+    const result = await fetchExportCsv("task-123", "tok123");
+
+    expect(result).toBe(blob);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/incidents/results/export?task_id=task-123",
+      { headers: { Authorization: "Bearer tok123" } },
+    );
   });
 });

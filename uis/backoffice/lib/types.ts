@@ -8,6 +8,18 @@ export interface AnalysisResponse {
   invalid_reasons: Record<string, number>;
 }
 
+export interface AnalyzeTaskAccepted {
+  task_id: string;
+}
+
+export type TaskStatus = "pending" | "started" | "success" | "failure";
+
+export interface TaskStatusResponse {
+  task_id: string;
+  status: TaskStatus;
+  result: AnalysisResponse | string | null;
+}
+
 export interface InvalidReasonMeta {
   key: string;
   label: string;

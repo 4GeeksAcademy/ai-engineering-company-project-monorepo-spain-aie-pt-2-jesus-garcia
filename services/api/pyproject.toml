@@ -19,6 +19,8 @@ dependencies = [
     "bcrypt",
     "python-jose[cryptography]",
     "resend",
+    "celery[redis]",
+    "flower",
 ]
 
 [dependency-groups]
