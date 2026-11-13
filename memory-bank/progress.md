@@ -10,6 +10,7 @@
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
+| MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query` |
 
 ## Últimas decisiones
 
@@ -258,6 +259,18 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 - **Backend** (`services/api/app/routes/inventory.py`): `GET /inventory/orders` pasa de `get_current_user` a `require_manager` → `role user` recibe **403**. Nuevo test `test_get_orders_with_user_role_returns_403` en `test_inventory.py`.
 - **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
 - **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
+
+## Evaluación temporal del modelo de ventas (CV + curva de aprendizaje)
+
+Entregable de `docs/models-training-rag/evaluating-regression-model.md`.
+
+- `scripts/sales_forecast/validation.py` (nuevo) — `TimeSeriesSplit` de **6 folds × 8 meses** sobre las 72 filas efectivas del train (2018-01 → 2023-12). Cada fold valida orden cronológico, ausencia de solape, ventana expansiva y que las features de lag/rolling no cambian al truncar la serie en `train_end` / `validation_end`. También reconstruye la fila de cada mes de validación usando solo datos hasta `t−1`.
+- `scripts/evaluate_sales_forecast.py` (nuevo) — genera `data/eval/cv_results.json`, `cv_folds.csv`, `learning_curve.csv` y `learning_curve.png`. La curva usa validación fija 2023 y tamaños de entrenamiento `[24, 30, 36, 42, 48, 54, 60]`.
+- Resultados CV (media ± std, 6 folds): train MAE **16.248 ± 974 EUR**, RMSE **21.275 ± 698 EUR**, MAPE **1,68 ± 0,06 %**; validación MAE **37.716 ± 9.839 EUR**, RMSE **46.224 ± 10.293 EUR**, MAPE **3,49 ± 0,62 %**.
+- Curva de aprendizaje: al pasar de 24 a 60 meses el RMSE de validación solo baja de 64.561 a 62.815 EUR (−2,7 %) mientras el de train cae de 30.558 a 22.032 EUR (−27,9 %). Diagnóstico explícito: **overfitting por varianza**, no underfitting ni falta de datos.
+- Acción propuesta (A/B sobre los mismos folds): `min_samples_leaf` 3 → 5. RMSE de validación prácticamente igual (46.224 → 46.289 EUR, +0,1 %), desviación entre folds −17,8 % (10.293 → 8.460 EUR) y brecha MAPE 1,81 → 1,25 pp. No se cambia el modelo de producción: queda como propuesta validada en CV.
+- Tests: `tests/pipelines/test_sales_forecast_cv.py` (9 casos; orden cronológico, causalidad en fronteras, media ± std, curva, rechazo de <5 folds). `pytest tests/pipelines/test_sales_forecast_cv.py tests/pipelines/test_sales_forecast_split.py -q` → **20 passed**.
+- Informe: `data/eval/evaluation_report.md`; enlace añadido en `docs/models-training-rag/README.md` §6.1.
 
 ## Siguientes pasos
 
@@ -942,3 +955,128 @@ sobre `data/raw/trackflow_sales.csv` (120 meses consolidados, 2016-01 → 2025-1
 - `docs/models-training-rag/artifacts/metrics.json` y `predictions_test.csv`.
 - `tests/pipelines/test_sales_forecast_split.py` — 11 tests (split 8/2, sin solape, causalidad, reproducibilidad y sanidad de métricas): **11 passed**.
 - `npm run typecheck` raíz OK. La suite completa `tests/pipelines` no colecciona por falta de `sqlalchemy` en el `.venv` raíz (dependencia preexistente del pipeline semanal, ajena a este cambio).
+
+## RAG y base de conocimiento — MILESTONE 7
+
+Implementación del asistente comercial sobre los cuatro documentos de
+`docs/company-knowledge-base/` (SLA, devoluciones, transportistas y tarifas de
+almacenamiento).
+
+### Infraestructura
+- `docker-compose.yml` — servicio `qdrant` (`qdrant/qdrant:v1.20.1`, puertos
+  `6333/6334`, volumen `qdrant-data`, healthcheck TCP), `services` depende de
+  él y monta `./data` y `./docs/company-knowledge-base`. `env_file` incluye
+  `services/api/.env` mediante `load_dotenv()` dentro del contenedor.
+- `services/api/requirements.txt` y `pyproject.toml` — `qdrant-client>=1.20,<2`,
+  `httpx`, `python-dotenv`.
+
+### Indexación (`data/process/`)
+- `rag_config.py` — colección `trackflow_knowledge`, modelos por defecto
+  (`pplx-embed-v1-0.6b` para embeddings, `deepseek-v4-flash` para generación),
+  1024 dimensiones, `RAG_MIN_SCORE=0.35`, rutas y tamaños de chunk. Carga
+  `services/api/.env` con prioridad sobre el `.env` raíz. `join_url()`,
+  `normalize_llm_base_url()` y `build_api_url()` toleran base con/sin `/`, `/v1`
+  o `/litellm` y construyen `{base}/v1/{embeddings|chat/completions}` con una
+  sola barra; `build_model_url()` concatena base + modelo.
+- `rag_index.py` — chunking híbrido por encabezado + bloques semánticos; 14
+  chunks (SLA 3, devoluciones 5, transportistas 3, almacenamiento 3), mínimo 3
+  por documento. `embed()`/`embed_batch()` con normalización L2, soporte de
+  `base64_int8` y lotes de 32. `setup()` borra/recrea la colección
+  (clean-and-reload) y usa UUID5 deterministas. CLI con `--dry-run` y
+  `--no-recreate`.
+
+### Recuperación y generación (`data/pipelines/rag.py`)
+- `retrieve(query, *, k=5, min_score)` — embed + Qdrant `query_points` con
+  `score_threshold`, filtro local y retorno de payloads (nunca objetos SDK).
+- `generate_answer(question, context)` — prompt de asistente comercial con voz
+  de vendedor, reglas de negocio (Black Friday/Rebajas, devoluciones
+  internacionales manuales, descuentos con aprobación de Miguel Torres) y
+  mensaje honesto sin contexto.
+- `query(question)` — composición literal de `retrieve()` + `generate_answer()`.
+
+### API y UI
+- `POST /knowledge/query` autenticado (`app/routes/knowledge.py`), body
+  `{"question": ...}`, response `{"answer": ...}`; errores 502/503 sin filtrar
+  detalles internos. Router incluido en `app/main.py`.
+- Backoffice: página `/knowledge` (“Asistente comercial”), sugerencias, estados
+  de carga/error/respuesta; `lib/knowledge-api.ts`, rewrite
+  `/api/knowledge/:path*` y entrada en el sidebar.
+
+### Evaluación y documentación
+- `data/eval/test-queries.json` — 12 preguntas que cubren los 4 documentos,
+  incluida Black Friday/Rebajas, devoluciones internacionales y descuentos.
+- `data/eval/evaluate_retrieval.py` — Recall@3 con acierto por
+  `source_document` + fragmento de texto; falla si < 80%. Modo `--in-memory`
+  para evaluar sin Docker (indexa en Qdrant en memoria).
+- Resultado real con embeddings de 4Geeks: **Recall@3 12/12 = 100%** con
+  `min_score=0.35`; artefacto en `data/eval/rag-retrieval-results.json`.
+- `docs/rag/rag-design.md` — flujo, chunking, embeddings, umbral,
+  idempotencia, API/UI y comandos.
+- Tests: `tests/pipelines/test_rag.py` (19 passed, stubs de Qdrant y LLM,
+  incluidos tests de construcción de URLs), `services/api/tests/test_knowledge.py`
+  (5 passed) y suite completa de la API (232 passed). Backoffice: 87 tests
+  Vitest, `npm run typecheck`, lint y build OK.
+
+### Pendiente
+- El daemon de Docker no estaba arrancado al validar; `docker compose config`
+  sí pasa. Queda pendiente levantar `qdrant` y probar el indexing contra el
+  servicio real (el flujo completo ya se validó con Qdrant en memoria).
+- `services/api/.env` ya tiene `LLM_BASE_URL=https://llm.4geeks.ai` y
+  `LLM_API_KEY`; la base tolera `/`, `/v1` y `/litellm`.
+
+## Agente RAG con LangGraph — MILESTONE 8
+
+El RAG del MILESTONE 7 se expone ahora como un grafo explícito y trazable. Los
+nodos reutilizan `retrieve()` y `generate_answer()` de `data/pipelines/rag.py`;
+ningún nodo invoca `query()`, así que la recuperación y la generación siguen
+siendo pasos separados.
+
+### Grafo (`services/api/app/agent/`)
+- `state.py` — `AgentState` (`TypedDict`, 6 campos): `question`, `context`,
+  `answer`, `status`, `error`, `run_id`. Sin historial de conversación: cada
+  corrida es stateless y el RAG solo usa la pregunta y el contexto.
+- `nodes.py` — `receive_question`, `retrieve`, `generate`, `no_context` y
+  `fail`, con inyección de dependencias para tests. Un nodo vacío evita
+  recuperar; sin contexto se responde con `rag.NO_CONTEXT_ANSWER` sin llamar al
+  LLM.
+- `graph.py` — aristas condicionales (`route_after_receive`,
+  `route_after_retrieve`, `route_after_generate`), validación estructural
+  (nodo huérfano, arista a nodo inexistente, nodo sin salida, estado no
+  `TypedDict`) y compilación explícita con `InMemorySaver`. El router compila
+  al importarse: un grafo inválido impide arrancar la API.
+- `tracing.py` — `TraceRecorder`/`AgentTrace`; cada corrida escribe
+  `data/eval/agent-traces/{run_id}.json` (`AGENT_TRACE_DIR` configurable) con
+  orden de nodos, salidas, fuentes recuperadas y checkpoints, más una línea en
+  `index.jsonl`.
+- `runner.py` — `run_agent()` (stream de updates + checkpoint por transición),
+  `get_run_state()` y `AgentRunError`.
+
+### Endpoint
+- `POST /agent/query` (`app/routes/agent.py`, autenticado) devuelve
+  `{"answer", "run_id"}`. No tiene lógica de negocio: invoca el grafo y mapea
+  `invalid_question → 422` y `error`/excepción → 502 con mensaje genérico.
+  `/knowledge/query` se mantiene intacto.
+- Dependencia `langgraph>=1.2.21` añadida a `services/api/requirements.txt` y
+  `services/api/pyproject.toml` e instalada en `services/api/venv`.
+
+### Evals y anclaje
+- `tests/pipelines/test_agent_evals.py` (10 passed):
+  pregunta vacía sin retrieve/generate, orden `retrieve → generate` con el
+  contexto exacto, `no_context` sin LLM, anclaje en 4 casos del BRIEFING
+  (`3 a 5 días hábiles`, `40%`, gestión manual, Miguel Torres), 3 checkpoints
+  por corrida y fallo de compilación ante nodo huérfano/estado mal tipado.
+- `tests/pipelines/fixtures/agent_traces/*.json` — traces reales grabados con
+  `scripts/record_agent_traces.py` contra Qdrant (14 chunks) y el LLM de
+  `services/api/.env`; los evals los leen sin red.
+- Verificación: `uv run pytest tests/pipelines/test_rag.py
+  tests/pipelines/test_agent_evals.py -q` → 29 passed; suite completa de la API
+  → 237 passed.
+- Diseño: `docs/rag/agent-design.md`.
+
+### Pendiente
+- Reconstruir la imagen del contenedor `api` (`docker compose build api`) para
+  que incluya `langgraph`; el venv local ya lo tiene.
+- Decidir si `data/eval/agent-traces/` se añade a `.gitignore` (runtime, no
+  versionado) — `.gitignore` está protegido y no se ha tocado.
+- Migrar el backoffice a `/agent/query` si se quiere mostrar `run_id` y enlazar
+  al trace desde la UI.

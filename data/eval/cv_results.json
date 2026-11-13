@@ -1,0 +1,711 @@
+{
+  "experiment": {
+    "target": "revenue_eur",
+    "learned_target": "yoy_log_growth",
+    "model": "RandomForestRegressor",
+    "n_estimators": 500,
+    "random_state": 42,
+    "min_samples_leaf": 3,
+    "max_features": 0.7,
+    "features": [
+      "month_sin",
+      "month_cos",
+      "is_peak_season",
+      "is_february_dip",
+      "yoy_growth_lag_1",
+      "yoy_growth_lag_2",
+      "yoy_growth_lag_3",
+      "yoy_growth_lag_12",
+      "yoy_rolling_mean_3",
+      "yoy_rolling_mean_6"
+    ],
+    "holdout_test": "2024-01 → 2025-12 (no usado en esta evaluación)"
+  },
+  "dataset": {
+    "source": "/Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/data/raw/trackflow_sales.csv",
+    "rows_raw": 120,
+    "markets": [
+      "consolidated"
+    ],
+    "duplicates_removed": 0,
+    "missing_months_detected": 0,
+    "nulls_imputed": {},
+    "rows_clean": 120,
+    "first_month": "2016-01",
+    "last_month": "2025-12",
+    "months_total": 120
+  },
+  "split": {
+    "train_rows": 96,
+    "test_rows": 24,
+    "train_years": 8,
+    "test_years": 2,
+    "train_start": "2016-01",
+    "train_end": "2023-12",
+    "test_start": "2024-01",
+    "test_end": "2025-12"
+  },
+  "effective_training": {
+    "rows": 72,
+    "first_month": "2018-01",
+    "last_month": "2023-12",
+    "rows_dropped_for_lags": 24,
+    "mean_revenue_eur": 1027349.0044444446
+  },
+  "cv": {
+    "strategy": "TimeSeriesSplit",
+    "n_splits": 6,
+    "test_size_months": 8,
+    "gap_months": 0,
+    "shuffle": false,
+    "reference_mean_revenue_eur": 1027349.0044444446,
+    "folds": [
+      {
+        "fold": 1,
+        "train_start": "2018-01",
+        "train_end": "2019-12",
+        "validation_start": "2020-01",
+        "validation_end": "2020-08",
+        "n_train": 24,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 447643322.231342,
+          "rmse_eur": 21157.583090498356,
+          "mae_eur": 15612.0836197522,
+          "mape_pct": 1.6673815567955326
+        },
+        "validation": {
+          "mse_eur2": 1401366650.7932975,
+          "rmse_eur": 37434.832052425416,
+          "mae_eur": 27742.97125715077,
+          "mape_pct": 3.076928772734247
+        }
+      },
+      {
+        "fold": 2,
+        "train_start": "2018-01",
+        "train_end": "2020-08",
+        "validation_start": "2020-09",
+        "validation_end": "2021-04",
+        "n_train": 32,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 434317326.4616622,
+          "rmse_eur": 20840.28134315039,
+          "mae_eur": 15465.655193875671,
+          "mape_pct": 1.6531838602725162
+        },
+        "validation": {
+          "mse_eur2": 1697649020.336114,
+          "rmse_eur": 41202.536576479295,
+          "mae_eur": 31885.88705965347,
+          "mape_pct": 3.032736553482461
+        }
+      },
+      {
+        "fold": 3,
+        "train_start": "2018-01",
+        "train_end": "2021-04",
+        "validation_start": "2021-05",
+        "validation_end": "2021-12",
+        "n_train": 40,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 420356731.39267886,
+          "rmse_eur": 20502.603039435722,
+          "mae_eur": 15899.76873961128,
+          "mape_pct": 1.6700670049080502
+        },
+        "validation": {
+          "mse_eur2": 1731901968.460876,
+          "rmse_eur": 41616.12630292344,
+          "mae_eur": 31416.343062726955,
+          "mape_pct": 2.9951840545543766
+        }
+      },
+      {
+        "fold": 4,
+        "train_start": "2018-01",
+        "train_end": "2021-12",
+        "validation_start": "2022-01",
+        "validation_end": "2022-08",
+        "n_train": 48,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 443930000.7953303,
+          "rmse_eur": 21069.646432613205,
+          "mae_eur": 15626.663729449525,
+          "mape_pct": 1.6086729225283616
+        },
+        "validation": {
+          "mse_eur2": 1875850408.6499355,
+          "rmse_eur": 43311.088749302246,
+          "mae_eur": 39483.43328229667,
+          "mape_pct": 3.7635419901713143
+        }
+      },
+      {
+        "fold": 5,
+        "train_start": "2018-01",
+        "train_end": "2022-08",
+        "validation_start": "2022-09",
+        "validation_end": "2023-04",
+        "n_train": 56,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 465842464.4636821,
+          "rmse_eur": 21583.383990090202,
+          "mae_eur": 17012.678293992947,
+          "mape_pct": 1.7280181101315344
+        },
+        "validation": {
+          "mse_eur2": 2272667128.834794,
+          "rmse_eur": 47672.498663640385,
+          "mae_eur": 40775.348195848535,
+          "mape_pct": 3.5094463377961698
+        }
+      },
+      {
+        "fold": 6,
+        "train_start": "2018-01",
+        "train_end": "2023-04",
+        "validation_start": "2023-05",
+        "validation_end": "2023-12",
+        "n_train": 64,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 506202414.29650575,
+          "rmse_eur": 22498.94251507181,
+          "mae_eur": 17871.691242766203,
+          "mape_pct": 1.7652973721226626
+        },
+        "validation": {
+          "mse_eur2": 4370491422.740544,
+          "rmse_eur": 66109.69235097486,
+          "mae_eur": 54990.12532442843,
+          "mape_pct": 4.585139777419711
+        }
+      }
+    ],
+    "summary": {
+      "n_folds": 6,
+      "train": {
+        "mae_eur": {
+          "mean": 16248.090136574638,
+          "std": 974.1542902993011,
+          "min": 15465.655193875671,
+          "max": 17871.691242766203
+        },
+        "rmse_eur": {
+          "mean": 21275.40673514328,
+          "std": 697.8064440116418,
+          "min": 20502.603039435722,
+          "max": 22498.94251507181
+        },
+        "mape_pct": {
+          "mean": 1.6821034711264427,
+          "std": 0.055891644953226384,
+          "min": 1.6086729225283616,
+          "max": 1.7652973721226626
+        },
+        "mse_eur2": {
+          "mean": 453048709.94020015,
+          "std": 30069904.23239855,
+          "min": 420356731.39267886,
+          "max": 506202414.29650575
+        }
+      },
+      "validation": {
+        "mae_eur": {
+          "mean": 37715.684697017474,
+          "std": 9838.86206477762,
+          "min": 27742.97125715077,
+          "max": 54990.12532442843
+        },
+        "rmse_eur": {
+          "mean": 46224.46244929094,
+          "std": 10292.920163492108,
+          "min": 37434.832052425416,
+          "max": 66109.69235097486
+        },
+        "mape_pct": {
+          "mean": 3.49382958102638,
+          "std": 0.6162802993063486,
+          "min": 2.9951840545543766,
+          "max": 4.585139777419711
+        },
+        "mse_eur2": {
+          "mean": 2224987766.635927,
+          "std": 1088754118.692761,
+          "min": 1401366650.7932975,
+          "max": 4370491422.740544
+        }
+      }
+    },
+    "leakage_checks": {
+      "1": {
+        "fold": 1,
+        "features_until_validation_end_match_full_series": true,
+        "training_features_match_truncation_at_train_end": true,
+        "validation_rows_checked_against_past": 8,
+        "validation_rows_use_only_past": true
+      },
+      "2": {
+        "fold": 2,
+        "features_until_validation_end_match_full_series": true,
+        "training_features_match_truncation_at_train_end": true,
+        "validation_rows_checked_against_past": 8,
+        "validation_rows_use_only_past": true
+      },
+      "3": {
+        "fold": 3,
+        "features_until_validation_end_match_full_series": true,
+        "training_features_match_truncation_at_train_end": true,
+        "validation_rows_checked_against_past": 8,
+        "validation_rows_use_only_past": true
+      },
+      "4": {
+        "fold": 4,
+        "features_until_validation_end_match_full_series": true,
+        "training_features_match_truncation_at_train_end": true,
+        "validation_rows_checked_against_past": 8,
+        "validation_rows_use_only_past": true
+      },
+      "5": {
+        "fold": 5,
+        "features_until_validation_end_match_full_series": true,
+        "training_features_match_truncation_at_train_end": true,
+        "validation_rows_checked_against_past": 8,
+        "validation_rows_use_only_past": true
+      },
+      "6": {
+        "fold": 6,
+        "features_until_validation_end_match_full_series": true,
+        "training_features_match_truncation_at_train_end": true,
+        "validation_rows_checked_against_past": 8,
+        "validation_rows_use_only_past": true
+      }
+    }
+  },
+  "learning_curve": {
+    "validation_months": 12,
+    "train_sizes": [
+      24,
+      30,
+      36,
+      42,
+      48,
+      54,
+      60
+    ],
+    "points": [
+      {
+        "n_train_rows": 24,
+        "train_start": "2021-01",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 933774510.2341167,
+          "rmse_eur": 30557.72423192075,
+          "mae_eur": 24024.567911310656,
+          "mape_pct": 2.2430108210686734
+        },
+        "validation": {
+          "mse_eur2": 4168119588.9391675,
+          "rmse_eur": 64560.975743394454,
+          "mae_eur": 53655.26531956928,
+          "mape_pct": 4.535288637562882
+        }
+      },
+      {
+        "n_train_rows": 30,
+        "train_start": "2020-07",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 824324676.8421313,
+          "rmse_eur": 28711.054958711135,
+          "mae_eur": 22463.31378444138,
+          "mape_pct": 2.108047931424954
+        },
+        "validation": {
+          "mse_eur2": 4134143400.263536,
+          "rmse_eur": 64297.3047667127,
+          "mae_eur": 52837.21698183988,
+          "mape_pct": 4.421007785831498
+        }
+      },
+      {
+        "n_train_rows": 36,
+        "train_start": "2020-01",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 695140150.4311706,
+          "rmse_eur": 26365.510623372546,
+          "mae_eur": 19953.967192928354,
+          "mape_pct": 1.9293746507289697
+        },
+        "validation": {
+          "mse_eur2": 4045515941.3410954,
+          "rmse_eur": 63604.37045786316,
+          "mae_eur": 52460.714413295274,
+          "mape_pct": 4.370531564169512
+        }
+      },
+      {
+        "n_train_rows": 42,
+        "train_start": "2019-07",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 616420378.0676023,
+          "rmse_eur": 24827.81460514804,
+          "mae_eur": 18758.442988012892,
+          "mape_pct": 1.8147690141267887
+        },
+        "validation": {
+          "mse_eur2": 4099598712.447122,
+          "rmse_eur": 64028.108768314574,
+          "mae_eur": 51834.757883938175,
+          "mape_pct": 4.366587327030881
+        }
+      },
+      {
+        "n_train_rows": 48,
+        "train_start": "2019-01",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 545346011.7171093,
+          "rmse_eur": 23352.644640749135,
+          "mae_eur": 18110.446002949724,
+          "mape_pct": 1.7689853921174663
+        },
+        "validation": {
+          "mse_eur2": 3994556401.54723,
+          "rmse_eur": 63202.50312722772,
+          "mae_eur": 51439.41331681112,
+          "mape_pct": 4.34424588468067
+        }
+      },
+      {
+        "n_train_rows": 54,
+        "train_start": "2018-07",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 524966823.437939,
+          "rmse_eur": 22912.154491403442,
+          "mae_eur": 17628.608799634374,
+          "mape_pct": 1.7506543867447582
+        },
+        "validation": {
+          "mse_eur2": 3976956632.6548257,
+          "rmse_eur": 63063.11626184378,
+          "mae_eur": 51595.09899830928,
+          "mape_pct": 4.348808916962337
+        }
+      },
+      {
+        "n_train_rows": 60,
+        "train_start": "2018-01",
+        "train_end": "2022-12",
+        "validation_start": "2023-01",
+        "validation_end": "2023-12",
+        "train": {
+          "mse_eur2": 485419965.93239534,
+          "rmse_eur": 22032.24831769094,
+          "mae_eur": 17100.24142002409,
+          "mape_pct": 1.7122565179314386
+        },
+        "validation": {
+          "mse_eur2": 3945735603.3411613,
+          "rmse_eur": 62815.09057018991,
+          "mae_eur": 51303.021745114675,
+          "mape_pct": 4.317857302541029
+        }
+      }
+    ]
+  },
+  "regularization_experiment": {
+    "change": {
+      "min_samples_leaf": 5
+    },
+    "folds": [
+      {
+        "fold": 1,
+        "train_start": "2018-01",
+        "train_end": "2019-12",
+        "validation_start": "2020-01",
+        "validation_end": "2020-08",
+        "n_train": 24,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 848049991.900026,
+          "rmse_eur": 29121.29790891927,
+          "mae_eur": 23470.295553054933,
+          "mape_pct": 2.546271512554844
+        },
+        "validation": {
+          "mse_eur2": 1536437520.2462006,
+          "rmse_eur": 39197.41726499592,
+          "mae_eur": 29944.661231934646,
+          "mape_pct": 3.3222448931782473
+        }
+      },
+      {
+        "fold": 2,
+        "train_start": "2018-01",
+        "train_end": "2020-08",
+        "validation_start": "2020-09",
+        "validation_end": "2021-04",
+        "n_train": 32,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 805217424.9264033,
+          "rmse_eur": 28376.353270397576,
+          "mae_eur": 22364.69423907528,
+          "mape_pct": 2.4075197617659736
+        },
+        "validation": {
+          "mse_eur2": 1581230334.3454955,
+          "rmse_eur": 39764.687026877196,
+          "mae_eur": 28342.76441754836,
+          "mape_pct": 2.659584329273174
+        }
+      },
+      {
+        "fold": 3,
+        "train_start": "2018-01",
+        "train_end": "2021-04",
+        "validation_start": "2021-05",
+        "validation_end": "2021-12",
+        "n_train": 40,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 688669270.1259947,
+          "rmse_eur": 26242.50883825696,
+          "mae_eur": 20945.77512322978,
+          "mape_pct": 2.2059017463941433
+        },
+        "validation": {
+          "mse_eur2": 1977142253.4502635,
+          "rmse_eur": 44465.06778866151,
+          "mae_eur": 36131.489351001524,
+          "mape_pct": 3.418408191739416
+        }
+      },
+      {
+        "fold": 4,
+        "train_start": "2018-01",
+        "train_end": "2021-12",
+        "validation_start": "2022-01",
+        "validation_end": "2022-08",
+        "n_train": 48,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 720371033.0345799,
+          "rmse_eur": 26839.728631910195,
+          "mae_eur": 20551.47168317527,
+          "mape_pct": 2.114968145928773
+        },
+        "validation": {
+          "mse_eur2": 1953632202.9478571,
+          "rmse_eur": 44199.911797964676,
+          "mae_eur": 39964.30459426272,
+          "mape_pct": 3.8025494444792507
+        }
+      },
+      {
+        "fold": 5,
+        "train_start": "2018-01",
+        "train_end": "2022-08",
+        "validation_start": "2022-09",
+        "validation_end": "2023-04",
+        "n_train": 56,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 752256473.1332093,
+          "rmse_eur": 27427.294309377463,
+          "mae_eur": 21840.0676920492,
+          "mape_pct": 2.21898307206952
+        },
+        "validation": {
+          "mse_eur2": 2290315856.4351215,
+          "rmse_eur": 47857.244555397476,
+          "mae_eur": 42307.245309413614,
+          "mape_pct": 3.6460197253401496
+        }
+      },
+      {
+        "fold": 6,
+        "train_start": "2018-01",
+        "train_end": "2023-04",
+        "validation_start": "2023-05",
+        "validation_end": "2023-12",
+        "n_train": 64,
+        "n_validation": 8,
+        "train": {
+          "mse_eur2": 812251493.1196685,
+          "rmse_eur": 28500.026195069866,
+          "mae_eur": 22883.253881477838,
+          "mape_pct": 2.2679414146296586
+        },
+        "validation": {
+          "mse_eur2": 3875283058.284906,
+          "rmse_eur": 62251.771527281904,
+          "mae_eur": 52764.403827705886,
+          "mape_pct": 4.38320707917289
+        }
+      }
+    ],
+    "summary": {
+      "n_folds": 6,
+      "train": {
+        "mae_eur": {
+          "mean": 22009.259695343717,
+          "std": 1123.3518226554904,
+          "min": 20551.47168317527,
+          "max": 23470.295553054933
+        },
+        "rmse_eur": {
+          "mean": 27751.201525655222,
+          "std": 1099.1423506270078,
+          "min": 26242.50883825696,
+          "max": 29121.29790891927
+        },
+        "mape_pct": {
+          "mean": 2.2935976088904853,
+          "std": 0.15661863059974399,
+          "min": 2.114968145928773,
+          "max": 2.546271512554844
+        },
+        "mse_eur2": {
+          "mean": 771135947.7066469,
+          "std": 60831027.26618161,
+          "min": 688669270.1259947,
+          "max": 848049991.900026
+        }
+      },
+      "validation": {
+        "mae_eur": {
+          "mean": 38242.47812197779,
+          "std": 8963.121276128575,
+          "min": 28342.76441754836,
+          "max": 52764.403827705886
+        },
+        "rmse_eur": {
+          "mean": 46289.34999352979,
+          "std": 8459.523494486797,
+          "min": 39197.41726499592,
+          "max": 62251.771527281904
+        },
+        "mape_pct": {
+          "mean": 3.5386689438638546,
+          "std": 0.5707001925190868,
+          "min": 2.659584329273174,
+          "max": 4.38320707917289
+        },
+        "mse_eur2": {
+          "mean": 2202340204.284974,
+          "std": 865823440.460723,
+          "min": 1536437520.2462006,
+          "max": 3875283058.284906
+        }
+      }
+    }
+  },
+  "reference_baselines": {
+    "zero_growth": {
+      "mae_eur": {
+        "mean": 68094.669375,
+        "std": 33956.12538271225,
+        "min": 29840.280000000013,
+        "max": 123846.73624999999
+      },
+      "rmse_eur": {
+        "mean": 77253.38410157042,
+        "std": 33376.197059759696,
+        "min": 36945.7171672895,
+        "max": 131536.67838621794
+      },
+      "mape_pct": {
+        "mean": 6.122250906114149,
+        "std": 2.578367362525716,
+        "min": 3.1779169113602554,
+        "max": 10.104573389516569
+      },
+      "mse_eur2": {
+        "mean": 6896394130.2880335,
+        "std": 5801905052.623071,
+        "min": 1364986017.00535,
+        "max": 17301897760.879333
+      }
+    },
+    "lag_12": {
+      "mae_eur": {
+        "mean": 83900.11275371719,
+        "std": 21016.7157656387,
+        "min": 57265.43208941823,
+        "max": 114258.66589413844
+      },
+      "rmse_eur": {
+        "mean": 97983.0332056242,
+        "std": 21748.558193398065,
+        "min": 63997.437427044155,
+        "max": 123272.8055784334
+      },
+      "mape_pct": {
+        "mean": 7.843666553994562,
+        "std": 2.0265156321726034,
+        "min": 4.955796344504458,
+        "max": 10.094747317873704
+      },
+      "mse_eur2": {
+        "mean": 9994841282.417473,
+        "std": 4098794925.193003,
+        "min": 4095671997.2284317,
+        "max": 15196184595.17824
+      }
+    },
+    "rolling_mean_3": {
+      "mae_eur": {
+        "mean": 47256.46258403359,
+        "std": 9228.791319988592,
+        "min": 34332.47200249616,
+        "max": 60595.29095137835
+      },
+      "rmse_eur": {
+        "mean": 58210.82956238717,
+        "std": 11789.114581766073,
+        "min": 40721.17016934826,
+        "max": 71080.6752207172
+      },
+      "mape_pct": {
+        "mean": 4.393512906613897,
+        "std": 0.9182963824976441,
+        "min": 2.960557393226389,
+        "max": 5.739801073577933
+      },
+      "mse_eur2": {
+        "mean": 3504320030.526296,
+        "std": 1339008833.6749804,
+        "min": 1658213699.9610186,
+        "max": 5052462389.83308
+      }
+    }
+  },
+  "artifacts": {
+    "cv_results": "cv_results.json",
+    "cv_folds": "cv_folds.csv",
+    "learning_curve_csv": "learning_curve.csv",
+    "learning_curve_png": "learning_curve.png"
+  }
+}
