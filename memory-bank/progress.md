@@ -916,3 +916,29 @@ Documentación: `docs/asynchronous/CELERY.md` y sección del `README.md` raíz.
 - **Fix de plataforma**: en macOS/Python 3.14 el atajo `fast_trace_task` de Celery falla porque `trace._localized` queda vacío. `celery_app.py` desactiva el atajo con `celeryd_after_setup` + `worker_process_init` (`reset_worker_optimizations`), forzando `trace_task_ret`.
 - **Docker E2E**: `docker compose up --build -d redis services worker flower` → API `:8000/health` 200, Flower `:5555` 200, worker conectado a `redis://redis:6379/0`. Login admin → `POST /api/incidents/analyze` devuelve `202` + `task_id`; `GET /tasks/{id}` pasa a `success`; export CSV correcto; el worker borra el CSV de `/uploads`.
 - Tabla `dead_letter_tasks` creada en Supabase por `create_all` (0 filas tras el E2E); la migración `0003` queda como vía explícita/idempotente para otros entornos.
+
+## Modelo de pronóstico de ventas — Random Forest (rama `feature/sales-forecast-model`)
+
+Implementación del entregable `docs/models-training-rag/sales-forecasting-regression.md`
+sobre `data/raw/trackflow_sales.csv` (120 meses consolidados, 2016-01 → 2025-12).
+
+### Implementación
+- `scripts/train_sales_forecast.py` — CLI reproducible (`python -m scripts.train_sales_forecast`).
+- `scripts/sales_forecast/` — paquete con `config` (SEED=42), `data` (esquema + limpieza), `features` (causales), `split` (8/2 + guardas anti-leakage), `model` (Random Forest + banda), `metrics` (MSE/PSI/Gini/K2), `plots` y `pipeline`.
+- Target aprendido: crecimiento interanual logarítmico `log(rev_t) − log(rev_{t−12})` (estacionario); el pronóstico se reconstruye como `exp(crecimiento) × rev_{t−12}`. Evita la incapacidad de los árboles de extrapolar niveles.
+- Features: calendario (sin/cos, pico nov-dic, febrero) + lags 1/2/3/12 del crecimiento + medias rodantes 3/6. Todas causales; el test perturba 2024–2025 y comprueba que 2016–2023 no cambia.
+- Split: train 96 meses (2016-01→2023-12, 72 filas efectivas) / test 24 meses (2024-01→2025-12). Semilla fija 42; `StandardScaler` en el pipeline.
+- Evaluación doble: walk-forward one-step y recursivo 24 pasos, ambas solo sobre test.
+
+### Resultados test (one-step / recursivo)
+- MSE 1.805.452.221,70 EUR² (0,171% del ingreso medio) / 2.695.371.614,70 EUR² (0,255%).
+- RMSE 42.490,61 € / 51.916,97 €; MAPE 2,88% / 3,37%.
+- PSI revenue 8,67 (esperado por crecimiento), PSI crecimiento interanual 0,125 (moderado), PSI shipments 5,85.
+- Gini 0,847 / 0,875; K2 normalizado 0,398 / 0,349.
+
+### Artefactos y verificación
+- `docs/models-training-rag/README.md` — decisión de algoritmo, features, métricas explicadas y resultados.
+- `docs/models-training-rag/figures/sales_forecast_test_2024_2025.png` — real vs predicción con bandas p10–p90 y p5–p95.
+- `docs/models-training-rag/artifacts/metrics.json` y `predictions_test.csv`.
+- `tests/pipelines/test_sales_forecast_split.py` — 11 tests (split 8/2, sin solape, causalidad, reproducibilidad y sanidad de métricas): **11 passed**.
+- `npm run typecheck` raíz OK. La suite completa `tests/pipelines` no colecciona por falta de `sqlalchemy` en el `.venv` raíz (dependencia preexistente del pipeline semanal, ajena a este cambio).
