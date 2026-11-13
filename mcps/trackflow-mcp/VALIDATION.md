@@ -34,6 +34,21 @@ Resultado local equivalente (`http://127.0.0.1:8001`):
 
 - [x] `GET /.well-known/oauth-protected-resource/mcp` → **200**.
 - [x] `GET /health` → **200** (público, sin datos de la compañía).
+- [x] `GET /.well-known/oauth-protected-resource` (sin `/mcp`) → **404**
+  explícito, no 401, para no confundir a clientes que prueban la raíz.
+
+## 1.1 Validación en Codespaces (URL pública)
+
+Servidor arrancado dentro del Codespace y puerto `8001` con visibilidad
+pública (`gh codespace ports visibility 8001:public`):
+
+```text
+GET https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/.well-known/oauth-protected-resource/mcp
+→ 200, resource=.../mcp, authorization_servers=[Auth0], scopes=[mcp:read,mcp:write]
+
+POST https://.../mcp sin Authorization
+→ 401, WWW-Authenticate: Bearer ... resource_metadata="https://.../.well-known/oauth-protected-resource/mcp"
+```
 
 ## 2. Sin token no se puede listar ni invocar
 
@@ -195,6 +210,12 @@ MCPJam:
 2. Añadir servidor `https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp`.
 3. Completar el consentimiento de Auth0.
 4. Ejecutar las 6 tools y capturar los resultados.
+
+Estado de MCPJam: la app hosted llegó al servidor público y leyó el PRM, pero
+su backend `/api/web/oauth/metadata` devolvió 401 (sesión guest) y generó
+peticiones malformadas `/mchttps%3A//...`. Hace falta una sesión de MCPJam
+iniciada; se reintentará tras arreglar el grant M2M. El servidor MCP registró
+esas peticiones como 401, sin tocar datos.
 
 ## 7. Notas operativas
 

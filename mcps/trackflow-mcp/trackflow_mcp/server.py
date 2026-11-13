@@ -68,6 +68,11 @@ async def health(_: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "service": "trackflow-mcp"})
 
 
+async def not_found(_: Request) -> JSONResponse:
+    """404 explícito para rutas de discovery no canónicas."""
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -101,6 +106,24 @@ def create_app(
     routes = [
         *resource_metadata_routes(),
         Route("/health", health, methods=["GET"]),
+        # Rutas de discovery que algunos clientes prueban en la raíz: 404
+        # explícito en lugar de un 401 del bearer, para no confundir el
+        # descubrimiento. La ruta canónica es .../oauth-protected-resource/mcp.
+        Route(
+            "/.well-known/oauth-protected-resource",
+            not_found,
+            methods=["GET"],
+        ),
+        Route(
+            "/.well-known/oauth-authorization-server",
+            not_found,
+            methods=["GET"],
+        ),
+        Route(
+            "/.well-known/openid-configuration",
+            not_found,
+            methods=["GET"],
+        ),
         Mount(
             "/",
             app=mcp_http_app,

@@ -81,6 +81,20 @@ async def test_health_is_public(client):
     assert response.json()["status"] == "ok"
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/openid-configuration",
+    ],
+)
+async def test_non_canonical_discovery_paths_return_404(client, path):
+    response = await client.get(path)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Not Found"
+
+
 async def test_mcp_without_token_returns_401(client):
     response = await client.post("/mcp", json=INITIALIZE, headers=_headers())
     assert response.status_code == 401
