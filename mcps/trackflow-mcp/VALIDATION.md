@@ -159,6 +159,18 @@ Logs reales de la corrida (una línea por tool):
 - [x] El RAG no invoca el MCP.
 - [x] El token del agente es solo `mcp:read` (sin escritura).
 
+Fallback real en el Codespace (API en `:8000`, MCP en `:8001`, token M2M aún
+sin grant):
+
+```http
+POST /agent/query
+200 {"answer":"No pude confirmar el estado de ese ticket ahora mismo: el gestor de incidencias no está disponible en este momento. Inténtalo de nuevo en unos minutos.","run_id":"..."}
+```
+
+Es el comportamiento esperado: el MCP no pudo autenticarse, el grafo no se
+rompió y respondió con un fallback honesto. Al conceder el grant, la misma
+pregunta resolverá el ticket real.
+
 ## 6. Pendiente: token M2M y MCPJam
 
 Las credenciales M2M ya están en `mcps/trackflow-mcp/.env`, pero Auth0 devuelve
