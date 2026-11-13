@@ -9,17 +9,26 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1",
+    "langchain-mcp-adapters>=0.3.1",
     "langgraph>=1.2.21",
     "matplotlib>=3.11.2",
+    "mcp>=1.24,<2",
+    "mcpauth==0.2.0b1",
     "pandas>=3.1.1",
     "python-dotenv>=1.2.2",
     "qdrant-client>=1.20,<2",
     "scikit-learn>=1.9.1",
+    "typing-extensions>=4.14",
     "xgboost>=3.4.1",
 ]
 
 [project.scripts]
 ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia = "ai_engineering_company_project_monorepo_spain_aie_pt_2_jesus_garcia:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]

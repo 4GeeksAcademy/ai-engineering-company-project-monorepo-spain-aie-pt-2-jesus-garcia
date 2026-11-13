@@ -1165,3 +1165,29 @@ RAG, tool o ambos.
   `482` no existe entre los 95 registros; la tool responde "no encontrado").
 - Si se quiere una persona de soporte en el prompt RAG, editar
   `data/pipelines/rag.py` (directorio protegido; requiere confirmación).
+
+## MCP — OAuth y tools (`feature/mcp-oauth-tools`)
+
+### Dependencias (paso 5)
+- `pyproject.toml`: fuera `fastmcp` (4.2.0 arrastra `mcp>=2.3` vía
+  `fastmcp-slim[client,server]`), entra `mcp>=1.24,<2`, `mcpauth==0.2.0b1` y
+  `typing-extensions>=4.14` (`mcpauth` lo importa sin declararlo).
+- Lock regenerado: `mcp 1.30.0`, `mcpauth 0.2.0b1`; `langchain-mcp-adapters
+  0.3.1` sigue siendo compatible (pide `mcp>=1.24`).
+- `mcp 1.30.0` incluye `mcp.server.fastmcp`, así que el paquete `fastmcp`
+  independiente no hace falta.
+- `[dependency-groups] dev` con `pytest>=9.1.1`: `uv sync` podaba el pytest
+  instalado a mano y rompía el flujo documentado `uv run pytest`.
+- Verificado: `uv lock && uv sync`, imports de `FastMCP`/`MCPAuth`, 23 evals de
+  `tests/pipelines/test_agent_evals.py` y `npm run typecheck` en raíz.
+
+### Cuenta de servicio (paso 4)
+- `services/api/seed_mcp_service.py` — idempotente; crea/actualiza
+  `mcp-service@trackflow.com` con rol `manager`, perfil y sincroniza el
+  password con `MCP_SERVICE_PASSWORD`.
+- Credenciales en `.env` raíz (gitignored): `TRACKFLOW_API_URL`,
+  `TRACKFLOW_API_EMAIL`, `TRACKFLOW_API_PASSWORD`.
+- Verificado con login real (`POST /api/auth/login` → 200, role `manager`)
+  contra uvicorn temporal en :8010.
+- Ojo: `services/api/data/suppliers.json` está trackeado; el seed lo modifica.
+  No commitear ese archivo.
