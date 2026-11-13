@@ -38,6 +38,28 @@ uvicorn app.main:app --port 8000
 - Benchmark de caché (cold/warm): `DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py` (tras `seed_perf.py --force`; `--repeats N`, `--json`)
 - Usar SIEMPRE `services/api/venv`. El `.venv` raíz no tiene las deps de la API.
 
+### Tareas asíncronas (Redis + Celery)
+
+```bash
+# Docker: broker + API + worker + Flower
+docker compose up --build -d redis services worker flower
+docker compose logs -f worker
+docker compose stop worker flower
+
+# Local (desde services/api)
+source venv/bin/activate
+REDIS_URL=redis://localhost:6379/0 \
+INCIDENT_UPLOAD_DIR=/tmp/trackflow/uploads \
+celery -A celery_app worker --loglevel=INFO
+```
+
+- `POST /api/incidents/analyze` → `202 {"task_id": ...}`; `GET /tasks/{task_id}`
+  → estado Celery (`pending`, `started`, `success`, `failure`) y resultado.
+- Flower en `http://localhost:5555`.
+- DLQ: tabla `dead_letter_tasks` + lista Redis `dlq:trackflow`.
+- Reintentos: `max_retries=3` con backoff 5/10/20 s; timeout duro/blando 600/540 s.
+- Runbook: `docs/asynchronous/CELERY.md`.
+
 ### Docker Compose (método único de ejecución de la plataforma)
 
 ```bash
@@ -119,6 +141,10 @@ cd uis/website && npm run dev
 - `FRONTEND_URL`: base del backoffice (por defecto `http://localhost:3001` en Docker); se usa para construir el enlace de restablecimiento.
 - `DATABASE_URL`: cadena de conexión del engine SQLModel (MILESTONE_5). En producción, la URI del **Transaction pooler** de Supabase (`postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`). **Vacía** → `engine = None` y las rutas `/inventory` devuelven un 500 explícito *"DATABASE_URL no está configurada"*.
 - `SUPABASE_SHARED_POOLER`: en `.env.example` como referencia de la URI del pooler (el código solo lee `DATABASE_URL`).
+- `REDIS_URL`: broker y result backend de Celery (`redis://redis:6379/0` en Docker, `redis://localhost:6379/0` en local).
+- `INCIDENT_UPLOAD_DIR`: volumen compartido API/worker para los CSV encolados (`/uploads` en Docker).
+- `CELERY_TASK_TIME_LIMIT` / `CELERY_TASK_SOFT_TIME_LIMIT`: timeout duro/blando por intento (600/540 s por defecto).
+- `CELERY_RETRY_BACKOFF_SECONDS`: base del backoff exponencial (5 s por defecto).
 
 ## Doble base de datos (TinyDB + SQLModel) — `database.py`
 

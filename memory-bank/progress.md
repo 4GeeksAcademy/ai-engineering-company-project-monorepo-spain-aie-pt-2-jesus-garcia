@@ -875,3 +875,44 @@ sobrescritura), `TARGET_DATE` (env y CLI), contrato del DDL y formato de logs.
 - Arrancar el contenedor `scheduler` (`docker compose up -d scheduler`).
 - Excluir `data/raw/telemetry_*.csv` en `.gitignore` (archivo protegido: requiere
   confirmación explícita).
+
+## Tareas asíncronas — Cola Redis + Celery (DEV-55)
+
+Desacople del análisis pesado de CSV de incidencias: la API encola y devuelve
+`202`; un worker independiente ejecuta pandas; el cliente consulta el estado.
+Documentación: `docs/asynchronous/CELERY.md` y sección del `README.md` raíz.
+
+### Infraestructura
+- `docker-compose.yml` — `redis` (`redis:7-alpine`, `6379`, `--maxmemory-policy noeviction`, healthcheck, volumen `redis-data`), `worker` (`celery -A celery_app worker`, proceso separado de FastAPI), `flower` (`:5555`). API y worker comparten `task-uploads:/uploads` y `REDIS_URL`.
+- `.env.example` — `REDIS_URL`, `INCIDENT_UPLOAD_DIR`, `CELERY_TASK_TIME_LIMIT`, `CELERY_TASK_SOFT_TIME_LIMIT`, `CELERY_RETRY_BACKOFF_SECONDS`.
+- Dependencias: `celery[redis]` y `flower` en `services/api/requirements.txt` y `pyproject.toml`; instaladas en `services/api/venv` (Celery 5.6.3 sobre Python 3.14).
+
+### Backend (`services/api`)
+- `celery_app.py` — instancia Celery con Redis como broker y backend, JSON, UTC, `task_track_started`, `task_acks_late`, `task_reject_on_worker_lost`, `prefetch=1`, timeouts y `worker_ready` para crear tablas SQL.
+- `app/tasks/incidents.py` — tarea `incidents.analyze_csv` (`max_retries=3`, backoff 5/10/20 s). Log por intento: `task_id`, `attempt`, `status`, `duration_ms`; en fallo, traceback completo. Éxito: borra el CSV.
+- `app/tasks/dlq.py` — `record_dead_letter()`: fila en `dead_letter_tasks` + `RPUSH dlq:trackflow`; tolerante a fallos de SQL/Redis.
+- `models.py` — `DeadLetterTask` (`task_id` unique, `attempts`, `max_retries`, `error_message`, `created_at`).
+- `migrations/0003_dead_letter_tasks.sql` — DDL idempotente + índice único por `task_id`.
+- `app/routes/incidents.py` — `POST /api/incidents/analyze` valida cabecera/codificación, guarda el CSV atómicamente en `INCIDENT_UPLOAD_DIR/{task_id}.csv` y encola solo `{path, filename}` → `202 {"task_id"}`; `503` si la cola no acepta el mensaje. Export CSV acepta `?task_id=` y lee el resultado del backend de Celery (fallback en memoria para compatibilidad).
+- `app/routes/tasks.py` — `GET /tasks/{task_id}` con `AsyncResult`; mapea `PENDING/RECEIVED → pending`, `STARTED/RETRY → started`, `SUCCESS → success`, `FAILURE/REVOKED → failure`; `result` es el dict o el mensaje de error.
+- `app/incidents/service.py` — `validate_upload()` (checks baratos en la API), `analyze_path()` (worker) y `export_analysis_csv()`.
+- `schemas.py` — `AnalyzeTaskAccepted`, `TaskStatusResponse`.
+- Tests: `tests/test_tasks.py` (tarea, retries, DLQ SQL+Redis, mapeo de estados) y `test_incidents.py` actualizado al contrato 202; fixtures `_isolate_uploads` y `enqueued_tasks`. Suite completa: **227 passed**.
+
+### Frontend (`uis/backoffice`)
+- `lib/api.ts` — `analyzeCsv` devuelve `task_id`; `fetchTaskStatus()`; `fetchExportCsv(taskId)`.
+- `lib/types.ts` — `AnalyzeTaskAccepted`, `TaskStatus`, `TaskStatusResponse`.
+- `app/(protected)/page.tsx` — polling cada 1,5 s (timeout 2 min) con limpieza al desmontar; estados "En cola"/"Analizando"/"Completado"/"Fallido"; muestra `task_id`; exporta con `task_id`.
+- `components/ExportLink.tsx` — recibe `taskId`.
+- `next.config.ts` — rewrite `/api/tasks/:path*` → `BACKEND_URL/tasks/:path*`.
+- Tests: `app/(protected)/page.test.tsx` (3: éxito, fallo, error de encolado) y `lib/__tests__/api.test.ts` (+3). Vitest: **84 passed**; lint 0 warnings; build OK; `npm run typecheck` raíz OK.
+
+### Verificación E2E (Redis real + worker prefork)
+
+- `docker compose up -d redis` + worker local con SQLite temporal (`/tmp/trackflow-e2e.db`) y `REDIS_URL=redis://localhost:6379/0`.
+- Worker conectado (`Connected to redis://...` + `ready`). Tarea de éxito: `SUCCESS`, resultado del análisis y CSV borrado.
+- Tarea fallida (ruta inexistente): 4 intentos con backoff 5/10/20 s, `FAILURE`, fila en `dead_letter_tasks` (`attempts=4`, `max_retries=3`, `FileNotFoundError` completo) y `RPUSH dlq:trackflow`.
+- Logs por intento verificados: `task_id`, `attempt`, `status`, `duration_ms`, traceback y línea `status=dlq`.
+- **Fix de plataforma**: en macOS/Python 3.14 el atajo `fast_trace_task` de Celery falla porque `trace._localized` queda vacío. `celery_app.py` desactiva el atajo con `celeryd_after_setup` + `worker_process_init` (`reset_worker_optimizations`), forzando `trace_task_ret`.
+- **Docker E2E**: `docker compose up --build -d redis services worker flower` → API `:8000/health` 200, Flower `:5555` 200, worker conectado a `redis://redis:6379/0`. Login admin → `POST /api/incidents/analyze` devuelve `202` + `task_id`; `GET /tasks/{id}` pasa a `success`; export CSV correcto; el worker borra el CSV de `/uploads`.
+- Tabla `dead_letter_tasks` creada en Supabase por `create_all` (0 filas tras el E2E); la migración `0003` queda como vía explícita/idempotente para otros entornos.

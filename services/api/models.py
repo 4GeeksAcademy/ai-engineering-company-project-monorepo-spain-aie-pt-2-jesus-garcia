@@ -494,3 +494,22 @@ class TelemetryEventRecord(SQLModel, table=True):
             server_default=text("'{}'"),
         )
     )
+
+
+class DeadLetterTask(SQLModel, table=True):
+    """Tarea que agotó sus reintentos y se conserva para diagnóstico.
+
+    Es el registro durable de la Dead Letter Queue; la lista Redis
+    ``dlq:trackflow`` es la vista operativa de la misma cola.
+    """
+
+    __tablename__ = "dead_letter_tasks"
+    id: int | None = ORMField(default=None, primary_key=True)
+    task_id: str = ORMField(index=True, unique=True)
+    task_name: str
+    attempts: int
+    max_retries: int
+    error_message: str
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )

@@ -110,3 +110,16 @@ class TelemetryPeriod(BaseModel):
 class TelemetryReportResponse(BaseModel):
     period: TelemetryPeriod
     metrics: dict[str, list[dict[str, Any]]]
+
+class AnalyzeTaskAccepted(BaseModel):
+    """Respuesta 202 del análisis de incidencias encolado."""
+
+    task_id: str
+
+
+class TaskStatusResponse(BaseModel):
+    """Estado de una tarea Celery consultado por el cliente."""
+
+    task_id: str
+    status: str
+    result: Any = None
