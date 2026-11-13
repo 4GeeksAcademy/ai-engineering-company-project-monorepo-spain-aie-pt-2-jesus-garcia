@@ -1,0 +1,108 @@
+# Evals del agente con tools externas — 2026-11-13
+
+## Entorno
+
+- Branch: `feature/langgraph-external-tools`
+- Base: `feature/langgraph-agent-base` (Parte 1, PR #30)
+- Python: 3.14.6
+- LangGraph: 1.2.21
+- Modelo de generación/embeddings: el configurado en `services/api/.env`
+- Qdrant: `trackflow_knowledge` (14 chunks)
+
+## 1. Evals de enrutamiento RAG / tools
+
+```bash
+uv run pytest tests/pipelines/test_agent_evals.py -v
+```
+
+```text
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/.venv/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia
+configfile: pyproject.toml
+plugins: langsmith-0.14.17, anyio-4.16.0
+collecting ... collected 23 items
+
+tests/pipelines/test_agent_evals.py::test_blank_question_routes_to_fail_without_retrieval_or_generation PASSED [  4%]
+tests/pipelines/test_agent_evals.py::test_retrieve_runs_before_generate_and_passes_its_own_context PASSED [  8%]
+tests/pipelines/test_agent_evals.py::test_empty_retrieval_routes_to_honest_answer_without_llm PASSED [ 13%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[sla-standard-sla-delivery-3 a 5 d\xedas h\xe1biles] PASSED [ 17%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[sla-peak-demand-sla-delivery-40%] PASSED [ 21%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[returns-international-returns-policy-gesti\xf3n manual] PASSED [ 26%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[storage-discount-approval-storage-pricing-Miguel Torres] PASSED [ 30%]
+tests/pipelines/test_agent_evals.py::test_checkpointing_records_every_transition PASSED [ 34%]
+tests/pipelines/test_agent_evals.py::test_compilation_rejects_a_disconnected_node PASSED [ 39%]
+tests/pipelines/test_agent_evals.py::test_compilation_rejects_a_badly_typed_state PASSED [ 43%]
+tests/pipelines/test_agent_evals.py::test_ticket_question_routes_to_incident_tool_without_rag PASSED [ 47%]
+tests/pipelines/test_agent_evals.py::test_policy_question_routes_to_rag_without_tools PASSED [ 52%]
+tests/pipelines/test_agent_evals.py::test_ticket_timeout_returns_honest_fallback_without_inventing_status PASSED [ 56%]
+tests/pipelines/test_agent_evals.py::test_ticket_not_found_returns_honest_fallback PASSED [ 60%]
+tests/pipelines/test_agent_evals.py::test_ticket_plus_policy_routes_tool_then_rag PASSED [ 65%]
+tests/pipelines/test_agent_evals.py::test_inventory_question_routes_to_inventory_tool PASSED [ 69%]
+tests/pipelines/test_agent_evals.py::test_ticket_tool_applies_manager_permissions PASSED [ 73%]
+tests/pipelines/test_agent_evals.py::test_classifier_routes_questions_automatically[\xbfEn qu\xe9 estado est\xe1 el ticket 482?-incident-482-None] PASSED [ 78%]
+tests/pipelines/test_agent_evals.py::test_classifier_routes_questions_automatically[\xbfCu\xe1l es el SLA de un env\xedo est\xe1ndar?-rag-None-None] PASSED [ 82%]
+tests/pipelines/test_agent_evals.py::test_classifier_routes_questions_automatically[\xbfTenemos stock del SKU CLT-SNK-W-42?-inventory-None-CLT-SNK-W-42] PASSED [ 86%]
+tests/pipelines/test_agent_evals.py::test_classifier_routes_questions_automatically[\xbfPuedo devolver el paquete del ticket 482?-incident+rag-482-None] PASSED [ 91%]
+tests/pipelines/test_agent_evals.py::test_classifier_routes_questions_automatically[\xbfHay stock de zapatillas blancas?-inventory-None-None] PASSED [ 95%]
+tests/pipelines/test_agent_evals.py::test_classifier_routes_questions_automatically[\xbfQu\xe9 tickets est\xe1n abiertos?-incident-None-None] PASSED [100%]
+
+============================== 23 passed in 0.31s ==============================
+```
+
+## 2. Tests de las tools y del contrato HTTP
+
+```bash
+cd services/api
+source venv/bin/activate
+python -m pytest tests/test_agent_tools.py tests/test_agent.py -v
+```
+
+```text
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/services/api
+configfile: pyproject.toml
+plugins: langsmith-0.14.17, cov-7.1.0, anyio-4.14.2
+collected 21 items
+
+tests/test_agent_tools.py ...............                                [ 71%]
+tests/test_agent.py ......                                               [100%]
+
+============================== 21 passed in 5.29s ==============================
+```
+
+## 3. Suite completa de la API
+
+```bash
+cd services/api
+source venv/bin/activate
+python -m pytest -p no:warnings
+```
+
+```text
+253 passed in 83.30s (0:01:23)
+```
+
+## 4. Qué demuestra cada eval nuevo
+
+| Eval | Demuestra |
+|---|---|
+| `test_ticket_question_routes_to_incident_tool_without_rag` | Una pregunta de ticket enruta a la tool y **no** al RAG. |
+| `test_policy_question_routes_to_rag_without_tools` | Una pregunta de política enruta al RAG y **no** a las tools. |
+| `test_ticket_timeout_returns_honest_fallback_without_inventing_status` | El timeout produce un fallback honesto, sin estado inventado. |
+| `test_ticket_not_found_returns_honest_fallback` | Un ticket inexistente no se inventa. |
+| `test_ticket_plus_policy_routes_tool_then_rag` | La ruta `incident+rag` ejecuta tool → retrieve → generate. |
+| `test_inventory_question_routes_to_inventory_tool` | La tool de inventario se usa para preguntas de stock. |
+| `test_ticket_tool_applies_manager_permissions` | La tool respeta `require_manager`. |
+| `test_classifier_routes_questions_automatically` | Tabla de casos del clasificador (ticket, RAG, inventario, ambos). |
+
+## 5. Traces de referencia
+
+- Tool de tickets: [`traces/ticket-tool-demo.json`](traces/ticket-tool-demo.json)
+  — `route: "incident"`, `sources_used: ["incident_tool"]`, nodos
+  `receive_question → classify → tool_incident → answer_from_tool`.
+- RAG: [`traces/rag-policy-demo.json`](traces/rag-policy-demo.json) —
+  `route: "rag"`, `sources_used: ["rag"]`, nodos
+  `receive_question → classify → retrieve → generate`.

@@ -10,7 +10,7 @@
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
-| MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query` |
+| MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
 
 ## Últimas decisiones
 
@@ -1080,3 +1080,88 @@ siendo pasos separados.
   versionado) — `.gitignore` está protegido y no se ha tocado.
 - Migrar el backoffice a `/agent/query` si se quiere mostrar `run_id` y enlazar
   al trace desde la UI.
+
+## Agente RAG + tools de lectura en tiempo real — MILESTONE 8 (Parte 2)
+
+El agente deja de responder solo con la base de conocimiento: cuando la
+pregunta pide el estado de un ticket o el stock de un producto, consulta el
+servicio real. El usuario no indica la fuente; un nodo `classify` decide entre
+RAG, tool o ambos.
+
+### Tools (`services/api/app/agent/tools/`)
+- `contracts.py` — contratos Pydantic de entrada/salida:
+  `IncidentLookupInput/Output` (ticket_id o filtros; estado, categoría, origen,
+  sede, fechas) e `InventoryLookupInput/Output` (sku_id/sku_code/name_query +
+  warehouse; stock total y por almacén). Errores tipados: `invalid_input`,
+  `not_found`, `forbidden`, `timeout`, `unavailable`.
+- `incidents.py` / `inventory.py` — solo lectura, in-process. Incidencias usa
+  `app/services/incident_service.py`; inventario usa
+  `inventory_service.list_skus_with_stock` (misma capa que las rutas REST). Sin
+  datasets simulados ni escrituras.
+- `execution.py` — timeout numérico con `ThreadPoolExecutor`:
+  `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` y
+  `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS` (default `3` s). Si expira, la tool
+  devuelve `timeout` y el grafo sigue.
+- `tool_answers.py` — respuestas deterministas (sin LLM) para ticket/stock y
+  fallbacks honestos: no encontrado, timeout, servicio caído, sin permisos.
+
+### Capa de servicio compartida
+- `app/services/incident_service.py` (nuevo) — `find_incident`,
+  `list_incidents`, `to_incident`, `to_list_item`. `GET /api/incidents` y la
+  tool comparten exactamente la misma lógica.
+- `app/services/inventory_service.py` — `sku_to_read` y
+  `list_skus_with_stock`; `GET /inventory/products` y la tool comparten la
+  misma consulta y el mismo cálculo de stock.
+
+### Grafo y enrutado
+- `app/agent/router.py` (nuevo) — `RoutingDecision` y `classify_question`
+  determinista: señales de ticket/ID, SKU/producto/almacén y términos de
+  política. Rutas: `rag`, `incident`, `inventory`, `incident+rag`,
+  `inventory+rag`.
+- `nodes.py` — nuevos nodos `classify`, `tool_incident`, `tool_inventory` y
+  `answer_from_tool`; `generate` añade el resultado de la tool al contexto
+  cuando la ruta es `+rag`.
+- `graph.py` — aristas condicionales nuevas; si el ticket/stok se consulta y
+  además hay política, el orden es `tool → retrieve → generate`.
+- `state.py` — `route`, `routing`, `tool_name`, `tool_result`, `tool_status`,
+  `tool_error`, `fallback`, `tool_context_included`, `user_role`.
+- `runner.py` / `routes/agent.py` — el endpoint pasa el usuario autenticado; la
+  tool de tickets aplica el mismo `require_manager` que `GET /api/incidents`
+  (un `role=user` recibe un fallback de permisos, sin filtrar datos). Al ser
+  in-process no hay token backend-a-backend; documentado en
+  `docs/rag/agent-design.md`.
+- `tracing.py` — el trace añade `route` y `sources_used` (en orden real), y los
+  eventos de tool incluyen `tool_status`/`fallback`. La descripción libre se
+  trunca a 200 caracteres y no se persiste `user_role`.
+
+### Evals y tests
+- `tests/pipelines/test_agent_evals.py` — **23 passed**: se mantienen los
+  evals de la Parte 1 y se añaden tool de tickets (sin RAG), RAG puro (sin
+  tools), fallback por timeout, no encontrado, `incident+rag`, tool de
+  inventario, permisos y tabla parametrizada del clasificador.
+- `services/api/tests/test_agent_tools.py` — **15 tests nuevos**: lectura real de
+  TinyDB/SQLite, filtros, no encontrado, timeout, servicio no disponible, input
+  inválido y verificación de solo lectura. Junto con los 6 del contrato HTTP
+  (`tests/test_agent.py`) suman **21 passed**.
+- Suite completa de la API: **253 passed**. Evals: **23 passed**. Typecheck
+  raíz OK.
+
+### Configuración
+- `.env.example`: `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS=3`,
+  `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS=3`, `AGENT_TRACE_DIR=`.
+- Diseño actualizado: `docs/rag/agent-design.md`.
+
+### Evidencia del PR
+- `docs/rag/traces/ticket-tool-demo.json` — corrida real con la tool de
+  tickets (`route: incident`, `sources_used: ["incident_tool"]`).
+- `docs/rag/traces/rag-policy-demo.json` — corrida real con RAG
+  (`route: rag`, `sources_used: ["rag"]`).
+- `docs/rag/traces/README.md` — explicación y comando de regeneración.
+- `docs/rag/agent-evals-output-part2.txt` — 23 evals + 21 tests de
+  tools/contrato; suite completa 253 passed.
+
+### Pendiente
+- Prueba manual E2E contra el backend real con un ticket del seed (el ejemplo
+  `482` no existe entre los 95 registros; la tool responde "no encontrado").
+- Si se quiere una persona de soporte en el prompt RAG, editar
+  `data/pipelines/rag.py` (directorio protegido; requiere confirmación).

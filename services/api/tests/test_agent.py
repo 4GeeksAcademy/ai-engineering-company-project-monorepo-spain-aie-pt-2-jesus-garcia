@@ -27,7 +27,7 @@ def test_agent_query_requires_auth(client):
 def test_agent_query_invokes_the_graph_and_returns_run_id(client, auth_headers, monkeypatch):
     calls: list[str] = []
 
-    def fake_run_agent(question: str) -> AgentResult:
+    def fake_run_agent(question: str, **kwargs) -> AgentResult:
         calls.append(question)
         return _result()
 
@@ -51,7 +51,7 @@ def test_agent_query_maps_invalid_question_without_leaking_details(client, auth_
     monkeypatch.setattr(
         agent_route,
         "run_agent",
-        lambda question: _result(
+        lambda question, **kwargs: _result(
             status="invalid_question",
             answer="",
             error="La pregunta no puede estar vacía.",
@@ -72,7 +72,7 @@ def test_agent_query_returns_honest_answer_with_200_when_no_context(client, auth
     monkeypatch.setattr(
         agent_route,
         "run_agent",
-        lambda question: _result(
+        lambda question, **kwargs: _result(
             status="no_context",
             answer="No tengo información suficiente en la base de conocimiento.",
         ),
@@ -92,7 +92,7 @@ def test_agent_query_maps_graph_error_to_502(client, auth_headers, monkeypatch):
     monkeypatch.setattr(
         agent_route,
         "run_agent",
-        lambda question: _result(
+        lambda question, **kwargs: _result(
             status="error",
             answer="",
             error=agent_route.GENERIC_ERROR_DETAIL,
@@ -110,7 +110,7 @@ def test_agent_query_maps_graph_error_to_502(client, auth_headers, monkeypatch):
 
 
 def test_agent_query_maps_run_failure_to_502_without_stack_trace(client, auth_headers, monkeypatch):
-    def boom(question: str) -> AgentResult:
+    def boom(question: str, **kwargs) -> AgentResult:
         raise AgentRunError("detalle interno que no debe salir")
 
     monkeypatch.setattr(agent_route, "run_agent", boom)

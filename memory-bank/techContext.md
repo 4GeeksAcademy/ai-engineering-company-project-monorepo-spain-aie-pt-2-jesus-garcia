@@ -145,6 +145,8 @@ cd uis/website && npm run dev
 - `INCIDENT_UPLOAD_DIR`: volumen compartido API/worker para los CSV encolados (`/uploads` en Docker).
 - `CELERY_TASK_TIME_LIMIT` / `CELERY_TASK_SOFT_TIME_LIMIT`: timeout duro/blando por intento (600/540 s por defecto).
 - `CELERY_RETRY_BACKOFF_SECONDS`: base del backoff exponencial (5 s por defecto).
+- `AGENT_TRACE_DIR`: directorio de traces JSON del agente (vacío → `data/eval/agent-traces`).
+- `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` / `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS`: timeout numérico de las tools de tickets/inventario (default `3` s). Si expira, el agente responde con un fallback honesto.
 
 ## Doble base de datos (TinyDB + SQLModel) — `database.py`
 
@@ -219,6 +221,27 @@ cd uis/website && npm run dev
   ```
 - Diseño: `docs/rag/agent-design.md`. Fixtures:
   `tests/pipelines/fixtures/agent_traces/`.
+
+## Agente — tools de lectura en tiempo real (MILESTONE 8, parte 2)
+
+- `services/api/app/agent/tools/` — `contracts.py` (Pydantic), `execution.py`
+  (timeout con `ThreadPoolExecutor`), `incidents.py` e `inventory.py`.
+- `incident_lookup` lee de `app/services/incident_service.py` (misma capa que
+  `GET /api/incidents`); `inventory_lookup` de
+  `inventory_service.list_skus_with_stock` (misma capa que
+  `GET /inventory/products`). Ambas son de solo lectura, in-process y con
+  timeout/fallback.
+- `app/agent/router.py` — clasificador determinista (`rag`, `incident`,
+  `inventory`, `incident+rag`, `inventory+rag`).
+- El trace añade `route` y `sources_used`; los eventos de tool muestran
+  `tool_status` y `fallback`.
+- La tool de tickets aplica `require_manager` (como la ruta REST); el rol viaja
+  en el estado, no el token.
+- Comandos:
+  ```bash
+  uv run pytest tests/pipelines/test_agent_evals.py -q
+  cd services/api && source venv/bin/activate && pytest tests/test_agent_tools.py -q
+  ```
 
 ## Configuración de email (Recuperación de contraseña)
 
