@@ -205,28 +205,20 @@ Agente real en el Codespace (admin/manager contra `POST /agent/query`):
 Esto confirma que el agente ya consulta el Incidents Manager y el inventario
 reales a través del MCP, sin camino directo.
 
-### 6.2 MCPJam (pendiente de sesión hosted)
+### 6.2 MCPJam (discovery validado; ejecución pendiente)
 
-MCPJam hosted llega a la URL pública y al PRM, pero su backend
-`/api/web/servers/validate` y `/api/web/oauth/metadata` devuelven 401 de sesión
-guest y no abre el popup de OAuth en el navegador automatizado. El servidor MCP
-registra las peticiones correctamente (`/mcp` 401 sin token, PRM 200).
+- [x] Conexión de MCPJam a la URL pública del Codespace
+  (`https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp`).
+- [x] Discovery de las **6 tools** con nombre, descripción y scopes. Captura:
+  [`docs/mcp/playground/mcpjam-discovery.png`](../../docs/mcp/playground/mcpjam-discovery.png).
+- [ ] Ejecutar las 6 tools desde el Playground y guardar los resultados.
 
-Queda pendiente completar el consentimiento en una sesión de MCPJam iniciada
-por el usuario y capturar las 6 tools en `docs/mcp/playground/`. El flujo
-determinista equivalente ya está validado con el token M2M.
-
-Para cerrar la evidencia de MCPJam queda:
-
-- [ ] Iniciar sesión en MCPJam hosted (la sesión guest devuelve 401 en
-  `/api/web/servers/validate`).
-- [ ] Conectar `https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp`.
-- [ ] Completar el consentimiento de Auth0.
-- [ ] Ejecutar las 6 tools y guardar capturas/JSON en `docs/mcp/playground/`.
-
-El flujo determinista equivalente (mismas tools, mismo servidor público, mismo
-OAuth) ya está validado con el token M2M en §6.1. El servidor registró las
-peticiones de MCPJam sin tocar datos: PRM 200 y `/mcp` 401 sin token.
+El navegador automatizado de esta sesión no pudo completar el popup de login de
+MCPJam (su backend devolvía 401 de sesión guest); la sesión del usuario sí
+conectó y descubrió las tools. El flujo determinista equivalente —mismas tools,
+mismo servidor público, mismo OAuth— está validado con el token M2M en §6.1:
+ticket 1, summary, stock, guard `INVENTORY_READ_ONLY`, creación y transición de
+estado.
 
 ## 7. Notas operativas
 
