@@ -18,6 +18,11 @@ def get_engine(url: str | None = None) -> Engine:
     """
 
     resolved = url or get_database_url()
+    if resolved.startswith("postgresql://"):
+        # Fija psycopg2: el default de SQLAlchemy para `postgresql://` depende de
+        # la versión instalada (2.0 → psycopg2, 2.1 → psycopg3) y las imágenes
+        # del pipeline/worker solo traen `psycopg2-binary`.
+        resolved = resolved.replace("postgresql://", "postgresql+psycopg2://", 1)
     kwargs: dict = {"pool_pre_ping": True, "future": True}
     if resolved.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}

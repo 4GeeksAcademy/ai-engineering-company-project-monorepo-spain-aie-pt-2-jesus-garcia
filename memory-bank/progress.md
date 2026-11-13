@@ -784,3 +784,94 @@ G1–G4.
 - Commit de entrega con el mensaje exacto:
   `feat: refactor business performance pipeline into subflows, add unit tests, and add reporting dashboard.`
 
+
+## Procesos en segundo plano — `nightly_export` con ciclo de vida en `job_runs`
+
+Implementación del brief `docs/asynchronous/BACKGROUND_PROCESSES.md`. El dato
+existe como **estado**: cada intento del job es una fila de `job_runs` que
+atraviesa `pending → processing → completed | failed`.
+
+### Modelo y migración
+
+- `services/api/migrations/0002_job_runs.sql` (aditiva e idempotente):
+  `public.job_runs` (`id`, `job_name`, `target_date`, `status`, `started_at`,
+  `finished_at`, `error_message`, `created_at`), `CHECK` de estados,
+  `ix_job_runs_job_target (job_name, target_date)` y dos índices parciales
+  únicos: `ux_job_runs_processing` (lock: un solo `processing` por job) y
+  `ux_job_runs_completed` (idempotencia: un solo `completed` por job y día).
+- `services/job_runner/models.py` replica el esquema con SQLModel (mismos
+  índices, con `sqlite_where`/`postgresql_where`) + `create_job_runs_table()`
+  idempotente para SQLite/tests. La tabla **no** se fusiona con
+  `reporting.pipeline_runs` (capas distintas: disparo diario vs. semana).
+
+### Módulo `services/job_runner/`
+
+- `repository.py` — `create_pending`, `mark_processing`, `mark_completed`,
+  `mark_failed`, `has_processing_lock`, `has_completed_for_date`,
+  `reconcile_stale_processing`, `get_run`, `list_runs`. Cada transición es su
+  propio `commit` y los `UPDATE` van guardados por el estado de origen (la
+  máquina de estados no se puede saltar).
+- `logs.py` — `UTCFormatter` + `JobLogger`: cada línea lleva timestamp ISO-8601
+  UTC, `job=`, `status=` y `msg=`. `configure_logging()` escribe a stdout.
+- `db.py` — `DATABASE_URL`/`JOB_DATABASE_URL` con el mismo fix de driver
+  (`postgresql+psycopg2`) que la API.
+
+### Script `scripts/nightly_export.py`
+
+Orden del ciclo (el orden es el diseño): reconciliar huérfanos → comprobar
+duplicado (`completed` para `target_date`) → comprobar lock (`processing`) →
+crear `pending` → `mark_processing` (commit) → export CSV → pipeline como
+subproceso → `completed` / `failed`.
+
+- `target_date` desde `TARGET_DATE` o ayer en UTC; inválida → exit 2.
+- CSV `data/raw/telemetry_<YYYY-MM-DD>.csv` (día UTC del `timestamp` del
+  evento), escritura atómica (`.tmp` + `os.replace`), cabecera incluso con 0
+  filas; si el archivo existe **no se sobrescribe** y el pipeline continúa.
+- Pipeline: `python data/pipelines/pipeline.py run --lookback 1 --json` con
+  timeout (`PIPELINE_TIMEOUT_SECONDS`) y captura de stderr.
+- Red de seguridad en `finally` + handler de `SIGTERM`: ninguna fila queda en
+  `processing` tras una ejecución fallida.
+- Exit codes: `0` completed/skipped/blocked · `1` failed · `2` configuración.
+
+### Disparador
+
+- `scripts/Dockerfile` (contexto raíz, `python:3.12-slim` + supercronic
+  v0.2.51 multi-arch + deps del pipeline).
+- `scripts/crontab`: `CRON_TZ=UTC` + `15 2 * * * python /app/scripts/nightly_export.py`.
+- `docker-compose.yml`: servicio `scheduler` (`restart: unless-stopped`,
+  `env_file: .env`, volumen `./data/raw:/app/data/raw`). No hay scheduler en
+  el proceso FastAPI.
+- `.env.example`: `TARGET_DATE`, `JOB_STALE_MINUTES`, `PIPELINE_TIMEOUT_SECONDS`,
+  `DATABASE_URL_PIPELINE`.
+
+### Tests
+
+`tests/jobs/` (SQLite temporal + subprocess y export inyectados): **46 tests**
+que cubren transiciones válidas e ilegales, orden `processing`-antes-del-trabajo,
+fallo de pipeline/export/timeout, lock, idempotencia por fecha, reintento tras
+fallo, recuperación de huérfanos, CSV (filtrado por día, cabecera, no
+sobrescritura), `TARGET_DATE` (env y CLI), contrato del DDL y formato de logs.
+
+### Verificación
+
+- `tests/jobs`: **46 passed**. Regresión: `services/api` **213 passed**,
+  `pipelines/weekly_performance` + `tests/pipelines` OK, `npm run typecheck` OK,
+  `docker compose config` OK, `compileall` OK.
+- Migración **aplicada en Supabase producción**: backup `pg_dump` custom
+  (332 KiB, 508 entradas verificadas con `pg_restore --list`) vía session pooler
+  5432; `0002` aplicada dos veces sin error (idempotente); verificados columnas,
+  `ck_job_runs_status` y los 5 índices.
+- E2E real contra Supabase:
+  - `TARGET_DATE=2026-10-29` → `completed`, CSV con 29 filas, pipeline `rc=0`
+    (semana 2026-10-19: 4 extraídas / 3 escritas / `warning`).
+  - `TARGET_DATE=2026-10-30` con `DATABASE_URL_PIPELINE` inválido → `failed`
+    con `error_message` (`OperationalError: connection refused`) y **0 filas en
+    `processing`**.
+  - Lock simulado (`processing` insertado) → `blocked` sin crear fila nueva.
+  - Repetición de una fecha completada → `skipped` sin reexportar ni relanzar.
+
+### Pendiente
+
+- Arrancar el contenedor `scheduler` (`docker compose up -d scheduler`).
+- Excluir `data/raw/telemetry_*.csv` en `.gitignore` (archivo protegido: requiere
+  confirmación explícita).
