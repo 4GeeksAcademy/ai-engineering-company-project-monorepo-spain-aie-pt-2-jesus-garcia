@@ -104,6 +104,9 @@ export function friendlyError(err: unknown): string {
         return "El recurso ya existe o está en conflicto.";
       case 422:
         return "Los datos enviados no son válidos.";
+      case 502:
+      case 503:
+        return "El asistente no está disponible ahora mismo. Inténtalo de nuevo en unos segundos.";
       default:
         return "Ocurrió un error al procesar la solicitud. Inténtalo de nuevo.";
     }

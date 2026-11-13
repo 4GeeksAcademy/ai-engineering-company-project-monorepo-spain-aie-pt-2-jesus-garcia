@@ -164,6 +164,22 @@ información. Las importancias del modelo final confirman la lectura de negocio:
 Ambos conjuntos de métricas se calculan **exclusivamente con las 24 filas de
 test**.
 
+### 6.1 Evaluación temporal del set de entrenamiento (CV + curva de aprendizaje)
+
+El holdout de 24 meses es una sola muestra. Para estimar la varianza entre años
+se añade una evaluación independiente en
+[`data/eval/evaluation_report.md`](../../data/eval/evaluation_report.md):
+
+- **CV temporal** `TimeSeriesSplit` de 6 folds × 8 meses sobre las 72 filas
+  efectivas del train (2018-01 → 2023-12), sin shuffle y con verificación de
+  que las features de lag/rolling no cruzan las fronteras de cada fold.
+- **Curva de aprendizaje** con validación fija en 2023 y ventana de
+  entrenamiento expansiva (`data/eval/learning_curve.png`).
+- **Diagnóstico:** overfitting por varianza; acción propuesta:
+  `min_samples_leaf` 3 → 5.
+- Reproducción: `python -m scripts.evaluate_sales_forecast`.
+- Tests: `tests/pipelines/test_sales_forecast_cv.py`.
+
 ---
 
 ## 7. Métricas: qué mide cada una y por qué el MSE no basta

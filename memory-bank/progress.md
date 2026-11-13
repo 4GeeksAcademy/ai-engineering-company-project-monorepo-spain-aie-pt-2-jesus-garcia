@@ -10,6 +10,7 @@
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
+| MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
 
 ## Últimas decisiones
 
@@ -258,6 +259,18 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 - **Backend** (`services/api/app/routes/inventory.py`): `GET /inventory/orders` pasa de `get_current_user` a `require_manager` → `role user` recibe **403**. Nuevo test `test_get_orders_with_user_role_returns_403` en `test_inventory.py`.
 - **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
 - **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
+
+## Evaluación temporal del modelo de ventas (CV + curva de aprendizaje)
+
+Entregable de `docs/models-training-rag/evaluating-regression-model.md`.
+
+- `scripts/sales_forecast/validation.py` (nuevo) — `TimeSeriesSplit` de **6 folds × 8 meses** sobre las 72 filas efectivas del train (2018-01 → 2023-12). Cada fold valida orden cronológico, ausencia de solape, ventana expansiva y que las features de lag/rolling no cambian al truncar la serie en `train_end` / `validation_end`. También reconstruye la fila de cada mes de validación usando solo datos hasta `t−1`.
+- `scripts/evaluate_sales_forecast.py` (nuevo) — genera `data/eval/cv_results.json`, `cv_folds.csv`, `learning_curve.csv` y `learning_curve.png`. La curva usa validación fija 2023 y tamaños de entrenamiento `[24, 30, 36, 42, 48, 54, 60]`.
+- Resultados CV (media ± std, 6 folds): train MAE **16.248 ± 974 EUR**, RMSE **21.275 ± 698 EUR**, MAPE **1,68 ± 0,06 %**; validación MAE **37.716 ± 9.839 EUR**, RMSE **46.224 ± 10.293 EUR**, MAPE **3,49 ± 0,62 %**.
+- Curva de aprendizaje: al pasar de 24 a 60 meses el RMSE de validación solo baja de 64.561 a 62.815 EUR (−2,7 %) mientras el de train cae de 30.558 a 22.032 EUR (−27,9 %). Diagnóstico explícito: **overfitting por varianza**, no underfitting ni falta de datos.
+- Acción propuesta (A/B sobre los mismos folds): `min_samples_leaf` 3 → 5. RMSE de validación prácticamente igual (46.224 → 46.289 EUR, +0,1 %), desviación entre folds −17,8 % (10.293 → 8.460 EUR) y brecha MAPE 1,81 → 1,25 pp. No se cambia el modelo de producción: queda como propuesta validada en CV.
+- Tests: `tests/pipelines/test_sales_forecast_cv.py` (9 casos; orden cronológico, causalidad en fronteras, media ± std, curva, rechazo de <5 folds). `pytest tests/pipelines/test_sales_forecast_cv.py tests/pipelines/test_sales_forecast_split.py -q` → **20 passed**.
+- Informe: `data/eval/evaluation_report.md`; enlace añadido en `docs/models-training-rag/README.md` §6.1.
 
 ## Siguientes pasos
 
@@ -942,3 +955,305 @@ sobre `data/raw/trackflow_sales.csv` (120 meses consolidados, 2016-01 → 2025-1
 - `docs/models-training-rag/artifacts/metrics.json` y `predictions_test.csv`.
 - `tests/pipelines/test_sales_forecast_split.py` — 11 tests (split 8/2, sin solape, causalidad, reproducibilidad y sanidad de métricas): **11 passed**.
 - `npm run typecheck` raíz OK. La suite completa `tests/pipelines` no colecciona por falta de `sqlalchemy` en el `.venv` raíz (dependencia preexistente del pipeline semanal, ajena a este cambio).
+
+## RAG y base de conocimiento — MILESTONE 7
+
+Implementación del asistente comercial sobre los cuatro documentos de
+`docs/company-knowledge-base/` (SLA, devoluciones, transportistas y tarifas de
+almacenamiento).
+
+### Infraestructura
+- `docker-compose.yml` — servicio `qdrant` (`qdrant/qdrant:v1.20.1`, puertos
+  `6333/6334`, volumen `qdrant-data`, healthcheck TCP), `services` depende de
+  él y monta `./data` y `./docs/company-knowledge-base`. `env_file` incluye
+  `services/api/.env` mediante `load_dotenv()` dentro del contenedor.
+- `services/api/requirements.txt` y `pyproject.toml` — `qdrant-client>=1.20,<2`,
+  `httpx`, `python-dotenv`.
+
+### Indexación (`data/process/`)
+- `rag_config.py` — colección `trackflow_knowledge`, modelos por defecto
+  (`pplx-embed-v1-0.6b` para embeddings, `deepseek-v4-flash` para generación),
+  1024 dimensiones, `RAG_MIN_SCORE=0.35`, rutas y tamaños de chunk. Carga
+  `services/api/.env` con prioridad sobre el `.env` raíz. `join_url()`,
+  `normalize_llm_base_url()` y `build_api_url()` toleran base con/sin `/`, `/v1`
+  o `/litellm` y construyen `{base}/v1/{embeddings|chat/completions}` con una
+  sola barra; `build_model_url()` concatena base + modelo.
+- `rag_index.py` — chunking híbrido por encabezado + bloques semánticos; 14
+  chunks (SLA 3, devoluciones 5, transportistas 3, almacenamiento 3), mínimo 3
+  por documento. `embed()`/`embed_batch()` con normalización L2, soporte de
+  `base64_int8` y lotes de 32. `setup()` borra/recrea la colección
+  (clean-and-reload) y usa UUID5 deterministas. CLI con `--dry-run` y
+  `--no-recreate`.
+
+### Recuperación y generación (`data/pipelines/rag.py`)
+- `retrieve(query, *, k=5, min_score)` — embed + Qdrant `query_points` con
+  `score_threshold`, filtro local y retorno de payloads (nunca objetos SDK).
+- `generate_answer(question, context)` — prompt de asistente comercial con voz
+  de vendedor, reglas de negocio (Black Friday/Rebajas, devoluciones
+  internacionales manuales, descuentos con aprobación de Miguel Torres) y
+  mensaje honesto sin contexto.
+- `query(question)` — composición literal de `retrieve()` + `generate_answer()`.
+
+### API y UI
+- `POST /knowledge/query` autenticado (`app/routes/knowledge.py`), body
+  `{"question": ...}`, response `{"answer": ...}`; errores 502/503 sin filtrar
+  detalles internos. Router incluido en `app/main.py`.
+- Backoffice: página `/knowledge` (“Asistente comercial”), sugerencias, estados
+  de carga/error/respuesta; `lib/knowledge-api.ts`, rewrite
+  `/api/knowledge/:path*` y entrada en el sidebar.
+
+### Evaluación y documentación
+- `data/eval/test-queries.json` — 12 preguntas que cubren los 4 documentos,
+  incluida Black Friday/Rebajas, devoluciones internacionales y descuentos.
+- `data/eval/evaluate_retrieval.py` — Recall@3 con acierto por
+  `source_document` + fragmento de texto; falla si < 80%. Modo `--in-memory`
+  para evaluar sin Docker (indexa en Qdrant en memoria).
+- Resultado real con embeddings de 4Geeks: **Recall@3 12/12 = 100%** con
+  `min_score=0.35`; artefacto en `data/eval/rag-retrieval-results.json`.
+- `docs/rag/rag-design.md` — flujo, chunking, embeddings, umbral,
+  idempotencia, API/UI y comandos.
+- Tests: `tests/pipelines/test_rag.py` (19 passed, stubs de Qdrant y LLM,
+  incluidos tests de construcción de URLs), `services/api/tests/test_knowledge.py`
+  (5 passed) y suite completa de la API (232 passed). Backoffice: 87 tests
+  Vitest, `npm run typecheck`, lint y build OK.
+
+### Pendiente
+- El daemon de Docker no estaba arrancado al validar; `docker compose config`
+  sí pasa. Queda pendiente levantar `qdrant` y probar el indexing contra el
+  servicio real (el flujo completo ya se validó con Qdrant en memoria).
+- `services/api/.env` ya tiene `LLM_BASE_URL=https://llm.4geeks.ai` y
+  `LLM_API_KEY`; la base tolera `/`, `/v1` y `/litellm`.
+
+## Agente RAG con LangGraph — MILESTONE 8
+
+El RAG del MILESTONE 7 se expone ahora como un grafo explícito y trazable. Los
+nodos reutilizan `retrieve()` y `generate_answer()` de `data/pipelines/rag.py`;
+ningún nodo invoca `query()`, así que la recuperación y la generación siguen
+siendo pasos separados.
+
+### Grafo (`services/api/app/agent/`)
+- `state.py` — `AgentState` (`TypedDict`, 6 campos): `question`, `context`,
+  `answer`, `status`, `error`, `run_id`. Sin historial de conversación: cada
+  corrida es stateless y el RAG solo usa la pregunta y el contexto.
+- `nodes.py` — `receive_question`, `retrieve`, `generate`, `no_context` y
+  `fail`, con inyección de dependencias para tests. Un nodo vacío evita
+  recuperar; sin contexto se responde con `rag.NO_CONTEXT_ANSWER` sin llamar al
+  LLM.
+- `graph.py` — aristas condicionales (`route_after_receive`,
+  `route_after_retrieve`, `route_after_generate`), validación estructural
+  (nodo huérfano, arista a nodo inexistente, nodo sin salida, estado no
+  `TypedDict`) y compilación explícita con `InMemorySaver`. El router compila
+  al importarse: un grafo inválido impide arrancar la API.
+- `tracing.py` — `TraceRecorder`/`AgentTrace`; cada corrida escribe
+  `data/eval/agent-traces/{run_id}.json` (`AGENT_TRACE_DIR` configurable) con
+  orden de nodos, salidas, fuentes recuperadas y checkpoints, más una línea en
+  `index.jsonl`.
+- `runner.py` — `run_agent()` (stream de updates + checkpoint por transición),
+  `get_run_state()` y `AgentRunError`.
+
+### Endpoint
+- `POST /agent/query` (`app/routes/agent.py`, autenticado) devuelve
+  `{"answer", "run_id"}`. No tiene lógica de negocio: invoca el grafo y mapea
+  `invalid_question → 422` y `error`/excepción → 502 con mensaje genérico.
+  `/knowledge/query` se mantiene intacto.
+- Dependencia `langgraph>=1.2.21` añadida a `services/api/requirements.txt` y
+  `services/api/pyproject.toml` e instalada en `services/api/venv`.
+
+### Evals y anclaje
+- `tests/pipelines/test_agent_evals.py` (10 passed):
+  pregunta vacía sin retrieve/generate, orden `retrieve → generate` con el
+  contexto exacto, `no_context` sin LLM, anclaje en 4 casos del BRIEFING
+  (`3 a 5 días hábiles`, `40%`, gestión manual, Miguel Torres), 3 checkpoints
+  por corrida y fallo de compilación ante nodo huérfano/estado mal tipado.
+- `tests/pipelines/fixtures/agent_traces/*.json` — traces reales grabados con
+  `scripts/record_agent_traces.py` contra Qdrant (14 chunks) y el LLM de
+  `services/api/.env`; los evals los leen sin red.
+- Verificación: `uv run pytest tests/pipelines/test_rag.py
+  tests/pipelines/test_agent_evals.py -q` → 29 passed; suite completa de la API
+  → 237 passed.
+- Diseño: `docs/rag/agent-design.md`.
+
+### Pendiente
+- Reconstruir la imagen del contenedor `api` (`docker compose build api`) para
+  que incluya `langgraph`; el venv local ya lo tiene.
+- Decidir si `data/eval/agent-traces/` se añade a `.gitignore` (runtime, no
+  versionado) — `.gitignore` está protegido y no se ha tocado.
+- Migrar el backoffice a `/agent/query` si se quiere mostrar `run_id` y enlazar
+  al trace desde la UI.
+
+## Agente RAG + tools de lectura en tiempo real — MILESTONE 8 (Parte 2)
+
+El agente deja de responder solo con la base de conocimiento: cuando la
+pregunta pide el estado de un ticket o el stock de un producto, consulta el
+servicio real. El usuario no indica la fuente; un nodo `classify` decide entre
+RAG, tool o ambos.
+
+### Tools (`services/api/app/agent/tools/`)
+- `contracts.py` — contratos Pydantic de entrada/salida:
+  `IncidentLookupInput/Output` (ticket_id o filtros; estado, categoría, origen,
+  sede, fechas) e `InventoryLookupInput/Output` (sku_id/sku_code/name_query +
+  warehouse; stock total y por almacén). Errores tipados: `invalid_input`,
+  `not_found`, `forbidden`, `timeout`, `unavailable`.
+- `incidents.py` / `inventory.py` — solo lectura, in-process. Incidencias usa
+  `app/services/incident_service.py`; inventario usa
+  `inventory_service.list_skus_with_stock` (misma capa que las rutas REST). Sin
+  datasets simulados ni escrituras.
+- `execution.py` — timeout numérico con `ThreadPoolExecutor`:
+  `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` y
+  `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS` (default `3` s). Si expira, la tool
+  devuelve `timeout` y el grafo sigue.
+- `tool_answers.py` — respuestas deterministas (sin LLM) para ticket/stock y
+  fallbacks honestos: no encontrado, timeout, servicio caído, sin permisos.
+
+### Capa de servicio compartida
+- `app/services/incident_service.py` (nuevo) — `find_incident`,
+  `list_incidents`, `to_incident`, `to_list_item`. `GET /api/incidents` y la
+  tool comparten exactamente la misma lógica.
+- `app/services/inventory_service.py` — `sku_to_read` y
+  `list_skus_with_stock`; `GET /inventory/products` y la tool comparten la
+  misma consulta y el mismo cálculo de stock.
+
+### Grafo y enrutado
+- `app/agent/router.py` (nuevo) — `RoutingDecision` y `classify_question`
+  determinista: señales de ticket/ID, SKU/producto/almacén y términos de
+  política. Rutas: `rag`, `incident`, `inventory`, `incident+rag`,
+  `inventory+rag`.
+- `nodes.py` — nuevos nodos `classify`, `tool_incident`, `tool_inventory` y
+  `answer_from_tool`; `generate` añade el resultado de la tool al contexto
+  cuando la ruta es `+rag`.
+- `graph.py` — aristas condicionales nuevas; si el ticket/stok se consulta y
+  además hay política, el orden es `tool → retrieve → generate`.
+- `state.py` — `route`, `routing`, `tool_name`, `tool_result`, `tool_status`,
+  `tool_error`, `fallback`, `tool_context_included`, `user_role`.
+- `runner.py` / `routes/agent.py` — el endpoint pasa el usuario autenticado; la
+  tool de tickets aplica el mismo `require_manager` que `GET /api/incidents`
+  (un `role=user` recibe un fallback de permisos, sin filtrar datos). Al ser
+  in-process no hay token backend-a-backend; documentado en
+  `docs/rag/agent-design.md`.
+- `tracing.py` — el trace añade `route` y `sources_used` (en orden real), y los
+  eventos de tool incluyen `tool_status`/`fallback`. La descripción libre se
+  trunca a 200 caracteres y no se persiste `user_role`.
+
+### Evals y tests
+- `tests/pipelines/test_agent_evals.py` — **23 passed**: se mantienen los
+  evals de la Parte 1 y se añaden tool de tickets (sin RAG), RAG puro (sin
+  tools), fallback por timeout, no encontrado, `incident+rag`, tool de
+  inventario, permisos y tabla parametrizada del clasificador.
+- `services/api/tests/test_agent_tools.py` — **15 tests nuevos**: lectura real de
+  TinyDB/SQLite, filtros, no encontrado, timeout, servicio no disponible, input
+  inválido y verificación de solo lectura. Junto con los 6 del contrato HTTP
+  (`tests/test_agent.py`) suman **21 passed**.
+- Suite completa de la API: **253 passed**. Evals: **23 passed**. Typecheck
+  raíz OK.
+
+### Configuración
+- `.env.example`: `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS=3`,
+  `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS=3`, `AGENT_TRACE_DIR=`.
+- Diseño actualizado: `docs/rag/agent-design.md`.
+
+### Evidencia del PR
+- `docs/rag/traces/ticket-tool-demo.json` — corrida real con la tool de
+  tickets (`route: incident`, `sources_used: ["incident_tool"]`).
+- `docs/rag/traces/rag-policy-demo.json` — corrida real con RAG
+  (`route: rag`, `sources_used: ["rag"]`).
+- `docs/rag/traces/README.md` — explicación y comando de regeneración.
+- `docs/rag/agent-evals-output-part2.txt` — 23 evals + 21 tests de
+  tools/contrato; suite completa 253 passed.
+
+### Pendiente
+- Prueba manual E2E contra el backend real con un ticket del seed (el ejemplo
+  `482` no existe entre los 95 registros; la tool responde "no encontrado").
+- Si se quiere una persona de soporte en el prompt RAG, editar
+  `data/pipelines/rag.py` (directorio protegido; requiere confirmación).
+
+## MCP — OAuth y tools (`feature/mcp-oauth-tools`)
+
+### Dependencias (paso 5)
+- `pyproject.toml`: fuera `fastmcp` (4.2.0 arrastra `mcp>=2.3` vía
+  `fastmcp-slim[client,server]`), entra `mcp>=1.24,<2`, `mcpauth==0.2.0b1` y
+  `typing-extensions>=4.14` (`mcpauth` lo importa sin declararlo).
+- Lock regenerado: `mcp 1.30.0`, `mcpauth 0.2.0b1`; `langchain-mcp-adapters
+  0.3.1` sigue siendo compatible (pide `mcp>=1.24`).
+- `mcp 1.30.0` incluye `mcp.server.fastmcp`, así que el paquete `fastmcp`
+  independiente no hace falta.
+- `[dependency-groups] dev` con `pytest>=9.1.1`: `uv sync` podaba el pytest
+  instalado a mano y rompía el flujo documentado `uv run pytest`.
+- Verificado: `uv lock && uv sync`, imports de `FastMCP`/`MCPAuth`, 23 evals de
+  `tests/pipelines/test_agent_evals.py` y `npm run typecheck` en raíz.
+
+### Cuenta de servicio (paso 4)
+- `services/api/seed_mcp_service.py` — idempotente; crea/actualiza
+  `mcp-service@trackflow.com` con rol `manager`, perfil y sincroniza el
+  password con `MCP_SERVICE_PASSWORD`.
+- Credenciales en `.env` raíz (gitignored): `TRACKFLOW_API_URL`,
+  `TRACKFLOW_API_EMAIL`, `TRACKFLOW_API_PASSWORD`.
+- Verificado con login real (`POST /api/auth/login` → 200, role `manager`)
+  contra uvicorn temporal en :8010.
+- Ojo: `services/api/data/suppliers.json` está trackeado; el seed lo modifica.
+  No commitear ese archivo.
+
+### Servidor MCP (`mcps/trackflow-mcp/`)
+- FastMCP (`mcp.server.fastmcp`, mcp 1.30) + **mcpauth 0.2.0b1 en modo
+  resource server** (sin la auth integrada de FastMCP).
+- PRM en `/.well-known/oauth-protected-resource/mcp` (resource con `/mcp`),
+  `bearer_auth_middleware("jwt", audience/resource, required_scopes=["mcp:read"])`
+  y `/health` público.
+- Scopes: `mcp:read` (query_incidents, get_incident_summary, query_inventory) y
+  `mcp:write` (create_incident, update_incident_status, adjust_inventory_stock).
+- Tools contra la API real: `POST /api/incidents`,
+  `PATCH /api/incidents/{id}/status`, `GET /api/incidents*`,
+  `GET /inventory/products`. La cuenta de servicio es `mcp-service@trackflow.com`
+  (manager) y solo se usa desde el servidor MCP.
+- Inventario solo lectura: `adjust_inventory_stock` siempre devuelve
+  `INVENTORY_READ_ONLY` (sin llamar a la API); `query_inventory` calcula stock
+  desde las órdenes.
+- Errores diferenciados: 401 (`missing_auth_header`, `invalid_token`,
+  `invalid_issuer`, `invalid_audience`), 403 (`missing_required_scopes`),
+  tool errors (`INSUFFICIENT_SCOPE`, `VALIDATION_ERROR`, `NOT_FOUND`,
+  `INVALID_STATUS_TRANSITION`, `INVENTORY_READ_ONLY`, `BACKEND_AUTH_FAILED`,
+  `BACKEND_TIMEOUT`, `BACKEND_UNAVAILABLE`, `INTERNAL_ERROR`).
+- Log JSON por invocación (`tool`, `client_id`, `subject`, `scopes`, `outcome`,
+  `error_code`, `duration_ms`, `backend_status`, argumentos saneados).
+- `scripts/mcp_smoke.py` (discovery + flujo por tool; `--write` opcional),
+  `README.md`, `VALIDATION.md`, `docs/mcp/README.md`.
+- Tests: `mcps/trackflow-mcp/.venv/bin/pytest -q` → **35 passed** (PRM, 401/403,
+  scopes, guard de inventario, tools contra doble de API, errores HTTP y logs).
+
+### Migración del agente al MCP
+- `app/agent/tools/mcp_client.py` — `MultiServerMCPClient` +
+  `load_mcp_tools`, `transport="streamable_http"`; timeout
+  `AGENT_MCP_TIMEOUT_SECONDS=10`; `_extract_payload` soporta artifact/structured
+  content y errores `isError`.
+- `app/agent/tools/mcp_auth.py` — cliente OAuth `client_credentials`
+  (`MCP_OAUTH_*`, `audience` para Auth0 y `resource` para RFC 8707), caché,
+  refresh e invalidación.
+- **Eliminados** `app/agent/tools/incidents.py` y `inventory.py`; el agente ya no
+  tiene camino directo a TinyDB/SQLModel ni al Incidents Manager.
+- El estado y los traces conservan `incident_lookup` / `inventory_lookup` como
+  nombres lógicos; por debajo llaman a `query_incidents` / `query_inventory`.
+- Fallback: MCP caído/timeout/sin token/scope insuficiente/no encontrado →
+  `answer_from_tool` con mensaje honesto y `status="ok"`; `/agent/query` no
+  devuelve 502 por un fallo de tool.
+- Tests nuevos: `services/api/tests/test_agent_tools.py` (13) y
+  `tests/test_agent_mcp_failures.py` (8); evals 23 siguen pasando.
+- Suite API completa: **259 passed**; `npm run typecheck` OK.
+
+### Validación real (Codespaces + Auth0)
+- Client grant de `TrackfFow MCP (Test Application)` con `mcp:read` y
+  `mcp:write`; el token incluye `scope: "mcp:read mcp:write"`.
+- Puerto `8001` público en el Codespace; PRM 200 y `/mcp` sin token 401.
+- Smoke M2M contra la URL pública: `tools/list`, ticket 1, summary de 95
+  incidencias, `CLT-SNK-W-42` con 47 uds, guard de inventario
+  `INVENTORY_READ_ONLY`, creación de la incidencia 96 y transición a
+  `in_progress` por el endpoint de ciclo de vida.
+- Agente real en el Codespace: ticket 1 → «Abierto» (datos reales); stock
+  `CLT-SNK-W-42` → 47 uds. Antes del grant devolvía el fallback honesto 200.
+- Fix de discovery: las rutas no canónicas (`/.well-known/oauth-protected-resource`
+  sin `/mcp`) devuelven 404 en lugar de 401 (`2ba5395`).
+
+### Pendiente MCP
+- Validar MCPJam hosted con una sesión iniciada (la sesión guest devuelve 401
+  en su propio backend) y guardar capturas en `docs/mcp/playground/`.
+- Subir el idle timeout del Codespace antes de la demo (los procesos se
+  reinician con el Codespace).
+- No commitear `services/api/data/suppliers.json`.

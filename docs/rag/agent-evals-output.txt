@@ -1,0 +1,76 @@
+# Evals del agente RAG — 2026-11-13 17:30 CET
+
+## Entorno
+
+- Branch: `feature/langgraph-agent-base`
+- Commit base: `953c672`
+- Python: Python 3.14.6
+- LangGraph: 1.2.21
+
+## 1. Evals del pipeline y del agente
+
+```bash
+uv run pytest tests/pipelines/test_rag.py tests/pipelines/test_agent_evals.py -v
+```
+
+```text
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/.venv/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia
+configfile: pyproject.toml
+plugins: langsmith-0.14.17, anyio-4.16.0
+collecting ... collected 29 items
+
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai] PASSED [  3%]
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai/] PASSED [  6%]
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai/v1] PASSED [ 10%]
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai/v1/] PASSED [ 13%]
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai/litellm] PASSED [ 17%]
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai/litellm/] PASSED [ 20%]
+tests/pipelines/test_rag.py::test_build_api_url_handles_slashes_and_suffixes[https://llm.4geeks.ai/litellm/v1] PASSED [ 24%]
+tests/pipelines/test_rag.py::test_join_url_and_model_url_use_exactly_one_slash PASSED [ 27%]
+tests/pipelines/test_rag.py::test_normalize_llm_base_url PASSED          [ 31%]
+tests/pipelines/test_rag.py::test_retrieve_filters_below_min_score PASSED [ 34%]
+tests/pipelines/test_rag.py::test_retrieve_can_return_fewer_than_k PASSED [ 37%]
+tests/pipelines/test_rag.py::test_retrieve_returns_empty_when_nothing_passes_threshold PASSED [ 41%]
+tests/pipelines/test_rag.py::test_retrieve_rejects_empty_query PASSED    [ 44%]
+tests/pipelines/test_rag.py::test_query_returns_generated_answer_not_raw_chunks PASSED [ 48%]
+tests/pipelines/test_rag.py::test_query_without_context_returns_honest_message PASSED [ 51%]
+tests/pipelines/test_rag.py::test_generate_answer_without_context_does_not_call_llm PASSED [ 55%]
+tests/pipelines/test_rag.py::test_source_documents_and_chunks_preserve_metadata PASSED [ 58%]
+tests/pipelines/test_rag.py::test_chunking_does_not_split_rules_or_conditions PASSED [ 62%]
+tests/pipelines/test_rag.py::test_setup_is_idempotent_with_clean_and_reload PASSED [ 65%]
+tests/pipelines/test_agent_evals.py::test_blank_question_routes_to_fail_without_retrieval_or_generation PASSED [ 68%]
+tests/pipelines/test_agent_evals.py::test_retrieve_runs_before_generate_and_passes_its_own_context PASSED [ 72%]
+tests/pipelines/test_agent_evals.py::test_empty_retrieval_routes_to_honest_answer_without_llm PASSED [ 75%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[sla-standard-sla-delivery-3 a 5 d\xedas h\xe1biles] PASSED [ 79%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[sla-peak-demand-sla-delivery-40%] PASSED [ 82%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[returns-international-returns-policy-gesti\xf3n manual] PASSED [ 86%]
+tests/pipelines/test_agent_evals.py::test_answer_stays_anchored_in_the_knowledge_base[storage-discount-approval-storage-pricing-Miguel Torres] PASSED [ 89%]
+tests/pipelines/test_agent_evals.py::test_checkpointing_records_every_transition PASSED [ 93%]
+tests/pipelines/test_agent_evals.py::test_compilation_rejects_a_disconnected_node PASSED [ 96%]
+tests/pipelines/test_agent_evals.py::test_compilation_rejects_a_badly_typed_state PASSED [100%]
+
+============================== 29 passed in 0.72s ==============================
+```
+
+## 2. Contrato HTTP del agente
+
+```bash
+cd services/api && venv/bin/python -m pytest tests/test_agent.py tests/test_knowledge.py -v
+```
+
+```text
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/services/api
+configfile: pyproject.toml
+plugins: langsmith-0.14.17, cov-7.1.0, anyio-4.14.2
+collected 11 items
+
+tests/test_agent.py ......                                               [ 54%]
+tests/test_knowledge.py .....                                            [100%]
+
+============================== 11 passed in 2.92s ==============================
+```

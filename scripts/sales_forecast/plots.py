@@ -176,3 +176,128 @@ def plot_forecast(
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     return output_path
+
+
+def plot_learning_curve(
+    *,
+    points: list[dict[str, object]],
+    output_path: str | Path,
+    title: str = "TrackFlow · Curva de aprendizaje (validación temporal)",
+) -> Path:
+    """Grafica el error de train y validación al crecer el set de entrenamiento.
+
+    El panel superior usa RMSE (métrica principal de negocio) y el inferior MAE
+    (desviación típica mensual). La validación es un bloque fijo de 12 meses al
+    final del set de entrenamiento; el eje X es cuántos meses de historia se
+    usan para entrenar.
+    """
+
+    if not points:
+        raise ValueError("La curva de aprendizaje no tiene puntos")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    frame = pd.DataFrame(
+        [
+            {
+                "n_train_rows": point["n_train_rows"],
+                "train_rmse_eur": point["train"]["rmse_eur"],
+                "train_mae_eur": point["train"]["mae_eur"],
+                "validation_rmse_eur": point["validation"]["rmse_eur"],
+                "validation_mae_eur": point["validation"]["mae_eur"],
+                "validation_start": point["validation_start"],
+                "validation_end": point["validation_end"],
+            }
+            for point in points
+        ]
+    )
+    sizes = frame["n_train_rows"].to_numpy(dtype=int)
+    validation_start = str(frame["validation_start"].iloc[0])
+    validation_end = str(frame["validation_end"].iloc[0])
+
+    fig, (ax_rmse, ax_mae) = plt.subplots(
+        2,
+        1,
+        figsize=(12, 9),
+        sharex=True,
+        gridspec_kw={"height_ratios": [1.15, 1.0]},
+    )
+
+    for axis, metric, label in (
+        (ax_rmse, "rmse_eur", "RMSE"),
+        (ax_mae, "mae_eur", "MAE"),
+    ):
+        axis.plot(
+            sizes,
+            frame[f"train_{metric}"].to_numpy(dtype=float),
+            color="#2563EB",
+            linewidth=2.4,
+            marker="o",
+            markersize=6,
+            label=f"{label} entrenamiento (in-sample)",
+        )
+        axis.plot(
+            sizes,
+            frame[f"validation_{metric}"].to_numpy(dtype=float),
+            color="#DC2626",
+            linewidth=2.4,
+            marker="s",
+            markersize=6,
+            label=f"{label} validación (out-of-sample)",
+        )
+        axis.set_ylabel(f"{label} (EUR)")
+        axis.yaxis.set_major_formatter(
+            FuncFormatter(lambda value, _: f"{value / 1000:.0f} k€")
+        )
+        axis.grid(axis="y", alpha=0.25, linestyle="--")
+        axis.legend(loc="lower left", fontsize=9, frameon=True)
+        axis.margins(y=0.12)
+
+    last_rmse_train = float(frame["train_rmse_eur"].iloc[-1])
+    last_rmse_validation = float(frame["validation_rmse_eur"].iloc[-1])
+    last_mae_train = float(frame["train_mae_eur"].iloc[-1])
+    last_mae_validation = float(frame["validation_mae_eur"].iloc[-1])
+
+    fig.suptitle(
+        title,
+        x=0.01,
+        ha="left",
+        fontsize=15,
+        fontweight="bold",
+    )
+    fig.text(
+        0.01,
+        0.945,
+        f"Validación fija: {validation_start} → {validation_end} · "
+        "ventana de entrenamiento expansiva hacia atrás · Random Forest",
+        fontsize=9,
+        color="#4B5563",
+    )
+    fig.text(
+        0.01,
+        0.015,
+        f"Último punto (60 meses): RMSE train {last_rmse_train / 1000:.0f} k€ vs "
+        f"val {last_rmse_validation / 1000:.0f} k€ · "
+        f"MAE train {last_mae_train / 1000:.0f} k€ vs "
+        f"val {last_mae_validation / 1000:.0f} k€",
+        fontsize=9,
+        color="#374151",
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "alpha": 0.85},
+    )
+    ax_mae.set_xlabel("Meses de entrenamiento (historia acumulada)")
+    ax_mae.set_xticks(sizes)
+    ax_mae.set_xticklabels([str(size) for size in sizes])
+
+    fig.text(
+        0.99,
+        0.015,
+        f"Random Forest · random_state={SEED} · una sola serie temporal, sin shuffle",
+        ha="right",
+        fontsize=8,
+        color="#4B5563",
+    )
+    fig.tight_layout(rect=(0, 0.05, 1, 0.93))
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return output_path

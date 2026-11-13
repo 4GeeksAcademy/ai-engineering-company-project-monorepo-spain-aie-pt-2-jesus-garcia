@@ -106,6 +106,40 @@ el pipeline (`pipelines/weekly_performance`). Requiere rol `manager`/`admin`.
 `PREFECT_API_URL` (por defecto `http://localhost:4200/api`) apunta al servidor
 Prefect self-hosted o a Prefect Cloud.
 
+## Agente RAG (LangGraph)
+
+Grafo en `app/agent/` que reutiliza `retrieve()` y `generate_answer()` del
+pipeline RAG (`data/pipelines/rag.py`). Compila al importar el router y escribe
+una traza por corrida en `data/eval/agent-traces/` (`AGENT_TRACE_DIR`).
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/agent/query` | `{"question": "..."}` → `{"answer", "run_id"}` |
+
+Códigos: `200` respuesta correcta o “sin información suficiente”, `422`
+pregunta vacía, `502` fallo interno (mensaje genérico, sin stack trace).
+`/knowledge/query` se mantiene por compatibilidad.
+
+El grafo incluye un nodo `classify` que decide automáticamente entre la base de
+conocimiento, el gestor de incidencias (`incident_lookup`) y el inventario
+(`inventory_lookup`), o una combinación de tool + RAG. Las tools ya **no** se
+ejecutan in-process: el agente las carga desde el **MCP Server**
+(`mcps/trackflow-mcp`) con `langchain-mcp-adapters` y un token OAuth propio
+(client credentials). El MCP llama a la API real (`/api/incidents`,
+`PATCH /api/incidents/{id}/status`, `/inventory/products`).
+
+Timeout del handshake + tool: `AGENT_MCP_TIMEOUT_SECONDS` (10 s por defecto).
+Cualquier fallo del MCP (sin token, caído, timeout, scope insuficiente) se
+traduce a un fallback honesto; el endpoint sigue devolviendo `200` con la
+respuesta de recuperación. La traza incluye `route`, `sources_used` y el orden
+exacto de nodos.
+
+Diseño: `docs/rag/agent-design.md`; evals:
+`tests/pipelines/test_agent_evals.py`; tests del cliente MCP:
+`tests/test_agent_tools.py` y `tests/test_agent_mcp_failures.py`.
+Configuración: `services/api/.env.example` (`MCP_SERVER_URL`,
+`MCP_OAUTH_*`).
+
 ## Errores HTTP
 
 | Código | Situación |

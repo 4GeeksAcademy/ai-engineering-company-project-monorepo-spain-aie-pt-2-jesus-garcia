@@ -21,6 +21,10 @@ dependencies = [
     "resend",
     "celery[redis]",
     "flower",
+    "qdrant-client>=1.20,<2",
+    "langgraph>=1.2.21",
+    "langchain-mcp-adapters>=0.3.1,<0.4",
+    "mcp>=1.24,<2",
 ]
 
 [dependency-groups]
