@@ -308,6 +308,11 @@ En Docker Compose, `services` recibe `QDRANT_URL=http://qdrant:6333` y monta
 `./data` y `./docs/company-knowledge-base` para que `setup()` y la consulta
 funcionen dentro del contenedor.
 
+> Si añades o cambias dependencias de `services/api/requirements.txt`,
+> reconstruye la imagen antes de arrancar:
+> `docker compose up --build -d services`. El bind mount actualiza el código,
+> pero no instala paquetes nuevos en la imagen en ejecución.
+
 ## 10. Evaluación
 
 `data/eval/test-queries.json` contiene 12 preguntas que cubren los cuatro
