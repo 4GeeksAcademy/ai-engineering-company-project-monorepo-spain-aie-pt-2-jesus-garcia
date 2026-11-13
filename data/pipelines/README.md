@@ -21,4 +21,16 @@ python data/pipelines/pipeline.py reconcile-source --days 7
 
 Documentación completa: [`pipelines/weekly_performance/README.md`](../../pipelines/weekly_performance/README.md).
 
+## Pipeline RAG (MILESTONE 7)
+
+Entrypoint de consulta: [`rag.py`](./rag.py). Expone `retrieve()`,
+`generate_answer()` y `query()`; el endpoint `POST /knowledge/query` importa
+`query()` sin duplicar lógica.
+
+```bash
+python -m data.eval.evaluate_retrieval --k 3 --min-score 0.35
+```
+
+Documentación de diseño: [`docs/rag/rag-design.md`](../../docs/rag/rag-design.md).
+
 > _Spanish version: [README.es.md](./README.es.md)._
