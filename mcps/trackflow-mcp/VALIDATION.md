@@ -159,75 +159,74 @@ Logs reales de la corrida (una línea por tool):
 - [x] El RAG no invoca el MCP.
 - [x] El token del agente es solo `mcp:read` (sin escritura).
 
-Fallback real en el Codespace (API en `:8000`, MCP en `:8001`, token M2M aún
-sin grant):
+Fallback real en el Codespace antes del grant M2M: `POST /agent/query`
+devolvió **200** con un mensaje honesto, sin romper el grafo. Tras conceder el
+grant, las mismas preguntas devuelven datos reales (ver §6.1).
 
-```http
-POST /agent/query
-200 {"answer":"No pude confirmar el estado de ese ticket ahora mismo: el gestor de incidencias no está disponible en este momento. Inténtalo de nuevo en unos minutos.","run_id":"..."}
-```
+## 6. Token M2M y MCPJam
 
-Es el comportamiento esperado: el MCP no pudo autenticarse, el grafo no se
-rompió y respondió con un fallback honesto. Al conceder el grant, la misma
-pregunta resolverá el ticket real.
+### 6.1 Token M2M (validado)
 
-## 6. Pendiente: token M2M y MCPJam
-
-Las credenciales M2M ya están en `mcps/trackflow-mcp/.env`, pero Auth0 devuelve
-al pedir el token:
+El client grant de la app `TrackfFow MCP (Test Application)` ya incluye
+`mcp:read` y `mcp:write`. El token emitido lo confirma:
 
 ```json
-{"error":"access_denied","error_description":"Client has not been granted scopes: mcp:read"}
+{"access_token":"...","expires_in":86400,"token_type":"Bearer","scope":"mcp:read mcp:write"}
 ```
 
-Falta autorizar la app M2M `Test` contra la API del MCP con el scope
-`mcp:read`:
-
-1. Auth0 Dashboard → Applications → Applications → app M2M `Test`.
-2. Pestaña **APIs** → autorizar la API `TrackFlow MCP` (identifier
-   `https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp`).
-3. Marcar `mcp:read` (y `mcp:write` solo si se quiere probar escritura con ese
-   token) → guardar.
-4. Reintentar el smoke.
-
-El resto de comprobaciones necesita además una sesión de navegador en Auth0:
-
-- [ ] `GET /mcp` con token M2M (`mcp:read`) → `tools/list` con las 6 tools.
-- [ ] `query_incidents`, `get_incident_summary`, `query_inventory` con token M2M.
-- [ ] `create_incident` / `update_incident_status` con token con `mcp:write`.
-- [ ] `adjust_inventory_stock` desde MCPJam → `INVENTORY_READ_ONLY`.
-- [ ] Captura de MCPJam usando la URL pública de Codespaces (no localhost).
-- [ ] Guardar las capturas/JSON en `docs/mcp/playground/`.
-
-Comandos previstos:
+Smoke completo contra la URL pública del Codespace:
 
 ```bash
-# Token M2M + smoke completo (sin escritura)
-cd mcps/trackflow-mcp
-.venv/bin/python scripts/mcp_smoke.py \
+python scripts/mcp_smoke.py \
   --url https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp \
-  --token-url https://dev-hfpsbxjc0cragdyx.us.auth0.com/oauth/token \
-  --client-id "$AUTH0_M2M_CLIENT_ID" \
-  --client-secret "$AUTH0_M2M_CLIENT_SECRET" \
-  --audience https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp \
-  --scopes "mcp:read"
-
-# Flujo de escritura (create + status)
-.venv/bin/python scripts/mcp_smoke.py ... --write
+  --scopes "mcp:read mcp:write" --incident-id 1 --write
 ```
 
-MCPJam:
+Resultados:
 
-1. `gh codespace ports visibility 8001:public`.
-2. Añadir servidor `https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp`.
-3. Completar el consentimiento de Auth0.
-4. Ejecutar las 6 tools y capturar los resultados.
+- [x] `tools/list` → 6 tools con schemas.
+- [x] `query_incidents` ticket 1 → incidencia real (`zaragoza_office`, `lost_parcel`, `open`).
+- [x] `get_incident_summary` → 95 incidencias.
+- [x] `query_inventory` → `CLT-SNK-W-42` con 47 uds.
+- [x] `adjust_inventory_stock` → `INVENTORY_READ_ONLY` sin tocar stock.
+- [x] `create_incident` → incidencia 96 (`open`).
+- [x] `update_incident_status` → 96 a `in_progress` por `PATCH /api/incidents/96/status`.
 
-Estado de MCPJam: la app hosted llegó al servidor público y leyó el PRM, pero
-su backend `/api/web/oauth/metadata` devolvió 401 (sesión guest) y generó
-peticiones malformadas `/mchttps%3A//...`. Hace falta una sesión de MCPJam
-iniciada; se reintentará tras arreglar el grant M2M. El servidor MCP registró
-esas peticiones como 401, sin tocar datos.
+Agente real en el Codespace (admin/manager contra `POST /agent/query`):
+
+```text
+"¿En qué estado está el ticket 1?"
+→ 200, "El ticket 1 está en estado «Abierto» (open)... Oficina de Zaragoza..."
+
+"¿Tenemos stock de CLT-SNK-W-42?"
+→ 200, "47 unidades en total (Los Ángeles: 47, Zaragoza: 0)"
+```
+
+Esto confirma que el agente ya consulta el Incidents Manager y el inventario
+reales a través del MCP, sin camino directo.
+
+### 6.2 MCPJam (pendiente de sesión hosted)
+
+MCPJam hosted llega a la URL pública y al PRM, pero su backend
+`/api/web/servers/validate` y `/api/web/oauth/metadata` devuelven 401 de sesión
+guest y no abre el popup de OAuth en el navegador automatizado. El servidor MCP
+registra las peticiones correctamente (`/mcp` 401 sin token, PRM 200).
+
+Queda pendiente completar el consentimiento en una sesión de MCPJam iniciada
+por el usuario y capturar las 6 tools en `docs/mcp/playground/`. El flujo
+determinista equivalente ya está validado con el token M2M.
+
+Para cerrar la evidencia de MCPJam queda:
+
+- [ ] Iniciar sesión en MCPJam hosted (la sesión guest devuelve 401 en
+  `/api/web/servers/validate`).
+- [ ] Conectar `https://bookish-guacamole-9j95xrv6qpwf9p99-8001.app.github.dev/mcp`.
+- [ ] Completar el consentimiento de Auth0.
+- [ ] Ejecutar las 6 tools y guardar capturas/JSON en `docs/mcp/playground/`.
+
+El flujo determinista equivalente (mismas tools, mismo servidor público, mismo
+OAuth) ya está validado con el token M2M en §6.1. El servidor registró las
+peticiones de MCPJam sin tocar datos: PRM 200 y `/mcp` 401 sin token.
 
 ## 7. Notas operativas
 

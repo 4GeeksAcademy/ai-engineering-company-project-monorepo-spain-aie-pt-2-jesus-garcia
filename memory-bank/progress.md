@@ -1238,10 +1238,22 @@ RAG, tool o ambos.
   `tests/test_agent_mcp_failures.py` (8); evals 23 siguen pasando.
 - Suite API completa: **259 passed**; `npm run typecheck` OK.
 
+### Validación real (Codespaces + Auth0)
+- Client grant de `TrackfFow MCP (Test Application)` con `mcp:read` y
+  `mcp:write`; el token incluye `scope: "mcp:read mcp:write"`.
+- Puerto `8001` público en el Codespace; PRM 200 y `/mcp` sin token 401.
+- Smoke M2M contra la URL pública: `tools/list`, ticket 1, summary de 95
+  incidencias, `CLT-SNK-W-42` con 47 uds, guard de inventario
+  `INVENTORY_READ_ONLY`, creación de la incidencia 96 y transición a
+  `in_progress` por el endpoint de ciclo de vida.
+- Agente real en el Codespace: ticket 1 → «Abierto» (datos reales); stock
+  `CLT-SNK-W-42` → 47 uds. Antes del grant devolvía el fallback honesto 200.
+- Fix de discovery: las rutas no canónicas (`/.well-known/oauth-protected-resource`
+  sin `/mcp`) devuelven 404 en lugar de 401 (`2ba5395`).
+
 ### Pendiente MCP
-- Rellenar `mcps/trackflow-mcp/.env` y `services/api/.env` con el Client
-  ID/Secret de la app M2M `Test` de Auth0.
-- Ejecutar `scripts/mcp_smoke.py` con el token M2M y validar MCPJam con la URL
-  pública de Codespaces; guardar capturas en `docs/mcp/playground/`.
-- Subir el idle timeout del Codespace antes de la demo.
+- Validar MCPJam hosted con una sesión iniciada (la sesión guest devuelve 401
+  en su propio backend) y guardar capturas en `docs/mcp/playground/`.
+- Subir el idle timeout del Codespace antes de la demo (los procesos se
+  reinician con el Codespace).
 - No commitear `services/api/data/suppliers.json`.
