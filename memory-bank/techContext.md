@@ -193,6 +193,33 @@ cd uis/website && npm run dev
 - Diseño: `docs/rag/rag-design.md`. Eval: `data/eval/test-queries.json`
   (12 preguntas, Recall@3 ≥ 80%).
 
+## Agente RAG con LangGraph (MILESTONE 8)
+
+- Grafo en `services/api/app/agent/`: `state.py` (`AgentState`), `nodes.py`
+  (`receive_question`, `retrieve`, `generate`, `no_context`, `fail`),
+  `graph.py` (aristas condicionales, validación estructural, compilación con
+  `InMemorySaver`), `tracing.py` (traces JSON) y `runner.py` (`run_agent`).
+- Reutiliza `data/pipelines/rag.py`: `retrieve()` en el nodo `retrieve` y
+  `generate_answer(question, context)` en `generate`. `query()` monolítico no
+  se usa en el grafo.
+- Endpoint `POST /agent/query` → `{"answer", "run_id"}` (422 pregunta inválida,
+  502 fallo interno). `/knowledge/query` sigue existiendo.
+- Traces: `data/eval/agent-traces/{run_id}.json` + `index.jsonl`;
+  `AGENT_TRACE_DIR` permite cambiarlo. Se leen con `AgentTrace.load*` y el
+  estado con `get_run_state(run_id)`.
+- Checkpointer `InMemorySaver` con `thread_id = run_id`; un snapshot por
+  transición, también serializado en el trace.
+- Dependencia `langgraph>=1.2.21` en `services/api/requirements.txt` y
+  `services/api/pyproject.toml`.
+- Comandos:
+  ```bash
+  uv run pytest tests/pipelines/test_agent_evals.py -q
+  uv run pytest tests/pipelines/test_rag.py tests/pipelines/test_agent_evals.py -q
+  uv run python scripts/record_agent_traces.py   # regenerar fixtures (live)
+  ```
+- Diseño: `docs/rag/agent-design.md`. Fixtures:
+  `tests/pipelines/fixtures/agent_traces/`.
+
 ## Configuración de email (Recuperación de contraseña)
 
 Las variables del backend se cargan desde `services/api/.env` (via `python-dotenv` en `app/main.py`). El archivo `.env` NO se commitea (ya ignorado).

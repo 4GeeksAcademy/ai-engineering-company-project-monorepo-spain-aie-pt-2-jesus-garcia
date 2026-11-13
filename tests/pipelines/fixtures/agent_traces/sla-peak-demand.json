@@ -1,0 +1,148 @@
+{
+  "run_id": "sla-peak-demand",
+  "thread_id": "sla-peak-demand",
+  "question": "¿Se garantiza el SLA durante Black Friday o las Rebajas de enero?",
+  "status": "ok",
+  "answer": "No, no se garantiza el SLA de entrega durante los días de alta demanda declarados, como Black Friday, Navidad y las Rebajas de enero en España. Según el documento *sla-delivery*, sección \"SLA de Entrega\", TrackFlow no garantiza el SLA en esas fechas, y los tiempos de entrega pueden extenderse hasta un 40% adicional. Es obligatorio comunicar esto de forma proactiva a los clientes con anticipación.",
+  "error": null,
+  "started_at": "2026-11-13T16:18:54.372+00:00",
+  "finished_at": "2026-11-13T16:18:56.519+00:00",
+  "duration_ms": 2147.25,
+  "node_order": [
+    "receive_question",
+    "retrieve",
+    "generate"
+  ],
+  "events": [
+    {
+      "seq": 0,
+      "node": "receive_question",
+      "at": "2026-11-13T16:18:54.374+00:00",
+      "elapsed_ms": 2.53,
+      "checkpoint_id": "1f1df7de-bb71-6704-8001-d168b8ab8fe1",
+      "next_nodes": [
+        "retrieve"
+      ],
+      "output": {
+        "question": "¿Se garantiza el SLA durante Black Friday o las Rebajas de enero?",
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 1,
+      "node": "retrieve",
+      "at": "2026-11-13T16:18:54.982+00:00",
+      "elapsed_ms": 607.13,
+      "checkpoint_id": "1f1df7de-c13a-6f8c-8002-983c4bc9b56e",
+      "next_nodes": [
+        "generate"
+      ],
+      "output": {
+        "context_count": 2,
+        "sources": [
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 2,
+            "text": "TrackFlow no garantiza SLA de entrega los días de alta demanda declarados (Black Friday, Navidad, Rebajas de enero en España) — durante esas fechas los tiempos pueden extenderse hasta un 40% adicional, y esto debe comunicarse proactivamente a los clientes con anticipación."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 1,
+            "text": "El SLA comprometido contractualmente es un 90% de entregas a tiempo por mes, medido por país. Si un país cae por debajo del 90% durante dos meses consecutivos, el cliente tiene derecho a una compensación del 5% sobre la tarifa mensual de ese país, según el contrato estándar."
+          }
+        ],
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 2,
+      "node": "generate",
+      "at": "2026-11-13T16:18:56.516+00:00",
+      "elapsed_ms": 1534.72,
+      "checkpoint_id": "1f1df7de-cfdd-65da-8003-a1777148b5e8",
+      "next_nodes": [],
+      "output": {
+        "answer": "No, no se garantiza el SLA de entrega durante los días de alta demanda declarados, como Black Friday, Navidad y las Rebajas de enero en España. Según el documento *sla-delivery*, sección \"SLA de Entrega\", TrackFlow no garantiza el SLA en esas fechas, y los tiempos de entrega pueden extenderse hasta un 40% adicional. Es obligatorio comunicar esto de forma proactiva a los clientes con anticipación.",
+        "status": "ok",
+        "error": null
+      }
+    }
+  ],
+  "checkpoints": [
+    {
+      "step": 0,
+      "checkpoint_id": "1f1df7de-bb71-6704-8001-d168b8ab8fe1",
+      "next_nodes": [
+        "retrieve"
+      ],
+      "values": {
+        "question": "¿Se garantiza el SLA durante Black Friday o las Rebajas de enero?",
+        "status": "ok",
+        "error": null,
+        "run_id": "sla-peak-demand"
+      },
+      "created_at": "2026-11-13T16:18:54.374666+00:00"
+    },
+    {
+      "step": 1,
+      "checkpoint_id": "1f1df7de-c13a-6f8c-8002-983c4bc9b56e",
+      "next_nodes": [
+        "generate"
+      ],
+      "values": {
+        "question": "¿Se garantiza el SLA durante Black Friday o las Rebajas de enero?",
+        "context_count": 2,
+        "sources": [
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 2,
+            "text": "TrackFlow no garantiza SLA de entrega los días de alta demanda declarados (Black Friday, Navidad, Rebajas de enero en España) — durante esas fechas los tiempos pueden extenderse hasta un 40% adicional, y esto debe comunicarse proactivamente a los clientes con anticipación."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 1,
+            "text": "El SLA comprometido contractualmente es un 90% de entregas a tiempo por mes, medido por país. Si un país cae por debajo del 90% durante dos meses consecutivos, el cliente tiene derecho a una compensación del 5% sobre la tarifa mensual de ese país, según el contrato estándar."
+          }
+        ],
+        "status": "ok",
+        "error": null,
+        "run_id": "sla-peak-demand"
+      },
+      "created_at": "2026-11-13T16:18:54.981443+00:00"
+    },
+    {
+      "step": 2,
+      "checkpoint_id": "1f1df7de-cfdd-65da-8003-a1777148b5e8",
+      "next_nodes": [],
+      "values": {
+        "question": "¿Se garantiza el SLA durante Black Friday o las Rebajas de enero?",
+        "context_count": 2,
+        "sources": [
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 2,
+            "text": "TrackFlow no garantiza SLA de entrega los días de alta demanda declarados (Black Friday, Navidad, Rebajas de enero en España) — durante esas fechas los tiempos pueden extenderse hasta un 40% adicional, y esto debe comunicarse proactivamente a los clientes con anticipación."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 1,
+            "text": "El SLA comprometido contractualmente es un 90% de entregas a tiempo por mes, medido por país. Si un país cae por debajo del 90% durante dos meses consecutivos, el cliente tiene derecho a una compensación del 5% sobre la tarifa mensual de ese país, según el contrato estándar."
+          }
+        ],
+        "answer": "No, no se garantiza el SLA de entrega durante los días de alta demanda declarados, como Black Friday, Navidad y las Rebajas de enero en España. Según el documento *sla-delivery*, sección \"SLA de Entrega\", TrackFlow no garantiza el SLA en esas fechas, y los tiempos de entrega pueden extenderse hasta un 40% adicional. Es obligatorio comunicar esto de forma proactiva a los clientes con anticipación.",
+        "status": "ok",
+        "error": null,
+        "run_id": "sla-peak-demand"
+      },
+      "created_at": "2026-11-13T16:18:56.516004+00:00"
+    }
+  ]
+}
