@@ -1,11 +1,10 @@
-"""Tools de lectura en tiempo real del agente.
+"""Tools del agente: contratos, timeout y cliente MCP.
 
-Cada tool tiene una única responsabilidad y un contrato tipado:
-
-* ``incident_lookup`` — estado y datos de tickets del gestor de incidencias.
-* ``inventory_lookup`` — stock actual por producto y almacén.
-
-Ambas son de solo lectura, in-process y con timeout/fallback controlados.
+El agente NO accede directamente a TinyDB/SQLModel ni a los servicios REST: las
+dos tools se cargan e invocan desde el MCP Server mediante
+``langchain-mcp-adapters``. Los nombres lógicos ``incident_lookup`` e
+``inventory_lookup`` se conservan en el estado/traces; por debajo llaman a
+``query_incidents`` y ``query_inventory`` del MCP.
 """
 
 from __future__ import annotations
@@ -28,16 +27,33 @@ from .execution import (
     incident_timeout_seconds,
     inventory_timeout_seconds,
 )
-from .incidents import TOOL_NAME as INCIDENT_TOOL_NAME
-from .incidents import lookup_incident
-from .inventory import TOOL_NAME as INVENTORY_TOOL_NAME
-from .inventory import lookup_inventory
+from .mcp_auth import MCPAuthError, MCPSettings, MCPTokenProvider
+from .mcp_client import (
+    INCIDENT_TOOL_NAME,
+    INVENTORY_TOOL_NAME,
+    MCP_INCIDENT_TOOL,
+    MCP_INVENTORY_TOOL,
+    MCPToolClient,
+    MCPToolError,
+    get_mcp_client,
+    lookup_incident,
+    lookup_inventory,
+    mcp_timeout_seconds,
+    set_mcp_client_for_tests,
+)
 
 __all__ = [
     "DEFAULT_INCIDENT_TIMEOUT_SECONDS",
     "DEFAULT_INVENTORY_TIMEOUT_SECONDS",
     "INCIDENT_TOOL_NAME",
     "INVENTORY_TOOL_NAME",
+    "MCP_INCIDENT_TOOL",
+    "MCP_INVENTORY_TOOL",
+    "MCPAuthError",
+    "MCPSettings",
+    "MCPToolClient",
+    "MCPToolError",
+    "MCPTokenProvider",
     "IncidentLookup",
     "IncidentLookupInput",
     "IncidentLookupOutput",
@@ -48,8 +64,11 @@ __all__ = [
     "InventoryLookupOutput",
     "ToolTimeout",
     "call_with_timeout",
+    "get_mcp_client",
     "incident_timeout_seconds",
     "inventory_timeout_seconds",
     "lookup_incident",
     "lookup_inventory",
+    "mcp_timeout_seconds",
+    "set_mcp_client_for_tests",
 ]

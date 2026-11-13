@@ -1191,3 +1191,57 @@ RAG, tool o ambos.
   contra uvicorn temporal en :8010.
 - Ojo: `services/api/data/suppliers.json` está trackeado; el seed lo modifica.
   No commitear ese archivo.
+
+### Servidor MCP (`mcps/trackflow-mcp/`)
+- FastMCP (`mcp.server.fastmcp`, mcp 1.30) + **mcpauth 0.2.0b1 en modo
+  resource server** (sin la auth integrada de FastMCP).
+- PRM en `/.well-known/oauth-protected-resource/mcp` (resource con `/mcp`),
+  `bearer_auth_middleware("jwt", audience/resource, required_scopes=["mcp:read"])`
+  y `/health` público.
+- Scopes: `mcp:read` (query_incidents, get_incident_summary, query_inventory) y
+  `mcp:write` (create_incident, update_incident_status, adjust_inventory_stock).
+- Tools contra la API real: `POST /api/incidents`,
+  `PATCH /api/incidents/{id}/status`, `GET /api/incidents*`,
+  `GET /inventory/products`. La cuenta de servicio es `mcp-service@trackflow.com`
+  (manager) y solo se usa desde el servidor MCP.
+- Inventario solo lectura: `adjust_inventory_stock` siempre devuelve
+  `INVENTORY_READ_ONLY` (sin llamar a la API); `query_inventory` calcula stock
+  desde las órdenes.
+- Errores diferenciados: 401 (`missing_auth_header`, `invalid_token`,
+  `invalid_issuer`, `invalid_audience`), 403 (`missing_required_scopes`),
+  tool errors (`INSUFFICIENT_SCOPE`, `VALIDATION_ERROR`, `NOT_FOUND`,
+  `INVALID_STATUS_TRANSITION`, `INVENTORY_READ_ONLY`, `BACKEND_AUTH_FAILED`,
+  `BACKEND_TIMEOUT`, `BACKEND_UNAVAILABLE`, `INTERNAL_ERROR`).
+- Log JSON por invocación (`tool`, `client_id`, `subject`, `scopes`, `outcome`,
+  `error_code`, `duration_ms`, `backend_status`, argumentos saneados).
+- `scripts/mcp_smoke.py` (discovery + flujo por tool; `--write` opcional),
+  `README.md`, `VALIDATION.md`, `docs/mcp/README.md`.
+- Tests: `mcps/trackflow-mcp/.venv/bin/pytest -q` → **35 passed** (PRM, 401/403,
+  scopes, guard de inventario, tools contra doble de API, errores HTTP y logs).
+
+### Migración del agente al MCP
+- `app/agent/tools/mcp_client.py` — `MultiServerMCPClient` +
+  `load_mcp_tools`, `transport="streamable_http"`; timeout
+  `AGENT_MCP_TIMEOUT_SECONDS=10`; `_extract_payload` soporta artifact/structured
+  content y errores `isError`.
+- `app/agent/tools/mcp_auth.py` — cliente OAuth `client_credentials`
+  (`MCP_OAUTH_*`, `audience` para Auth0 y `resource` para RFC 8707), caché,
+  refresh e invalidación.
+- **Eliminados** `app/agent/tools/incidents.py` y `inventory.py`; el agente ya no
+  tiene camino directo a TinyDB/SQLModel ni al Incidents Manager.
+- El estado y los traces conservan `incident_lookup` / `inventory_lookup` como
+  nombres lógicos; por debajo llaman a `query_incidents` / `query_inventory`.
+- Fallback: MCP caído/timeout/sin token/scope insuficiente/no encontrado →
+  `answer_from_tool` con mensaje honesto y `status="ok"`; `/agent/query` no
+  devuelve 502 por un fallo de tool.
+- Tests nuevos: `services/api/tests/test_agent_tools.py` (13) y
+  `tests/test_agent_mcp_failures.py` (8); evals 23 siguen pasando.
+- Suite API completa: **259 passed**; `npm run typecheck` OK.
+
+### Pendiente MCP
+- Rellenar `mcps/trackflow-mcp/.env` y `services/api/.env` con el Client
+  ID/Secret de la app M2M `Test` de Auth0.
+- Ejecutar `scripts/mcp_smoke.py` con el token M2M y validar MCPJam con la URL
+  pública de Codespaces; guardar capturas en `docs/mcp/playground/`.
+- Subir el idle timeout del Codespace antes de la demo.
+- No commitear `services/api/data/suppliers.json`.

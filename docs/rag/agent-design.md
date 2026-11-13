@@ -121,20 +121,27 @@ el usuario pregunta en lenguaje natural y el agente decide.
 
 ## 6. Tools de lectura en tiempo real
 
-### 6.1 Transporte: in-process
+### 6.1 Transporte: MCP Server (Parte 3)
 
-El gestor de incidencias y el inventario viven en el **mismo servicio FastAPI**
-que el agente. Por eso las tools llaman a la misma capa de servicio/repositorio
-que las rutas REST:
+El agente **ya no llama directamente** a `incident_service` ni a
+`inventory_service`. Las tools se cargan desde el servidor MCP
+[`mcps/trackflow-mcp`](../../mcps/trackflow-mcp/README.md) con
+`langchain-mcp-adapters` (Streamable HTTP) y un token OAuth propio
+(`client_credentials`). El MCP llama a la API real:
 
-- `app/services/incident_service.py` — `find_incident`, `list_incidents`,
-  `to_incident`, `to_list_item`. Lo usan `GET /api/incidents` y la tool.
-- `app/services/inventory_service.py` — `list_skus_with_stock`,
-  `sku_to_read`. Lo usan `GET /inventory/products` y la tool.
+- `query_incidents` → `GET /api/incidents` y `GET /api/incidents/{id}`.
+- `get_incident_summary` → `GET /api/incidents/summary`.
+- `create_incident` → `POST /api/incidents`.
+- `update_incident_status` → `PATCH /api/incidents/{id}/status`.
+- `query_inventory` → `GET /inventory/products`.
+- `adjust_inventory_stock` → guard que **siempre** rechaza con
+  `INVENTORY_READ_ONLY` (no llama a la API).
 
-No existe un dataset paralelo ni datos hardcodeados. Las tools **no** hacen
-`insert`, `update` ni `remove`: solo leen TinyDB (`table.all()`) y SQLModel
-(`select()`).
+No existe un dataset paralelo ni datos hardcodeados. El agente solo tiene el
+scope `mcp:read`; las escrituras (`mcp:write`) no están disponibles para él.
+
+Los módulos directos `app/agent/tools/incidents.py` y `inventory.py` fueron
+eliminados. El único camino es `app/agent/tools/mcp_client.py`.
 
 ### 6.2 Contratos
 
@@ -156,12 +163,17 @@ usuario se propaga al estado (`user_role`) y la tool de tickets aplica la misma
 autorización que `GET /api/incidents` (`require_manager`): un usuario `user`
 recibe un fallback honesto de permisos y no ve datos de tickets.
 
-Al ser in-process **no hay salto HTTP ni token backend-a-backend que
-propagar**. Si en el futuro el gestor de incidencias se despliega como servicio
-separado, el transporte HTTP deberá leer una URL y un token de servicio desde
-entorno (`AGENT_INCIDENT_API_URL`, `AGENT_SERVICE_TOKEN`); el contrato y el
-fallback no cambian. La tool de inventario permite cualquier usuario
-autenticado, igual que la lectura de `GET /inventory/products`.
+El agente se autentica contra el MCP con un token OAuth propio
+(`MCP_OAUTH_*`, grant `client_credentials`). El JWT local de TrackFlow no se
+comparte con el MCP. El servidor MCP, a su vez, usa una cuenta de servicio
+`manager` contra la API (`TRACKFLOW_API_EMAIL/PASSWORD` o
+`TRACKFLOW_API_TOKEN`).
+
+La autorización de usuario se mantiene en el grafo: la tool de tickets exige
+rol `admin`/`manager` antes de invocar el MCP. El scope `mcp:read` del token M2M
+es una segunda barrera (mínimo privilegio). La tool de inventario permite
+cualquier usuario autenticado, igual que la lectura de
+`GET /inventory/products`.
 
 ### 6.4 Timeout y fallback
 
@@ -169,8 +181,11 @@ Cada llamada se ejecuta con `ThreadPoolExecutor` y un timeout numérico:
 
 | Variable | Default | Uso |
 |---|---|---|
-| `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` | `3` | Timeout de la tool de tickets. |
-| `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS` | `3` | Timeout de la tool de inventario. |
+| `AGENT_MCP_TIMEOUT_SECONDS` | `10` | Handshake MCP + tool + API. |
+
+Los timeouts antiguos `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` /
+`AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS` ya no intervienen en el camino de tools;
+se conservan por compatibilidad de configuración.
 
 Si se agota el timeout, la tool devuelve `error="timeout"` y el grafo sigue por
 `answer_from_tool`. Los mensajes son honestos:
