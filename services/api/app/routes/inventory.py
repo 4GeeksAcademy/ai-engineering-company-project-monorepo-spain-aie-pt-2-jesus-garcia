@@ -18,30 +18,17 @@ from schemas import (
 from app.core.cache import cache
 from app.core.dependencies import get_current_user, require_manager
 from app.services.inventory_service import (
-    compute_stock_by_warehouse,
     create_discrepancy,
     create_inbound,
     create_outbound,
+    list_skus_with_stock,
+    sku_to_read,
 )
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 INVENTORY_TTL = 15  # segundos
 INVENTORY_PREFIX = "inventory:"
-
-
-def _sku_to_read(sku: SKU, session: Session) -> SKURead:
-    by_warehouse = compute_stock_by_warehouse(session, sku.id)
-    return SKURead(
-        id=sku.id,
-        name=sku.name,
-        sku_code=sku.sku_code,
-        warehouse=sku.warehouse,
-        client_id=sku.client_id,
-        min_stock=sku.min_stock,
-        current_stock=sum(by_warehouse.values()),
-        current_stock_by_warehouse=by_warehouse,
-    )
 
 
 @router.get(
@@ -57,8 +44,7 @@ def list_products(
     hit = cache.get(key)
     if hit is not None:
         return hit
-    skus = session.exec(select(SKU)).all()
-    result = [_sku_to_read(sku, session) for sku in skus]
+    result = list_skus_with_stock(session)
     cache.set(key, result, ttl=INVENTORY_TTL)
     return result
 
@@ -80,7 +66,7 @@ def get_product(
     sku = session.get(SKU, product_id)
     if sku is None:
         raise HTTPException(status_code=404, detail=f"SKU {product_id} no encontrado.")
-    result = _sku_to_read(sku, session)
+    result = sku_to_read(session, sku)
     cache.set(key, result, ttl=INVENTORY_TTL)
     return result
 
@@ -107,7 +93,7 @@ def create_product(
     session.commit()
     session.refresh(sku)
     cache.delete_prefix(INVENTORY_PREFIX)
-    return _sku_to_read(sku, session)
+    return sku_to_read(session, sku)
 
 
 @router.post(
