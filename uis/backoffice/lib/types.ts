@@ -431,6 +431,10 @@ export interface PipelineRunTriggerResponse {
   status: string;
 }
 
+export interface KnowledgeQueryResponse {
+  answer: string;
+}
+
 export interface WeeklyPerformanceTotals {
   inboundUnits: number;
   outboundOrders: number;

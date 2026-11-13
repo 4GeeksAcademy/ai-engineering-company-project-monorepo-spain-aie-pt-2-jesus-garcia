@@ -21,6 +21,7 @@ dependencies = [
     "resend",
     "celery[redis]",
     "flower",
+    "qdrant-client>=1.20,<2",
 ]
 
 [dependency-groups]

@@ -954,3 +954,71 @@ sobre `data/raw/trackflow_sales.csv` (120 meses consolidados, 2016-01 → 2025-1
 - `docs/models-training-rag/artifacts/metrics.json` y `predictions_test.csv`.
 - `tests/pipelines/test_sales_forecast_split.py` — 11 tests (split 8/2, sin solape, causalidad, reproducibilidad y sanidad de métricas): **11 passed**.
 - `npm run typecheck` raíz OK. La suite completa `tests/pipelines` no colecciona por falta de `sqlalchemy` en el `.venv` raíz (dependencia preexistente del pipeline semanal, ajena a este cambio).
+
+## RAG y base de conocimiento — MILESTONE 7
+
+Implementación del asistente comercial sobre los cuatro documentos de
+`docs/company-knowledge-base/` (SLA, devoluciones, transportistas y tarifas de
+almacenamiento).
+
+### Infraestructura
+- `docker-compose.yml` — servicio `qdrant` (`qdrant/qdrant:v1.20.1`, puertos
+  `6333/6334`, volumen `qdrant-data`, healthcheck TCP), `services` depende de
+  él y monta `./data` y `./docs/company-knowledge-base`. `env_file` incluye
+  `services/api/.env` mediante `load_dotenv()` dentro del contenedor.
+- `services/api/requirements.txt` y `pyproject.toml` — `qdrant-client>=1.20,<2`,
+  `httpx`, `python-dotenv`.
+
+### Indexación (`data/process/`)
+- `rag_config.py` — colección `trackflow_knowledge`, modelos por defecto
+  (`pplx-embed-v1-0.6b` para embeddings, `deepseek-v4-flash` para generación),
+  1024 dimensiones, `RAG_MIN_SCORE=0.35`, rutas y tamaños de chunk. Carga
+  `services/api/.env` con prioridad sobre el `.env` raíz. `join_url()`,
+  `normalize_llm_base_url()` y `build_api_url()` toleran base con/sin `/`, `/v1`
+  o `/litellm` y construyen `{base}/v1/{embeddings|chat/completions}` con una
+  sola barra; `build_model_url()` concatena base + modelo.
+- `rag_index.py` — chunking híbrido por encabezado + bloques semánticos; 14
+  chunks (SLA 3, devoluciones 5, transportistas 3, almacenamiento 3), mínimo 3
+  por documento. `embed()`/`embed_batch()` con normalización L2, soporte de
+  `base64_int8` y lotes de 32. `setup()` borra/recrea la colección
+  (clean-and-reload) y usa UUID5 deterministas. CLI con `--dry-run` y
+  `--no-recreate`.
+
+### Recuperación y generación (`data/pipelines/rag.py`)
+- `retrieve(query, *, k=5, min_score)` — embed + Qdrant `query_points` con
+  `score_threshold`, filtro local y retorno de payloads (nunca objetos SDK).
+- `generate_answer(question, context)` — prompt de asistente comercial con voz
+  de vendedor, reglas de negocio (Black Friday/Rebajas, devoluciones
+  internacionales manuales, descuentos con aprobación de Miguel Torres) y
+  mensaje honesto sin contexto.
+- `query(question)` — composición literal de `retrieve()` + `generate_answer()`.
+
+### API y UI
+- `POST /knowledge/query` autenticado (`app/routes/knowledge.py`), body
+  `{"question": ...}`, response `{"answer": ...}`; errores 502/503 sin filtrar
+  detalles internos. Router incluido en `app/main.py`.
+- Backoffice: página `/knowledge` (“Asistente comercial”), sugerencias, estados
+  de carga/error/respuesta; `lib/knowledge-api.ts`, rewrite
+  `/api/knowledge/:path*` y entrada en el sidebar.
+
+### Evaluación y documentación
+- `data/eval/test-queries.json` — 12 preguntas que cubren los 4 documentos,
+  incluida Black Friday/Rebajas, devoluciones internacionales y descuentos.
+- `data/eval/evaluate_retrieval.py` — Recall@3 con acierto por
+  `source_document` + fragmento de texto; falla si < 80%. Modo `--in-memory`
+  para evaluar sin Docker (indexa en Qdrant en memoria).
+- Resultado real con embeddings de 4Geeks: **Recall@3 12/12 = 100%** con
+  `min_score=0.35`; artefacto en `data/eval/rag-retrieval-results.json`.
+- `docs/rag/rag-design.md` — flujo, chunking, embeddings, umbral,
+  idempotencia, API/UI y comandos.
+- Tests: `tests/pipelines/test_rag.py` (19 passed, stubs de Qdrant y LLM,
+  incluidos tests de construcción de URLs), `services/api/tests/test_knowledge.py`
+  (5 passed) y suite completa de la API (232 passed). Backoffice: 87 tests
+  Vitest, `npm run typecheck`, lint y build OK.
+
+### Pendiente
+- El daemon de Docker no estaba arrancado al validar; `docker compose config`
+  sí pasa. Queda pendiente levantar `qdrant` y probar el indexing contra el
+  servicio real (el flujo completo ya se validó con Qdrant en memoria).
+- `services/api/.env` ya tiene `LLM_BASE_URL=https://llm.4geeks.ai` y
+  `LLM_API_KEY`; la base tolera `/`, `/v1` y `/litellm`.

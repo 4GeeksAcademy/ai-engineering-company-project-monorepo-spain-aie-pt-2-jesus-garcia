@@ -160,6 +160,39 @@ cd uis/website && npm run dev
   Se inyecta con `session: Session = Depends(get_db)`. Nota: el **commit es explícito** (los services hacen `add → commit → refresh`), porque el teardown del `with` ocurre tras serializar la respuesta.
 - En tests, `tests/conftest.py` fija `DATABASE_URL="sqlite:///./test_inventory.db"` (antes de importar la app; `load_dotenv` no la sobreescribe) — la suite nunca toca Supabase. Tablas por `SQLModel.metadata.create_all(engine)` en el lifespan de `app/main.py`.
 
+## RAG — Base de conocimiento (MILESTONE 7)
+
+- Qdrant: servicio `qdrant` en `docker-compose.yml` (`qdrant/qdrant:v1.20.1`,
+  `:6333`, volumen `qdrant-data`). Colección `trackflow_knowledge`, vectores
+  de 1024 dimensiones y distancia coseno.
+- Indexación: `data/process/rag_index.py` (`setup`, `embed`,
+  `load_source_documents`, `chunk_document`). `setup()` usa clean-and-reload +
+  UUID5 deterministas para ser idempotente.
+- Consulta: `data/pipelines/rag.py` (`retrieve`, `generate_answer`, `query`).
+  `query()` compone `retrieve()` + `generate_answer()`.
+- Endpoint: `POST /knowledge/query` (`services/api/app/routes/knowledge.py`),
+  autenticado, respuesta `{"answer": "..."}`.
+- UI: `uis/backoffice/app/(protected)/knowledge/page.tsx` + rewrite
+  `/api/knowledge/*` y entrada “Asistente comercial” en el sidebar.
+- Config en `services/api/.env` (plantilla en `services/api/.env.example`):
+  `LLM_BASE_URL`, `LLM_API_KEY`, `EMBEDDING_MODEL`, `GENERATION_MODEL`,
+  `EMBEDDING_DIM`, `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`,
+  `RAG_TOP_K`, `RAG_MIN_SCORE`.
+- `LLM_BASE_URL` se normaliza (`normalize_llm_base_url`): tolera `/`, `/v1` y
+  `/litellm`; las llamadas son `{base}/v1/embeddings` y
+  `{base}/v1/chat/completions`, con el modelo en el body JSON. `join_url()` y
+  `build_model_url()` garantizan una sola barra.
+- Comandos:
+  ```bash
+  docker compose up -d qdrant
+  python -m data.process.rag_index --dry-run
+  python -m data.process.rag_index
+  python -m data.eval.evaluate_retrieval --k 3 --min-score 0.35
+  python -m pytest tests/pipelines/test_rag.py -q
+  ```
+- Diseño: `docs/rag/rag-design.md`. Eval: `data/eval/test-queries.json`
+  (12 preguntas, Recall@3 ≥ 80%).
+
 ## Configuración de email (Recuperación de contraseña)
 
 Las variables del backend se cargan desde `services/api/.env` (via `python-dotenv` en `app/main.py`). El archivo `.env` NO se commitea (ya ignorado).
