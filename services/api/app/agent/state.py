@@ -43,6 +43,12 @@ class AgentState(TypedDict, total=False):
     run_id: str
     """Identificador de corrida, también usado como ``thread_id``."""
 
+    session_id: str
+    """Sesión de conversación; agrupa los eventos del harness."""
+
+    policy_correction: str
+    """Corrección de país verificada por el harness; se inyecta como sistema."""
+
     user_role: str
     """Rol del usuario autenticado (admin/manager/user) para autorizar tools."""
 

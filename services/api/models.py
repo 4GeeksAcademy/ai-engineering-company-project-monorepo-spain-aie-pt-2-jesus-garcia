@@ -496,6 +496,31 @@ class TelemetryEventRecord(SQLModel, table=True):
     )
 
 
+class CustomerOrder(SQLModel, table=True):
+    """Pedido mínimo para autorizar consultas de tracking por sesión.
+
+    No sustituye al futuro servicio de tracking: solo guarda el propietario y
+    el país del pedido, que son los dos datos que necesita el guard para
+    rechazar accesos cruzados y para no mezclar políticas de país.
+    """
+
+    __tablename__ = "customer_order"
+    id: int | None = ORMField(default=None, primary_key=True)
+    order_ref: str = ORMField(index=True, unique=True, max_length=40)
+    owner_user_id: str | None = ORMField(default=None, max_length=64)
+    owner_email: str = ORMField(index=True, max_length=255)
+    country: str = ORMField(max_length=2)
+    carrier: str = ORMField(default="", max_length=40)
+    status: str = ORMField(default="", max_length=40)
+    delivered_at: datetime | None = ORMField(default=None)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
 class DeadLetterTask(SQLModel, table=True):
     """Tarea que agotó sus reintentos y se conserva para diagnóstico.
 

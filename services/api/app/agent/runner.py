@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .graph import get_agent_graph
+from .harness.orders import OrderResolver
+from .harness.runtime import screen_input, validate_output
 from .nodes import SAFE_ERROR_MESSAGE
 from .tracing import (
     CheckpointRecord,
@@ -36,6 +38,27 @@ class AgentResult:
     memory_validation_error: str | None = None
     memory_gate: bool = False
     memory_used: bool = False
+    guard_events: tuple[dict, ...] = ()
+
+
+def _finish_guard(
+    recorder: TraceRecorder,
+    *,
+    run_id: str,
+    status: str,
+    answer: str,
+    error: str | None = None,
+) -> AgentResult:
+    trace = recorder.finish(status=status, answer=answer, error=error)
+    trace_path = recorder.persist(trace)
+    return AgentResult(
+        run_id=run_id,
+        status=status,
+        answer=answer,
+        error=error,
+        trace_path=str(trace_path),
+        guard_events=tuple(recorder.guard_events),
+    )
 
 
 def run_agent(
@@ -46,6 +69,8 @@ def run_agent(
     thread_id: str | None = None,
     user: dict | None = None,
     memory_context: list[dict] | None = None,
+    session_id: str | None = None,
+    order_resolver: OrderResolver | None = None,
 ) -> AgentResult:
     """Invoca el grafo, registra cada transición y escribe el trace en disco.
 
@@ -59,24 +84,57 @@ def run_agent(
 
     ``memory_context`` es el bloque acotado de memoria aprobada que el servicio
     leyó antes de la corrida. El grafo no accede a la base de datos.
+
+    El harness se ejecuta en este borde: ``screen_input`` antes del grafo y
+    ``validate_output`` después. Un bloqueo o una respuesta determinista no
+    invoca el LLM, el RAG ni las tools.
     """
-    compiled = graph or get_agent_graph()
     run_id = thread_id or str(uuid.uuid4())
+    trace_session = session_id or run_id
     recorder = TraceRecorder(
         run_id=run_id,
         thread_id=run_id,
         question=question,
         trace_dir=trace_dir,
     )
-    config = {"configurable": {"thread_id": run_id}}
 
+    guard = screen_input(
+        question,
+        user=user,
+        run_id=run_id,
+        session_id=trace_session,
+        order_resolver=order_resolver,
+    )
+    recorder.record_guard_events(guard.events)
+
+    if guard.action == "blocked":
+        return _finish_guard(
+            recorder,
+            run_id=run_id,
+            status="blocked",
+            answer=guard.answer or SAFE_ERROR_MESSAGE,
+        )
+    if guard.action == "redirected":
+        return _finish_guard(
+            recorder,
+            run_id=run_id,
+            status="ok",
+            answer=guard.answer or SAFE_ERROR_MESSAGE,
+        )
+
+    compiled = graph or get_agent_graph()
+    config = {"configurable": {"thread_id": run_id}}
     initial_state: dict[str, Any] = {
-        "question": question,
+        "question": guard.question,
         "run_id": run_id,
+        "session_id": trace_session,
         "memory_context": list(memory_context or []),
     }
     if user and user.get("role"):
         initial_state["user_role"] = str(user["role"])
+    correction = guard.context.get("policy_correction")
+    if correction:
+        initial_state["policy_correction"] = str(correction)
 
     try:
         for chunk in compiled.stream(
@@ -115,6 +173,29 @@ def run_agent(
     status = str(final_values.get("status") or "error")
     answer = str(final_values.get("answer") or "")
     error = final_values.get("error")
+
+    authorized_orders = guard.context.get("authorized_orders") or []
+    authorized_refs = [
+        str(order.get("order_ref"))
+        for order in authorized_orders
+        if isinstance(order, dict) and order.get("order_ref")
+    ]
+    output = None
+    if status not in ("error", "invalid_question"):
+        output = validate_output(
+            answer,
+            required_country=guard.context.get("required_country"),
+            authorized_order_refs=authorized_refs,
+            run_id=run_id,
+            session_id=trace_session,
+            question=guard.question,
+        )
+        if output.event is not None:
+            recorder.record_guard_events([output.event])
+        if output.action == "blocked":
+            status = "blocked"
+        answer = output.answer
+
     trace = recorder.finish(status=status, answer=answer, error=error)
     trace_path = recorder.persist(trace)
 
@@ -132,6 +213,7 @@ def run_agent(
         memory_validation_error=final_values.get("memory_validation_error"),
         memory_gate=bool(final_values.get("memory_gate_applicable")),
         memory_used=bool(final_values.get("memory_used")),
+        guard_events=tuple(recorder.guard_events),
     )
 
 

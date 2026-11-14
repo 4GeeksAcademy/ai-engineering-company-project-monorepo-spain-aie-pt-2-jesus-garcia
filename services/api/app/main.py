@@ -37,6 +37,7 @@ from .routes.telemetry import router as telemetry_router
 from .routes.tasks import router as tasks_router
 from .routes.knowledge import router as knowledge_router
 from .routes.agent import router as agent_router
+from .routes.agent_harness import router as agent_harness_router
 from .routes.agent_memory import router as agent_memory_router
 from services.reporting.router import router as reporting_router
 
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(knowledge_router)
     app.include_router(agent_router)
+    app.include_router(agent_harness_router)
     app.include_router(agent_memory_router)
     app.include_router(reporting_router)
 

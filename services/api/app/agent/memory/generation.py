@@ -103,6 +103,7 @@ def generate_with_memory(
     context: list[dict],
     memory_context: list[dict] | None = None,
     *,
+    policy_correction: str | None = None,
     llm: JsonChat | None = None,
 ) -> GenerationOutcome:
     question = question.strip()
@@ -115,6 +116,7 @@ def generate_with_memory(
         question,
         context,
         memory_context or [],
+        policy_correction=policy_correction,
     )
     call = llm or chat_json
     parsed, raw = call(messages, max_tokens=1_100, temperature=0.1)
