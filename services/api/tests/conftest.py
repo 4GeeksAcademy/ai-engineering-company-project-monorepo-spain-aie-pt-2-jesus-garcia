@@ -1,16 +1,17 @@
 import io
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 os.environ["SECRET_KEY"] = os.environ.get("SECRET_KEY", "test-secret-key")
-os.environ["DATABASE_URL"] = "sqlite:///./test_inventory.db"
+_TEST_DIR = Path(tempfile.mkdtemp(prefix="trackflow-tests-"))
+_TEST_DB = _TEST_DIR / "test_inventory.db"
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
 
-# El fichero SQLite es un artefacto de test: se recrea en cada sesión para que
-# `SQLModel.metadata.create_all` aplique las columnas nuevas de los modelos.
-_TEST_DB = Path(__file__).resolve().parent.parent / "test_inventory.db"
-if _TEST_DB.exists():
-    _TEST_DB.unlink()
+# El fichero SQLite es un artefacto de test: vive en un directorio temporal
+# para no tocar bases trackeadas. `SQLModel.metadata.create_all` aplica el
+# esquema actual en el lifespan de la app.
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +20,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # `services/reporting` está fuera de services/api; se importa como
 # `services.reporting` con la raíz del monorepo en sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+# Los tests no deben mutar el TinyDB trackeado de la API. Se redirige a un
+# directorio temporal antes de importar la app (get_tinydb lee estos globals).
+import database  # noqa: E402
+
+_TINYDB_DIR = Path(tempfile.mkdtemp(prefix="trackflow-tests-"))
+database.DB_DIR = str(_TINYDB_DIR)
+database.DB_PATH = str(_TINYDB_DIR / "suppliers.json")
 
 from app.main import create_app  # noqa: E402
 from app.core.security import hash_password, create_token  # noqa: E402
@@ -55,6 +64,31 @@ def _clean_db():
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     db.close()
+
+
+@pytest.fixture(autouse=True)
+def _clean_agent_memory():
+    """Aísla las tablas de memoria del agente entre tests."""
+
+    from sqlmodel import Session, delete
+
+    from app.agent.memory.models import (
+        AgentMemoryAudit,
+        AgentMemoryEntry,
+        AgentMemoryProposal,
+    )
+    from database import engine
+
+    if engine is not None:
+        AgentMemoryProposal.__table__.create(engine, checkfirst=True)
+        AgentMemoryEntry.__table__.create(engine, checkfirst=True)
+        AgentMemoryAudit.__table__.create(engine, checkfirst=True)
+        with Session(engine) as session:
+            session.exec(delete(AgentMemoryAudit))
+            session.exec(delete(AgentMemoryProposal))
+            session.exec(delete(AgentMemoryEntry))
+            session.commit()
+    yield
 
 
 @pytest.fixture()

@@ -36,6 +36,31 @@ El worker también crea la tabla con `SQLModel.metadata.create_all` al arrancar;
 la migración es la vía explícita para entornos donde no se quiera depender de
 `create_all`.
 
+## 0004_agent_memory.sql
+
+- Tablas `agent_memory_entries`, `agent_memory_proposals` y `agent_memory_audit`.
+- **Store separado del RAG**: no crea ni modifica colecciones de Qdrant ni la
+  base de conocimiento (`trackflow_knowledge`).
+- Índice único parcial `ux_agent_memory_active_scope`: una sola entrada activa
+  por `scope_key`; las correcciones superseden la anterior y conservan versión.
+- Índice único parcial `ux_agent_memory_pending_user`: una sola propuesta
+  pendiente por usuario.
+- Checks de tipo de memoria, alcance y estado.
+- `agent_memory_audit` es append-only: propuestas, decisiones, bloqueos,
+  expiraciones, supersesiones y retiradas.
+
+Rollback:
+
+```sql
+drop table if exists public.agent_memory_audit;
+drop table if exists public.agent_memory_proposals;
+drop table if exists public.agent_memory_entries;
+```
+
+La API crea estas tablas en SQLite/tests con
+`app.agent.memory.models.create_agent_memory_tables`; la migración es la vía
+explícita para PostgreSQL/Supabase.
+
 ```bash
 # 1. backup (mismo procedimiento que 0001)
 pg_dump "$SUPABASE_DB_URL_DIRECT" \

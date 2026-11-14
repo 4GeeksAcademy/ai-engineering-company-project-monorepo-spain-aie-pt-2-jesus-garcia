@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .memory.validation import contains_forbidden, redact_text
+
 INDEX_FILENAME = "index.jsonl"
 TRACE_DIR_ENV_VAR = "AGENT_TRACE_DIR"
 
@@ -71,8 +73,45 @@ def summarize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
         if key == "tool_result":
             summary["tool_result"] = _summarize_tool_result(value)
             continue
+        if key == "memory_context":
+            items = value if isinstance(value, list) else []
+            summary["memory_context"] = [
+                {
+                    "id": item.get("id"),
+                    "memory_type": item.get("memory_type"),
+                    "scope_label": item.get("scope_label"),
+                    "fact": redact_text(str(item.get("fact") or ""))[:300],
+                }
+                for item in items
+                if isinstance(item, dict)
+            ]
+            summary["memory_context_count"] = len(items)
+            continue
+        if key == "memory_proposal":
+            summary["memory_proposal"] = _summarize_memory_proposal(value)
+            continue
         summary[key] = value
     return summary
+
+
+def _summarize_memory_proposal(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    fact = str(value.get("fact") or "")
+    forbidden = contains_forbidden(fact)
+    proposal = {
+        "memory_type": value.get("memory_type"),
+        "scope": value.get("scope"),
+        "fact": "[REDACTED]" if forbidden else redact_text(fact)[:600],
+        "reason": redact_text(str(value.get("reason") or ""))[:300] or None,
+        "source_quote": (
+            "[REDACTED]"
+            if forbidden
+            else redact_text(str(value.get("source_quote") or ""))[:400]
+        ),
+        "blocked": bool(forbidden),
+    }
+    return proposal
 
 
 def _summarize_tool_result(value: Any, *, description_limit: int = 200) -> Any:
@@ -228,6 +267,8 @@ class AgentTrace:
             label = labels.get(event.node)
             if label and label not in used:
                 used.append(label)
+            if event.output.get("memory_used") and "memory" not in used:
+                used.append("memory")
         return used
 
     def to_dict(self) -> dict[str, Any]:

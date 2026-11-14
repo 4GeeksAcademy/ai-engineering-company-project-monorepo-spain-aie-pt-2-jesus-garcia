@@ -69,3 +69,18 @@ class AgentState(TypedDict, total=False):
 
     tool_context_included: bool
     """True cuando el generador recibió además el resultado de una tool."""
+
+    memory_context: list[dict]
+    """Hechos aprobados y relevantes leídos del store antes de la corrida."""
+
+    memory_proposal: dict | None
+    """Propuesta de memoria validada que el servicio puede persistir."""
+
+    memory_validation_error: str | None
+    """Motivo por el que una propuesta del LLM fue descartada."""
+
+    memory_gate_applicable: bool
+    """True cuando una ruta determinista debe auto-evaluar memoria."""
+
+    memory_used: bool
+    """True cuando la respuesta final se apoyó en memoria aprobada."""

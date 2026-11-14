@@ -24,6 +24,7 @@ from sqlmodel import SQLModel
 
 from database import engine
 from models import HealthResponse
+from app.agent.memory.models import create_agent_memory_tables
 from app.telemetry.outbox import create_outbox_table
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
@@ -36,6 +37,7 @@ from .routes.telemetry import router as telemetry_router
 from .routes.tasks import router as tasks_router
 from .routes.knowledge import router as knowledge_router
 from .routes.agent import router as agent_router
+from .routes.agent_memory import router as agent_memory_router
 from services.reporting.router import router as reporting_router
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -52,6 +54,7 @@ TELEMETRY_ENDPOINT = os.getenv("TELEMETRY_ENDPOINT")
 async def lifespan(app: FastAPI):
     if engine is not None:
         SQLModel.metadata.create_all(engine)
+        create_agent_memory_tables(engine)
         create_outbox_table(engine)
     logger.info("Telemetry endpoint configured: %s", TELEMETRY_ENDPOINT or "<unset>")
     yield
@@ -97,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(knowledge_router)
     app.include_router(agent_router)
+    app.include_router(agent_memory_router)
     app.include_router(reporting_router)
 
     @app.exception_handler(Exception)

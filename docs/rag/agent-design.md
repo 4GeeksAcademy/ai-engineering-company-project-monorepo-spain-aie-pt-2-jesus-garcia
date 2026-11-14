@@ -23,9 +23,12 @@ clasificador que decide automáticamente si la pregunta necesita:
 - el gestor de inventario,
 - o una combinación de una tool + RAG.
 
-Los nodos **reutilizan** `retrieve()` y `generate_answer()` de
-`data/pipelines/rag.py`; no se reimplementa el pipeline y ningún nodo invoca
-`query()`.
+Los nodos **reutilizan** `retrieve()` y el prompt/transporte del pipeline RAG
+(`data/pipelines/rag.py`); desde la Parte 3, la generación añade el bloque de
+memoria y devuelve `respuesta + propuesta_memoria` en una sola llamada
+(`app/agent/memory/generation.py`). El contrato antiguo
+`generate_answer(question, context)` sigue disponible para `/knowledge/query` y
+para los evals que inyectan un generador de dos argumentos.
 
 ## 2. Flujo
 
@@ -88,7 +91,7 @@ tool son suficientes. El detalle de ejecución vive en el trace.
 | `tool_incident` | Consulta el gestor de incidencias (solo lectura). | `tools.lookup_incident` |
 | `tool_inventory` | Consulta stock por producto (solo lectura). | `tools.lookup_inventory` |
 | `retrieve` | Recupera chunks por encima de `RAG_MIN_SCORE`. | `rag.retrieve()` |
-| `generate` | Redacta con contexto RAG + resultado de tool. | `rag.generate_answer()` |
+| `generate` | Redacta con contexto RAG + resultado de tool + memoria y auto-evalúa la propuesta. | `rag.SYSTEM_PROMPT` + `memory.generate_with_memory()` |
 | `answer_from_tool` | Respuesta determinista con los datos de la tool. | — |
 | `no_context` | Respuesta honesta sin LLM. | `rag.NO_CONTEXT_ANSWER` |
 | `fail` | Salida terminal segura. | — |
@@ -347,3 +350,26 @@ reconstruir la imagen del servicio `api` si se cambian las dependencias.
   regenerarlos.
 - [`agent-evals-output-part2.txt`](agent-evals-output-part2.txt) — resultado de
   los evals nuevos (23 passed) y de los tests de tools/contrato (21 passed).
+
+## 14. Memoria persistente (Parte 3)
+
+La memoria del agente vive en un store aparte (`agent_memory_*` en
+PostgreSQL/Supabase), nunca en Qdrant ni en `trackflow_knowledge`. El agente
+auto-evalúa cada interacción en la misma llamada de generación (campo
+`propuesta_memoria`), propone el hecho en la misma respuesta y solo escribe tras
+una decisión explícita del usuario en el turno siguiente. En rutas
+deterministas, un gate decide si hace falta una única llamada de evaluación.
+
+- Diseño completo: [`../memory/agent-memory-design.md`](../memory/agent-memory-design.md).
+- Evidencia (aprobado, rechazado y bloqueado):
+  [`../memory/agent-memory-evidence.md`](../memory/agent-memory-evidence.md).
+- Endpoint: `POST /agent/chat`; administración en `/agent/memory*`.
+- Código: `services/api/app/agent/memory/`.
+- Tests: `services/api/tests/test_agent_memory.py`,
+  `services/api/tests/test_agent_chat.py` y
+  `tests/pipelines/test_agent_memory_evals.py`.
+
+El estado del grafo gana `memory_context`, `memory_proposal`,
+`memory_validation_error`, `memory_gate_applicable` y `memory_used`. El grafo
+solo decide y redacta; la persistencia y la resolución de propuestas las hace
+`app/agent/memory/service.py`.

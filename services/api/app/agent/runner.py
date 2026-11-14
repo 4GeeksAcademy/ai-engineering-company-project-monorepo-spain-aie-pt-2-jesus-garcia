@@ -32,6 +32,10 @@ class AgentResult:
     answer: str
     error: str | None
     trace_path: str
+    memory_proposal: dict | None = None
+    memory_validation_error: str | None = None
+    memory_gate: bool = False
+    memory_used: bool = False
 
 
 def run_agent(
@@ -41,6 +45,7 @@ def run_agent(
     trace_dir: str | Path | None = None,
     thread_id: str | None = None,
     user: dict | None = None,
+    memory_context: list[dict] | None = None,
 ) -> AgentResult:
     """Invoca el grafo, registra cada transición y escribe el trace en disco.
 
@@ -51,6 +56,9 @@ def run_agent(
     ``user`` es el usuario autenticado por el endpoint. Solo se propaga su rol
     al estado (nunca el token ni datos personales) para que la tool de tickets
     aplique la misma autorización que ``GET /api/incidents``.
+
+    ``memory_context`` es el bloque acotado de memoria aprobada que el servicio
+    leyó antes de la corrida. El grafo no accede a la base de datos.
     """
     compiled = graph or get_agent_graph()
     run_id = thread_id or str(uuid.uuid4())
@@ -62,7 +70,11 @@ def run_agent(
     )
     config = {"configurable": {"thread_id": run_id}}
 
-    initial_state: dict[str, Any] = {"question": question, "run_id": run_id}
+    initial_state: dict[str, Any] = {
+        "question": question,
+        "run_id": run_id,
+        "memory_context": list(memory_context or []),
+    }
     if user and user.get("role"):
         initial_state["user_role"] = str(user["role"])
 
@@ -112,6 +124,14 @@ def run_agent(
         answer=answer,
         error=error,
         trace_path=str(trace_path),
+        memory_proposal=(
+            final_values.get("memory_proposal")
+            if isinstance(final_values.get("memory_proposal"), dict)
+            else None
+        ),
+        memory_validation_error=final_values.get("memory_validation_error"),
+        memory_gate=bool(final_values.get("memory_gate_applicable")),
+        memory_used=bool(final_values.get("memory_used")),
     )
 
 
