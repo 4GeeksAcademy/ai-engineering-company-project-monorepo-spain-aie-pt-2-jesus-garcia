@@ -110,7 +110,9 @@ Propuesta y registro de decisión. Guarda `memory_type`, alcance, hecho,
 
 - Índice único parcial **`ux_agent_memory_pending_user`**: una sola propuesta
   `pending` por usuario. La regla “una a la vez” se refuerza en base de datos.
-- Estados: `pending`, `approved`, `rejected`, `edited`, `blocked`, `expired`.
+- Estados: `pending`, `approved`, `rejected`, `edited`, `blocked`, `expired`
+  (`expired` se conserva por compatibilidad; el silencio se resuelve como
+  `rejected` con `decision_label=unrelated`).
 
 ### `agent_memory_audit`
 
@@ -213,9 +215,10 @@ un **clasificador de intención estructurado** (LLM + Pydantic), nunca con
 - **Aprobación + nueva pregunta en el mismo mensaje:** el clasificador devuelve
   `pregunta_restante`; se resuelve la propuesta y se responde a la pregunta en
   el mismo turno.
-- **Propuesta sin respuesta:** caduca a las 24 h (`AGENT_MEMORY_PROPOSAL_TTL_
-  HOURS`) y se marca `expired`. El siguiente mensaje se responde con
-  normalidad.
+- **Propuesta sin respuesta:** a las 24 h (`AGENT_MEMORY_PROPOSAL_TTL_HOURS`)
+  se resuelve como **rechazo por defecto**: `status=rejected`,
+  `decision_label=unrelated` y auditoría `rejected` con
+  `default_reject: true`. El siguiente mensaje se responde con normalidad.
 - **Edición inválida** (cita no literal, contenido prohibido): se rechaza y no
   se escribe nada.
 
@@ -261,7 +264,7 @@ en `GET /agent/memory/proposals` (manager/admin).
 | TTL de contexto operativo | 7 días | Una huelga o congestión deja de ser cierta rápido; recordarla indefinidamente provoca respuestas obsoletas. |
 | Revisión de regla de carrier | 90 días | La cobertura cambia con los contratos; se conserva hasta la revisión, luego pasa a `stale` y deja de usarse. |
 | Revisión de preferencia B2B | 180 días | Las preferencias de reporting son estables, pero pueden cambiar con la relación comercial. |
-| TTL de propuesta pendiente | 24 h | El silencio no es aprobación; la propuesta caduca. |
+| TTL de propuesta pendiente | 24 h | El silencio no es aprobación: la propuesta se rechaza por defecto. |
 | Tope de entradas activas | 200 | Evita crecimiento sin control; primero expulsa lo episódico y lo más antiguo. |
 
 `consolidate()`:
@@ -273,8 +276,9 @@ en `GET /agent/memory/proposals` (manager/admin).
 5. Deduplica por `scope_key` (deja la versión más reciente).
 6. Aplica el tope de activas.
 
-Se ejecuta tras cada escritura y desde el CLI
-(`python -m app.agent.memory.consolidation`) y el endpoint de manager.
+Se ejecuta tras cada escritura exitosa (creación o resolución de una
+propuesta) y desde el CLI (`python -m app.agent.memory.consolidation`) y el
+endpoint de manager.
 
 **Olvido manual:** `POST /agent/memory/{id}/retire` retira una entrada con
 auditoría. **Olvido por corrección:** una nueva regla supersede la anterior; el
@@ -348,8 +352,9 @@ está protegido):
   tests). El contrato HTTP ya devuelve la tarjeta de propuesta y la resolución.
 - El gate de roles para reglas de carrier está implementado y desactivado por
   defecto; activarlo es una decisión de despliegue.
-- La traza del agente y la auditoría redactan PII; el mensaje original completo
-  no se persiste en claro cuando contiene datos prohibidos.
+- La traza del agente (pregunta, respuesta, memoria y descripciones de tools) y
+  la auditoría redactan PII; el mensaje original completo no se persiste en
+  claro cuando contiene datos prohibidos.
 
 ---
 

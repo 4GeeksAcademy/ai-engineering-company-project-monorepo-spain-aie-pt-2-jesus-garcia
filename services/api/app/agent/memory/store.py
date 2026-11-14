@@ -157,6 +157,16 @@ def _audit(
     )
 
 
+def _consolidate_after_write(session: Session) -> None:
+    """La limpieza es best-effort: nunca debe tumbar una escritura ya hecha."""
+
+    try:
+        consolidate(session)
+    except Exception:  # noqa: BLE001 - la escritura ya está confirmada
+        logger.exception("Fallo al consolidar memoria tras una escritura")
+        session.rollback()
+
+
 def _apply_scope(proposal: AgentMemoryProposal, scope: MemoryScope) -> None:
     proposal.scope_type = scope.kind
     proposal.scope_key = scope.key
@@ -201,17 +211,22 @@ def get_pending(
         return None
     now = config.utcnow()
     if auto_expire and _is_past(proposal.expires_at, now):
-        proposal.status = "expired"
+        proposal.status = "rejected"
         proposal.decision_label = "unrelated"
-        proposal.decision_message = "Sin respuesta del usuario; caducada."
+        proposal.decision_message = (
+            "Sin respuesta del usuario; rechazo por defecto."
+        )
         proposal.decision_at = now
         _audit(
             session,
-            action="expired",
+            action="rejected",
             actor_user_id=user_id,
             session_id=proposal.session_id,
             proposal_id=proposal.id,
-            detail={"reason": "proposal_ttl"},
+            detail={
+                "reason": "proposal_ttl",
+                "default_reject": True,
+            },
         )
         session.commit()
         return None
@@ -309,6 +324,7 @@ def create_proposal(
         },
     )
     session.commit()
+    _consolidate_after_write(session)
     return CreateProposalResult(created=True, proposal=proposal)
 
 
@@ -342,6 +358,7 @@ def _resolve_reject(
         },
     )
     session.commit()
+    _consolidate_after_write(session)
     return ResolveResult(
         ok=True,
         status="rejected",
@@ -549,6 +566,7 @@ def resolve_proposal(
         },
     )
     session.commit()
+    _consolidate_after_write(session)
     return ResolveResult(
         ok=True,
         status=proposal.status,
@@ -689,6 +707,8 @@ def read_memory(
 def expire_stale_proposals(
     session: Session | None, *, now: datetime | None = None
 ) -> int:
+    """Rechaza por defecto las propuestas pendientes vencidas (silencio)."""
+
     if session is None:
         return 0
     now = now or config.utcnow()
@@ -699,17 +719,22 @@ def expire_stale_proposals(
     for proposal in pending:
         if not _is_past(proposal.expires_at, now):
             continue
-        proposal.status = "expired"
+        proposal.status = "rejected"
         proposal.decision_label = "unrelated"
-        proposal.decision_message = "Sin respuesta del usuario; caducada."
+        proposal.decision_message = (
+            "Sin respuesta del usuario; rechazo por defecto."
+        )
         proposal.decision_at = now
         _audit(
             session,
-            action="expired",
+            action="rejected",
             actor_user_id=proposal.user_id,
             session_id=proposal.session_id,
             proposal_id=proposal.id,
-            detail={"reason": "proposal_ttl"},
+            detail={
+                "reason": "proposal_ttl",
+                "default_reject": True,
+            },
         )
         count += 1
     if count:
@@ -726,7 +751,7 @@ def consolidate(
         return {}
     now = now or config.utcnow()
     counts = {
-        "expired_proposals": expire_stale_proposals(session, now=now),
+        "rejected_stale_proposals": expire_stale_proposals(session, now=now),
         "expired_entries": 0,
         "stale_entries": 0,
         "superseded_duplicates": 0,

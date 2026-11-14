@@ -430,7 +430,55 @@ def test_pending_proposal_expires_without_answer(session):
     session.add(proposal)
     session.commit()
     assert store.get_pending(session, "u1") is None
-    assert session.get(AgentMemoryProposal, created.proposal.id).status == "expired"
+    expired = session.get(AgentMemoryProposal, created.proposal.id)
+    assert expired.status == "rejected"
+    assert expired.decision_label == "unrelated"
+    assert "rechazo por defecto" in (expired.decision_message or "")
+    rejections = [
+        item
+        for item in session.exec(select(AgentMemoryAudit)).all()
+        if item.action == "rejected"
+    ]
+    assert rejections
+    assert rejections[-1].detail.get("default_reject") is True
+    assert rejections[-1].detail.get("reason") == "proposal_ttl"
+
+
+def test_consolidation_rejects_expired_pending_proposals(session):
+    created = _propose(session, draft=carrier_draft(), message=SEUR_MESSAGE)
+    proposal = session.get(AgentMemoryProposal, created.proposal.id)
+    proposal.expires_at = config.utcnow() - timedelta(hours=1)
+    session.add(proposal)
+    session.commit()
+    counts = store.consolidate(session)
+    assert counts["rejected_stale_proposals"] == 1
+    proposal = session.get(AgentMemoryProposal, created.proposal.id)
+    assert proposal.status == "rejected"
+    assert proposal.decision_label == "unrelated"
+    assert session.exec(select(AgentMemoryEntry)).all() == []
+
+
+def test_consolidation_runs_after_successful_writes(session, monkeypatch):
+    calls: list[str] = []
+
+    def spy(session, **kwargs):
+        calls.append("consolidate")
+        return {}
+
+    monkeypatch.setattr(store, "consolidate", spy)
+    created = _propose(session, draft=carrier_draft(), message=SEUR_MESSAGE)
+    assert created.created is True
+    assert calls == ["consolidate"]
+    store.resolve_proposal(
+        session,
+        created.proposal.id,
+        user_id="u1",
+        user_role="user",
+        decision="approve",
+        decision_message="sí, guárdalo",
+        confidence=0.95,
+    )
+    assert calls == ["consolidate", "consolidate"]
 
 
 def test_unrelated_user_cannot_resolve_someone_elses_proposal(session):

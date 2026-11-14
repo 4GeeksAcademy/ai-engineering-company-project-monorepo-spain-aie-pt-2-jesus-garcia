@@ -11,7 +11,7 @@
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
 | MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
-| Memoria del agente — Parte 3 | ✅ Completado | Store `agent_memory_*`, `POST /agent/chat`, propuesta/confirmación/auditoría, consolidación y 70 tests de API + 14 evals |
+| Memoria del agente — Parte 3 | ✅ Completado | Store `agent_memory_*`, `POST /agent/chat`, propuesta/confirmación/auditoría, consolidación y 72 tests de API + 15 evals |
 
 ## Últimas decisiones
 
@@ -1301,18 +1301,22 @@ auditoría completa.
   `POST /agent/memory/consolidate`.
 
 ### Tests y evidencia
-- `services/api/tests/test_agent_memory.py` (57): scopes, validación, gate,
+- `services/api/tests/test_agent_memory.py` (59): scopes, validación, gate,
   store, versionado, TTL, consolidación, retirada, intención.
 - `services/api/tests/test_agent_chat.py` (13): ciclos aprobado/rechazado/
   editado, pregunta adicional en el mismo turno, aislamiento por usuario y
   contrato HTTP.
-- `tests/pipelines/test_agent_memory_evals.py` (14): una sola llamada RAG,
+- `tests/pipelines/test_agent_memory_evals.py` (15): una sola llamada RAG,
   gate en tool, respuesta desde memoria sin LLM, JSON inválido y cita no
   literal. Evals existentes: 23 passed.
-- Suite API completa: **329 passed**. Typecheck raíz OK.
+- Suite API completa: **331 passed**. Typecheck raíz OK.
 - `tests/conftest.py` redirige TinyDB y SQLite a directorios temporales: la
   suite ya no muta `services/api/data/suppliers.json` ni `test_inventory.db`
   (artefactos trackeados).
+- Ajustes post-revisión: el silencio caduca como `rejected` con
+  `decision_label=unrelated` (nunca aprobación); `consolidate()` se ejecuta tras
+  cada escritura exitosa; y las trazas redactan PII en pregunta, respuesta,
+  memoria y descripciones de tools.
 - Evidencia reproducible: `services/api/venv/bin/python
   scripts/demo_agent_memory.py` (aprobado, rechazado y bloqueado por dirección)
   → `docs/memory/agent-memory-evidence.md`.

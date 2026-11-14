@@ -73,6 +73,12 @@ def summarize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
         if key == "tool_result":
             summary["tool_result"] = _summarize_tool_result(value)
             continue
+        if key == "answer" and isinstance(value, str):
+            summary["answer"] = redact_text(value)
+            continue
+        if key == "question" and isinstance(value, str):
+            summary["question"] = redact_text(value)
+            continue
         if key == "memory_context":
             items = value if isinstance(value, list) else []
             summary["memory_context"] = [
@@ -132,8 +138,19 @@ def _summarize_tool_result(value: Any, *, description_limit: int = 200) -> Any:
 def _truncate_tool_record(item: dict, limit: int) -> dict:
     record = dict(item)
     description = record.get("description")
-    if isinstance(description, str) and len(description) > limit:
-        record["description"] = description[:limit].rstrip() + "…"
+    if isinstance(description, str):
+        record["description"] = redact_text(description)[:limit]
+        if len(record["description"]) >= limit:
+            record["description"] = record["description"].rstrip() + "…"
+    excerpt = record.get("description_excerpt")
+    if isinstance(excerpt, str):
+        record["description_excerpt"] = redact_text(excerpt)[:limit]
+    title = record.get("title")
+    if isinstance(title, str):
+        record["title"] = redact_text(title)[:120]
+    message = record.get("message")
+    if isinstance(message, str):
+        record["message"] = redact_text(message)[:300]
     return record
 
 
@@ -344,7 +361,7 @@ class TraceRecorder:
     ) -> None:
         self.run_id = run_id
         self.thread_id = thread_id
-        self.question = question
+        self.question = redact_text(question, limit=2_000)
         self.trace_dir = resolve_trace_dir(trace_dir)
         self.started_at = utc_now()
         self.events: list[TraceEvent] = []
@@ -395,7 +412,7 @@ class TraceRecorder:
             thread_id=self.thread_id,
             question=self.question,
             status=status,
-            answer=answer,
+            answer=redact_text(answer),
             error=error,
             started_at=self.started_at,
             finished_at=utc_now(),

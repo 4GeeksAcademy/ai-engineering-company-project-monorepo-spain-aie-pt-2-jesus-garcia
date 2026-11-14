@@ -344,6 +344,25 @@ def test_generation_trace_marks_memory_when_the_answer_uses_it(tmp_path):
     assert trace.sources_used == ["rag", "memory"]
 
 
+def test_trace_redacts_pii_in_question_answer_and_events(tmp_path):
+    question = "La entrega es en Calle Mayor 12, piso 3. ¿Qué carrier usamos?"
+    answer = "La entrega es en Calle Mayor 12, piso 3."
+
+    result, trace = run_traced(
+        tmp_path,
+        question,
+        retriever=lambda question: CHUNKS,
+        generator=lambda question, context: answer,
+    )
+    raw = Path(result.trace_path).read_text(encoding="utf-8")
+    assert "Calle Mayor" not in raw
+    assert "Calle Mayor" not in trace.question
+    assert "Calle Mayor" not in trace.answer
+    assert "[REDACTED_ADDRESS]" in raw
+    generate_event = node_event(trace, "generate")
+    assert "Calle Mayor" not in generate_event.output["answer"]
+
+
 # --- Generación con JSON estructurado ---------------------------------------
 
 

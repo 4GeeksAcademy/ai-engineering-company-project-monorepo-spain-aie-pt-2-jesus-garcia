@@ -258,11 +258,11 @@ Se cumple:
 ## Evals y tests que respaldan la evidencia
 
 ```text
-services/api/tests/test_agent_memory.py        57 passed
+services/api/tests/test_agent_memory.py        59 passed
 services/api/tests/test_agent_chat.py          13 passed
-tests/pipelines/test_agent_memory_evals.py     14 passed
+tests/pipelines/test_agent_memory_evals.py     15 passed
 tests/pipelines/test_agent_evals.py            23 passed (regresión)
-services/api (suite completa)                 329 passed
+services/api (suite completa)                 331 passed
 ```
 
 Comandos:

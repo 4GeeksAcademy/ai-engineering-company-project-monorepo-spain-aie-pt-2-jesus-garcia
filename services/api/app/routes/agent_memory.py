@@ -183,15 +183,15 @@ def agent_memory_manager_resolve(
             confidence=1.0,
             allow_other_user=True,
         )
-    if result.status == "not_found":
-        raise HTTPException(status_code=404, detail="La propuesta no existe.")
-    if result.status == "not_pending":
-        raise HTTPException(
-            status_code=409, detail="La propuesta ya está resuelta."
-        )
-    if not result.ok:
-        raise HTTPException(status_code=400, detail=result.message)
-    return resolution_view(result, proposal_id=proposal_id)
+        if result.status == "not_found":
+            raise HTTPException(status_code=404, detail="La propuesta no existe.")
+        if result.status == "not_pending":
+            raise HTTPException(
+                status_code=409, detail="La propuesta ya está resuelta."
+            )
+        if not result.ok:
+            raise HTTPException(status_code=400, detail=result.message)
+        return resolution_view(result, proposal_id=proposal_id)
 
 
 @router.post(
