@@ -316,3 +316,36 @@ MCP_SERVICE_PASSWORD=... venv/bin/python seed_mcp_service.py
 ## Estructura de directorios protegidos
 
 Ver `AGENTS.md` en la raíz para la lista de archivos/directorios que no deben modificarse sin confirmación.
+
+## Recepción de RFPs (MILESTONE 9, Parte 1)
+
+- Grafo: `data/pipelines/rfp_intake/` (LangGraph, independiente del agente CX).
+- API: `POST /rfp/tickets` (multipart PDF, 202 + Celery), `GET
+  /rfp/tickets`, `GET /rfp/tickets/{id}`, `GET /rfp/tickets/{id}/status`,
+  `GET /rfp/handoff/{id}`. Solo admin/manager.
+- PDFs subidos: `data/raw/rfp/{ticket_id}/` (artefacto runtime). El Markdown
+  convertido queda en la misma carpeta como `rfp.md`.
+- Async: Celery (`rfp_intake.process_ticket`) sobre el worker existente. El
+  worker de `docker-compose.yml` monta `./data:/app/data`.
+- Tablas SQLModel: `rfp_ticket`, `rfp_metadata`, `rfp_department_section`.
+  Migración: `services/api/migrations/0006_rfp_intake.sql`.
+- Dependencias nuevas: `markitdown[pdf]`, `pypdf`.
+- Variables: `RFP_RAW_DIR`, `RFP_MAX_UPLOAD_MB`, `RFP_TRACE_DIR`,
+  `RFP_LLM_TIMEOUT_SECONDS` (ver `.env.example`). Reutiliza `LLM_BASE_URL`,
+  `LLM_API_KEY` y `GENERATION_MODEL` de `services/api/.env`.
+- Comandos:
+  ```bash
+  # pipeline (sin Redis ni UI)
+  DATABASE_URL=sqlite:///./rfp_smoke.db \
+    services/api/venv/bin/python scripts/rfp_smoke.py \
+    --pdf docs/workflows/rfp-requests/trackflow-request-1.pdf
+  # reproceso manual
+  services/api/venv/bin/python scripts/rfp_reprocess.py --ticket-id <uuid>
+  # tests
+  services/api/venv/bin/python -m pytest tests/pipelines/test_rfp_*.py -q
+  cd services/api && ./venv/bin/python -m pytest tests/test_rfp_api.py -q
+  ```
+- UI: `/rfp` y `/rfp/[ticketId]` en `uis/backoffice`; rewrite `/api/rfp/*`;
+  polling cada 3 s mientras el ticket está `analizando`.
+- Diseño y contrato: `docs/workflows/RFP_INTAKE_DESIGN.md` y
+  `docs/workflows/RFP_INTAKE_HANDOFF.md`.

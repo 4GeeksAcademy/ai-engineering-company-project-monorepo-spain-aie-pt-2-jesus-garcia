@@ -39,6 +39,7 @@ from .routes.knowledge import router as knowledge_router
 from .routes.agent import router as agent_router
 from .routes.agent_harness import router as agent_harness_router
 from .routes.agent_memory import router as agent_memory_router
+from .routes.rfp import router as rfp_router
 from services.reporting.router import router as reporting_router
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_router)
     app.include_router(agent_harness_router)
     app.include_router(agent_memory_router)
+    app.include_router(rfp_router)
     app.include_router(reporting_router)
 
     @app.exception_handler(Exception)

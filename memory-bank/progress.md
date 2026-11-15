@@ -1374,3 +1374,85 @@ queda intacto para `/knowledge/query`; el prompt de CX vive en `app/`.
   seed de pedidos reales.
 - Smoke con LLM/Qdrant/MCP levantados (la suite y la demo usan dobles).
 - Valorar conectar `customer_order` al servicio real de tracking cuando exista.
+
+## MILESTONE_9 — Parte 1: Recepción de RFPs (rfp_intake)
+
+Implementado el pipeline de recepción de RFPs sobre el backend existente, sin
+segundo servicio HTTP y sin tocar el grafo CX.
+
+### Pipeline (`data/pipelines/rfp_intake/`)
+
+- `catalog.py` — catálogo cerrado de departamentos (`warehouse`/Ana Whitfield,
+  `lastmile`/Carlos Vega, `reverse`/Sofía Ramos), servicios (`warehousing`,
+  `last_mile`, `reverse_logistics`), alias ES/EN, país→moneda y preguntas
+  obligatorias por cifras ausentes.
+- `ingest.py` — PDF→Markdown con **MarkItDown** (obligatorio antes de cualquier
+  agente), metadatos del documento con `pypdf` y hash SHA-256.
+- `readability.py` — Flesch Reading Ease, Flesch-Kincaid, palabras/frases,
+  tokens estimados (`chars/4`), minutos de lectura, complejidad y coste. Se
+  documenta por qué no se usa `py-readability-metrics` (dependencia de datos
+  NLTK en runtime); fórmula equivalente y determinista.
+- `classifier.py` — agente RFP/no-RFP con guardarraíl determinista para pitches
+  de transportista; servicios desconocidos preservados en `unknown_services`.
+- `metadata.py` — agente de metadatos + normalización conservadora (país,
+  moneda, volumen `5,000`/`5.000`, deadline ISO, presupuesto literal). Nunca
+  rellena datos ausentes.
+- `orchestrator.py` — workstreams desde el catálogo; el LLM solo puede
+  enriquecer foco/keywords de departamentos ya activos. Extractos deterministas
+  por keywords/headings.
+- `worker.py` — worker por departamento con metadatos + extractos; guardarraíl
+  numérico descarta cifras no presentes en la RFP y pide confirmación; los
+  hechos canónicos (volumen/moneda/país) no se pueden sobrescribir.
+- `synthesizer.py` — handoff para Ventas con `key_aspects`, preguntas por
+  responsable, conflictos, `next_steps`, resumen y fuente.
+- `graph.py` — grafo LangGraph dedicado `rfp_intake`:
+  conversión → legibilidad → clasificación → metadatos → orquestación →
+  workers paralelos (`Send`) → synthesizer → `analisis_completo`.
+- `runner.py` — ejecución, traza JSON y marca durable de `error`.
+
+### Persistencia y API
+
+- `models.py` — `RfpTicket`, `RfpMetadata`, `RfpDepartmentSection` (SQLModel;
+  JSONB en PostgreSQL). Campos de borrador/evaluación/aprobación preparados para
+  Partes 2/3.
+- `app/services/rfp_service.py` — guardado del PDF en `data/raw/rfp/{ticket}/`,
+  creación de ticket, repositorio SQL con lock (los workers LangGraph corren en
+  paralelo y comparten sesión).
+- `app/routes/rfp.py` — `POST /rfp/tickets` (202 + Celery), listado, detalle,
+  polling de estado y `GET /rfp/handoff/{ticket_id}`. Solo admin/manager.
+- `app/tasks/rfp_intake.py` — tarea Celery `rfp_intake.process_ticket` con
+  reintentos, backoff y registro en DLQ. `worker` de Compose monta `./data`.
+- `migrations/0006_rfp_intake.sql` — DDL idempotente para Supabase (pendiente de
+  aplicar; tests usan SQLite).
+- Estados: `analizando` → `analisis_completo` | `descartado`; `error` para
+  fallo técnico terminal. No se usa `esperando_aprobación` en Parte 1.
+
+### UI (`uis/backoffice`)
+
+- `/rfp` — dropzone multi-PDF (un ticket por archivo), tarjetas de estado,
+  filtro y tabla con polling cada 3 s mientras haya tickets `analizando`.
+- `/rfp/[ticketId]` — metadatos, legibilidad/coste, razón de descarte, secciones
+  por departamento con `key_aspects`/preguntas y handoff para Ventas.
+- `lib/rfp-types.ts`, helpers en `lib/api.ts`, rewrite `/api/rfp/*`, entrada
+  “Recepción RFPs” en el sidebar. Tests Vitest del uploader y del listado.
+
+### Verificación
+
+- Tres PDFs reales de `docs/workflows/rfp-requests/` validados de forma síncrona
+  con `scripts/rfp_smoke.py` y LLM real:
+  - ModaViva → `analisis_completo`, `warehouse` + `reverse`, EUR, sin `lastmile`.
+  - Luna Cosmetics → `analisis_completo`, `warehouse` + `lastmile`, USD,
+    5.000 pedidos/mes.
+  - RapidShip → `descartado` con motivo de pitch de transportista.
+- `pytest` de pipeline: 36 passed; `tests/test_rfp_api.py`: 6 passed.
+- `uis/backoffice`: `tsc --noEmit`, ESLint y 91 tests Vitest OK.
+
+### Verificación E2E (API + Celery + UI, sin Supabase)
+
+- Stack local: uvicorn con SQLite + worker Celery sobre el Redis del compose +
+  backoffice en `:3002` proxyado a `:8002`.
+- Los 3 PDFs se subieron **por la UI** (`/rfp`); cada archivo creó su ticket y
+  la respuesta fue inmediata (202).
+- Resultado observado con polling de la UI: ModaViva y Luna
+  `analisis_completo` (EUR/USD correctos; Luna con 5.000 pedidos/mes y deadline
+  2026-08-24), RapidShip `descartado`; los tres en paralelo sin bloquearse.

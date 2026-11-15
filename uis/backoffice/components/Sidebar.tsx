@@ -26,6 +26,16 @@ const navItems = [
     ),
   },
   {
+    href: "/rfp",
+    label: "Recepción RFPs",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
+        <path fillRule="evenodd" d="M5.478 5.559A1.5 1.5 0 0 1 6.912 4.5H9A.75.75 0 0 0 9 3H6.912a3 3 0 0 0-2.868 2.118l-2.411 7.232a3 3 0 0 0-.075.293l-.001.001A3 3 0 0 0 4.5 16.5h15a3 3 0 0 0 2.943-3.646l-.001-.001a3 3 0 0 0-.075-.293l-2.411-7.232A3 3 0 0 0 17.088 3H15a.75.75 0 0 0 0 1.5h2.088a1.5 1.5 0 0 1 1.434 1.059l1.5 4.5a1.5 1.5 0 0 1-1.434 1.941H5.412a1.5 1.5 0 0 1-1.434-1.941l1.5-4.5Z" clipRule="evenodd" />
+        <path d="M3 19.5A2.25 2.25 0 0 1 5.25 17.25h13.5A2.25 2.25 0 0 1 21 19.5v.75a.75.75 0 0 1-1.5 0v-.75a.75.75 0 0 0-.75-.75H5.25a.75.75 0 0 0-.75.75v.75a.75.75 0 0 1-1.5 0v-.75Z" />
+      </svg>
+    ),
+  },
+  {
     href: "/suppliers",
     label: "Proveedores",
     icon: (
@@ -111,7 +121,9 @@ export function Sidebar() {
       </div>
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(`${item.href}/`));
           return (
             <Link
               key={item.href}
