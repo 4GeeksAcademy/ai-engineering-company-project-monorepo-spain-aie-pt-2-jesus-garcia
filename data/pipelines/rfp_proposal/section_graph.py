@@ -40,7 +40,22 @@ DEFAULT_MAX_ITERATIONS = 2
 
 
 def _event(stage: str, **extra) -> dict:
-    return {"stage": stage, **extra}
+    from datetime import datetime, timezone
+
+    agent = extra.pop("agent", None)
+    department_id = extra.get("department_id") or "departamento"
+    if agent is None:
+        agent = (
+            f"generator:{department_id}"
+            if stage == "generate"
+            else f"evaluator:{department_id}"
+        )
+    return {
+        "stage": stage,
+        "agent": agent,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **extra,
+    }
 
 
 def build_section_graph(

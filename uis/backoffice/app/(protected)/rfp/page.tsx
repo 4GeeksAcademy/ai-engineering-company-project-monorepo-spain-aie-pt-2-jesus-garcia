@@ -21,6 +21,7 @@ const FILTERS: Array<{ value: "" | RfpStatus; label: string }> = [
   { value: "en_evaluación", label: "En evaluación" },
   { value: "needs_human_review", label: "Revisión humana" },
   { value: "esperando_aprobación", label: "Esperando aprobación" },
+  { value: "terminado", label: "Terminado" },
   { value: "descartado", label: "Descartado" },
   { value: "error", label: "Error" },
 ];
@@ -32,6 +33,7 @@ const COUNT_STATUSES: RfpStatus[] = [
   "en_evaluación",
   "needs_human_review",
   "esperando_aprobación",
+  "terminado",
   "descartado",
   "error",
 ];

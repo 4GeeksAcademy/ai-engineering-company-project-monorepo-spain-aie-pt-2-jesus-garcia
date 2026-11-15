@@ -3,17 +3,39 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { fetchRfpTicket, friendlyError, startRfpProposal } from "@/lib/api";
+import {
+  fetchRfpApprovals,
+  fetchRfpFinalDocument,
+  fetchRfpTicket,
+  fetchRfpTrace,
+  friendlyError,
+  startRfpApprovals,
+  startRfpProposal,
+} from "@/lib/api";
 import {
   DEPARTMENT_LABELS,
   RFP_POLLING_STATUSES,
   SERVICE_LABELS,
   formatRfpDate,
+  type RfpApprovals,
+  type RfpFinalDocument,
+  type RfpTicketDetail,
+  type RfpTrace,
 } from "@/lib/rfp-types";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useAuth } from "@/contexts/AuthContext";
 import { RfpStatusBadge } from "@/components/rfp/RfpStatusBadge";
 import { ProposalSectionCard } from "@/components/rfp/ProposalSectionCard";
+import { ApprovalPanel } from "@/components/rfp/ApprovalPanel";
+import { FinalDocumentPanel } from "@/components/rfp/FinalDocumentPanel";
+import { TraceTimeline } from "@/components/rfp/TraceTimeline";
+
+interface RfpPageData {
+  ticket: RfpTicketDetail;
+  approvals: RfpApprovals;
+  trace: RfpTrace;
+  finalDocument: RfpFinalDocument | null;
+}
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
@@ -24,6 +46,21 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function emptyApprovals(ticket: RfpTicketDetail): RfpApprovals {
+  return {
+    ticket_id: ticket.ticket_id,
+    rfp_id: ticket.rfp_id,
+    status: ticket.status,
+    approval_status: ticket.approval_status,
+    thread_id: ticket.approval_thread_id,
+    run: 0,
+    max_rounds: 2,
+    pending: [],
+    decisions: [],
+    final_document_ready: ticket.final_document_ready,
+  };
+}
+
 export default function RfpDetailPage() {
   const params = useParams<{ ticketId: string }>();
   const ticketId = Array.isArray(params.ticketId)
@@ -31,18 +68,52 @@ export default function RfpDetailPage() {
     : params.ticketId;
   const { token } = useAuth();
   const [generating, setGenerating] = useState(false);
+  const [startingApprovals, setStartingApprovals] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
+  const [approvalStartError, setApprovalStartError] = useState<string | null>(
+    null,
+  );
 
-  const { data, loading, error, reload } = useAsyncData(
-    () => fetchRfpTicket(ticketId, token),
+  const { data, loading, error, reload } = useAsyncData<RfpPageData>(
+    async () => {
+      const ticket = await fetchRfpTicket(ticketId, token);
+      let approvals = emptyApprovals(ticket);
+      try {
+        approvals = await fetchRfpApprovals(ticketId, token);
+      } catch {
+        approvals = emptyApprovals(ticket);
+      }
+      let trace: RfpTrace = {
+        ticket_id: ticketId,
+        events: [],
+        arbitrations: [],
+      };
+      try {
+        trace = await fetchRfpTrace(ticketId, token);
+      } catch {
+        trace = { ticket_id: ticketId, events: [], arbitrations: [] };
+      }
+      let finalDocument: RfpFinalDocument | null = null;
+      if (ticket.final_document_ready) {
+        try {
+          finalDocument = await fetchRfpFinalDocument(ticketId, token);
+        } catch {
+          finalDocument = null;
+        }
+      }
+      return { ticket, approvals, trace, finalDocument };
+    },
     [ticketId, token],
     friendlyError,
   );
 
+  const ticket = data?.ticket;
   const isPolling =
-    !!data &&
-    (RFP_POLLING_STATUSES.includes(data.status) ||
-      data.proposal_status === "encolado");
+    !!ticket &&
+    (RFP_POLLING_STATUSES.includes(ticket.status) ||
+      ticket.proposal_status === "encolado" ||
+      ticket.approval_status === "resuming" ||
+      ticket.approval_status === "encolado");
 
   useEffect(() => {
     if (!isPolling) return;
@@ -63,11 +134,24 @@ export default function RfpDetailPage() {
     }
   }
 
+  async function handleStartApprovals() {
+    setStartingApprovals(true);
+    setApprovalStartError(null);
+    try {
+      await startRfpApprovals(ticketId, token);
+      reload();
+    } catch (err) {
+      setApprovalStartError(friendlyError(err));
+    } finally {
+      setStartingApprovals(false);
+    }
+  }
+
   if (loading && !data) {
     return <p className="text-sm text-slate-400">Cargando ticket…</p>;
   }
 
-  if (error || !data) {
+  if (error || !ticket || !data) {
     return (
       <div className="space-y-4">
         <Link href="/rfp" className="text-sm text-cyan-300 hover:text-cyan-200">
@@ -80,18 +164,35 @@ export default function RfpDetailPage() {
     );
   }
 
-  const metadata = data.metadata;
+  const metadata = ticket.metadata;
   const readability = metadata?.readability_metrics ?? {};
-  const classification = data.classification ?? {};
-  const handoff = data.handoff;
+  const classification = ticket.classification ?? {};
+  const handoff = ticket.handoff;
+  const approvalActive = ["pending", "resuming", "encolado"].includes(
+    ticket.approval_status ?? "",
+  );
   const canGenerateProposal =
-    data.handoff_status === "ready" &&
+    ticket.handoff_status === "ready" &&
     ["analisis_completo", "needs_human_review", "esperando_aprobación"].includes(
-      data.status,
-    );
-  const hasProposalSections = data.sections.some(
+      ticket.status,
+    ) &&
+    !approvalActive &&
+    ticket.status !== "terminado";
+  const hasProposalSections = ticket.sections.some(
     (section) => section.draft_content || section.evaluation_results,
   );
+  const canStartApprovals =
+    ["esperando_aprobación", "needs_human_review"].includes(ticket.status) &&
+    !["pending", "resuming", "encolado", "rejected"].includes(
+      ticket.approval_status ?? "",
+    ) &&
+    data.approvals.pending.length === 0 &&
+    data.approvals.decisions.length === 0;
+  const hasApprovals =
+    data.approvals.pending.length > 0 ||
+    data.approvals.decisions.length > 0 ||
+    ticket.status === "esperando_aprobación" ||
+    ticket.status === "terminado";
 
   return (
     <div className="space-y-6">
@@ -102,8 +203,8 @@ export default function RfpDetailPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">{data.rfp_id}</h1>
-            <RfpStatusBadge status={data.status} />
+            <h1 className="text-2xl font-bold text-white">{ticket.rfp_id}</h1>
+            <RfpStatusBadge status={ticket.status} />
           </div>
           <p className="mt-1 text-sm text-slate-300">
             {metadata?.client_name ?? "Cliente sin identificar"} ·{" "}
@@ -111,8 +212,8 @@ export default function RfpDetailPage() {
             {metadata?.currency ?? "moneda por confirmar"}
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            {data.original_filename} · etapa {data.pipeline_stage ?? "—"} ·
-            actualizado {formatRfpDate(data.updated_at)}
+            {ticket.original_filename} · etapa {ticket.pipeline_stage ?? "—"} ·
+            actualizado {formatRfpDate(ticket.updated_at)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -120,6 +221,16 @@ export default function RfpDetailPage() {
             <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
               Actualizando cada 3 s…
             </span>
+          )}
+          {canStartApprovals && (
+            <button
+              type="button"
+              onClick={handleStartApprovals}
+              disabled={startingApprovals}
+              className="rounded-lg border border-teal-500/40 bg-teal-500/15 px-3 py-2 text-xs font-semibold text-teal-200 transition hover:bg-teal-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {startingApprovals ? "Iniciando…" : "Iniciar aprobaciones"}
+            </button>
           )}
           {canGenerateProposal && (
             <button
@@ -130,13 +241,40 @@ export default function RfpDetailPage() {
             >
               {generating
                 ? "Encolando…"
-                : data.proposal_status
+                : ticket.proposal_status
                   ? "Regenerar propuesta"
                   : "Generar propuesta"}
             </button>
           )}
         </div>
       </header>
+
+      {ticket.status === "esperando_aprobación" && (
+        <div className="rounded-xl border border-teal-500/30 bg-teal-500/10 p-4 text-sm text-teal-100">
+          <p className="font-semibold">Aprobación humana pendiente</p>
+          <p className="mt-1">
+            Cada departamento aprueba su sección por separado. Las ramas ya
+            aprobadas no se bloquean entre sí.
+          </p>
+        </div>
+      )}
+
+      {ticket.status === "terminado" && (
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+          <p className="font-semibold">Documento final generado</p>
+          <p className="mt-1">
+            Todas las secciones activas están aprobadas y consolidadas. El
+            documento está disponible para Ventas.
+          </p>
+        </div>
+      )}
+
+      {approvalStartError && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <p className="font-semibold">No se pudo iniciar la aprobación</p>
+          <p className="mt-1">{approvalStartError}</p>
+        </div>
+      )}
 
       {proposalError && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -145,24 +283,33 @@ export default function RfpDetailPage() {
         </div>
       )}
 
-      {data.proposal_error && (
+      {ticket.proposal_error && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
           <p className="font-semibold">La generación de la propuesta falló</p>
-          <p className="mt-1">{data.proposal_error}</p>
+          <p className="mt-1">{ticket.proposal_error}</p>
         </div>
       )}
 
-      {data.status === "error" && data.error_message && (
+      {ticket.approval_error && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <p className="font-semibold">El flujo de aprobación falló</p>
+          <p className="mt-1">{ticket.approval_error}</p>
+        </div>
+      )}
+
+      {ticket.status === "error" && ticket.error_message && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
           <p className="font-semibold">El pipeline falló</p>
-          <p className="mt-1">{data.error_message}</p>
+          <p className="mt-1">{ticket.error_message}</p>
         </div>
       )}
 
-      {data.status === "descartado" && (
+      {ticket.status === "descartado" && (
         <div className="rounded-xl border border-slate-500/30 bg-slate-500/10 p-4 text-sm text-slate-200">
           <p className="font-semibold">Documento descartado</p>
-          <p className="mt-1">{data.discard_reason ?? "Sin motivo registrado."}</p>
+          <p className="mt-1">
+            {ticket.discard_reason ?? "Sin motivo registrado."}
+          </p>
           {typeof classification.reason === "string" && (
             <p className="mt-2 text-xs text-slate-400">
               Clasificador: {String(classification.document_type ?? "—")} ·
@@ -173,6 +320,23 @@ export default function RfpDetailPage() {
             </p>
           )}
         </div>
+      )}
+
+      {data.finalDocument && (
+        <FinalDocumentPanel
+          ticketId={ticket.ticket_id}
+          token={token}
+          document={data.finalDocument}
+        />
+      )}
+
+      {hasApprovals && (
+        <ApprovalPanel
+          ticketId={ticket.ticket_id}
+          token={token}
+          approvals={data.approvals}
+          onSubmitted={reload}
+        />
       )}
 
       {metadata && (
@@ -280,7 +444,7 @@ export default function RfpDetailPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
             Propuesta económica por departamento
           </h2>
-          {data.sections
+          {ticket.sections
             .filter(
               (section) =>
                 section.draft_content || section.evaluation_results,
@@ -298,12 +462,12 @@ export default function RfpDetailPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
           Aspectos clave por departamento
         </h2>
-        {data.sections.length === 0 ? (
+        {ticket.sections.length === 0 ? (
           <p className="rounded-xl border border-white/10 bg-slate-900/60 p-5 text-sm text-slate-400">
             Todavía no hay secciones departamentales.
           </p>
         ) : (
-          data.sections.map((section) => (
+          ticket.sections.map((section) => (
             <article
               key={section.department_id}
               className="rounded-xl border border-white/10 bg-slate-900/60 p-5"
@@ -415,6 +579,8 @@ export default function RfpDetailPage() {
           )}
         </section>
       )}
+
+      <TraceTimeline trace={data.trace} />
     </div>
   );
 }

@@ -42,7 +42,27 @@ def _markdown_path(pdf_path: str, known: str | None) -> str:
 
 
 def _event(stage: str, **extra) -> dict:
-    return {"stage": stage, **extra}
+    from datetime import datetime, timezone
+
+    agent = extra.pop("agent", None)
+    if agent is None:
+        if stage == "worker":
+            agent = f"worker:{extra.get('department_id') or 'departamento'}"
+        else:
+            agent = {
+                "validate_input": "orchestrator",
+                "convert_pdf": "converter",
+                "classify": "classifier",
+                "extract_metadata": "metadata_extractor",
+                "orchestrate": "orchestrator",
+                "synthesize": "synthesizer",
+            }.get(stage, "orchestrator")
+    return {
+        "stage": stage,
+        "agent": agent,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **extra,
+    }
 
 
 def build_rfp_graph(

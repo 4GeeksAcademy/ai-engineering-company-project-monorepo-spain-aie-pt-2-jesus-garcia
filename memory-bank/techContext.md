@@ -391,3 +391,53 @@ Ver `AGENTS.md` en la raíz para la lista de archivos/directorios que no deben m
   aviso de borrador provisional.
 - Diseño, contrato a la Parte 3: `docs/workflows/RFP_PROPOSAL_DESIGN.md`,
   `docs/workflows/RFP_PROPOSAL_HANDOFF.md`.
+
+### Hito 9 — Parte 3: aprobación humana y cierre
+
+- Grafo: `data/pipelines/rfp_approval/` (LangGraph; consume
+  `rfp-proposal-v1` + `rfp-intake-v1`, no reparsea el PDF).
+- Subgrafo por departamento con `interrupt()` y checkpointer durable
+  `SqliteSaver` (`langgraph-checkpoint-sqlite`). Hilos:
+  `rfp-{ticket_id}:run-{n}` y `rfp-{ticket_id}:run-{n}:{department}`.
+  Tickets concurrentes no comparten checkpoint.
+- Grafo de arbitraje `volume-vs-capacity` / `returns-sla-breach` /
+  `currency-mismatch` con árbitros fijos Miguel Torres / Sofía Ramos.
+- `request_changes` regenera solo la sección con `build_section_graph` de la
+  Parte 2; `reject` deja el ticket en `needs_human_review`.
+- Cierre: `final_gate` revalida §5 y genera `rfp-final-v1` en
+  `rfp_final_document` + `data/raw/rfp/{ticket_id}/propuesta-final.md`.
+- API (router `rfp`): `POST /rfp/tickets/{id}/approvals/start`,
+  `GET /rfp/tickets/{id}/approvals`,
+  `POST /rfp/tickets/{id}/approvals/{department}`,
+  `GET /rfp/tickets/{id}/final-document`,
+  `GET /rfp/tickets/{id}/final-document/download`,
+  `GET /rfp/tickets/{id}/trace`.
+- Async: Celery `rfp_approval.start_ticket` y `rfp_approval.resume_ticket`;
+  autoarranque al terminar la Parte 2 (`RFP_APPROVAL_AUTOSTART=1`).
+- Tablas: columnas de aprobación en `rfp_ticket`/`rfp_department_section`;
+  `rfp_node_trace`, `rfp_arbitration` y `rfp_final_document`. Migración:
+  `services/api/migrations/0008_rfp_approval.sql`.
+- Dependencia nueva: `langgraph-checkpoint-sqlite>=3.1,<4` (root `uv add` y
+  `services/api/requirements.txt`).
+- Variables: `RFP_APPROVAL_AUTOSTART`, `RFP_APPROVAL_MAX_ROUNDS`,
+  `RFP_APPROVAL_CHECKPOINT_BACKEND` (`sqlite`|`memory`),
+  `RFP_APPROVAL_CHECKPOINT_DB`, `RFP_APPROVAL_TRACE_DIR`.
+- Comandos:
+  ```bash
+  # tests del pipeline (venv raíz, con uv)
+  uv run pytest tests/pipelines/test_rfp_approval_*.py \
+    tests/pipelines/test_rfp_arbitration.py tests/pipelines/test_rfp_e2e.py -q
+  # API
+  cd services/api && ./venv/bin/python -m pytest tests/test_rfp_approval_api.py -q
+  # UI
+  cd uis/backoffice && npm test && npm run lint && npm run build
+  # E2E reproducible sin red (fixture + LLM guionizado)
+  services/api/venv/bin/python scripts/rfp_e2e.py
+  # E2E real (Parte 1 con LLM_API_KEY)
+  services/api/venv/bin/python scripts/rfp_e2e.py --live \
+    --pdf docs/workflows/rfp-requests/trackflow-request-1.pdf --keep
+  ```
+- UI: `ApprovalPanel`, `FinalDocumentPanel` y `TraceTimeline` en
+  `/rfp/[ticketId]`; polling mientras `approval_status` es `encolado`/`resuming`.
+- Diseño y contrato: `docs/workflows/RFP_APPROVAL_DESIGN.md` y
+  `docs/workflows/RFP_APPROVAL_HANDOFF.md`.

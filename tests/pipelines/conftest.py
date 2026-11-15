@@ -34,3 +34,9 @@ def _rfp_trace_dir(tmp_path, monkeypatch):
     monkeypatch.setenv(
         "RFP_PROPOSAL_TRACE_DIR", str(tmp_path / "rfp-proposal-traces")
     )
+    monkeypatch.setenv(
+        "RFP_APPROVAL_TRACE_DIR", str(tmp_path / "rfp-approval-traces")
+    )
+    monkeypatch.setenv(
+        "RFP_APPROVAL_CHECKPOINT_DB", str(tmp_path / "rfp-approval" / "checkpoints.db")
+    )

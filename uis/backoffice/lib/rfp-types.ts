@@ -5,6 +5,7 @@ export type RfpStatus =
   | "en_evaluación"
   | "needs_human_review"
   | "esperando_aprobación"
+  | "terminado"
   | "descartado"
   | "error";
 
@@ -15,6 +16,7 @@ export const RFP_STATUS_LABELS: Record<RfpStatus, string> = {
   "en_evaluación": "En evaluación",
   needs_human_review: "Revisión humana",
   "esperando_aprobación": "Esperando aprobación",
+  terminado: "Terminado",
   descartado: "Descartado",
   error: "Error",
 };
@@ -26,6 +28,7 @@ export const RFP_STATUS_STYLES: Record<RfpStatus, string> = {
   "en_evaluación": "bg-violet-500/15 text-violet-300 border-violet-500/30",
   needs_human_review: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   "esperando_aprobación": "bg-teal-500/15 text-teal-300 border-teal-500/30",
+  terminado: "bg-emerald-500/15 text-emerald-200 border-emerald-500/40",
   descartado: "bg-slate-500/15 text-slate-300 border-slate-500/30",
   error: "bg-rose-500/15 text-rose-300 border-rose-500/30",
 };
@@ -183,6 +186,10 @@ export interface RfpTicketDetail {
   handoff: RfpHandoff | null;
   proposal_status: string | null;
   proposal_error: string | null;
+  approval_status: string | null;
+  approval_thread_id: string | null;
+  approval_error: string | null;
+  final_document_ready: boolean;
   metadata: RfpMetadata | null;
   sections: RfpDepartmentSection[];
   created_at: string;
@@ -237,6 +244,7 @@ export interface RfpTicketStatus {
   status: RfpStatus;
   pipeline_stage: string | null;
   proposal_status: string | null;
+  approval_status: string | null;
   discard_reason: string | null;
   error_message: string | null;
   handoff_status: string;
@@ -281,7 +289,170 @@ export interface RfpProposal {
 }
 
 export function isTerminalRfpStatus(status: RfpStatus): boolean {
-  return !["analizando", "generando_borrador", "en_evaluación"].includes(status);
+  return ![
+    "analizando",
+    "generando_borrador",
+    "en_evaluación",
+    "esperando_aprobación",
+  ].includes(status);
+}
+
+export const RFP_APPROVAL_STATUS_LABELS: Record<string, string> = {
+  pending_approval: "Pendiente de aprobación",
+  approved: "Aprobada",
+  rejected: "Rechazada",
+  changes_requested: "Cambios solicitados",
+  encolado: "Encolado",
+  resuming: "Reanudando",
+  completed: "Completada",
+  rejected_run: "Rechazada",
+  error: "Error",
+};
+
+export const RFP_APPROVAL_STATUS_STYLES: Record<string, string> = {
+  pending_approval: "bg-teal-500/15 text-teal-300 border-teal-500/30",
+  approved: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  rejected: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  changes_requested: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  encolado: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+  resuming: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  completed: "bg-emerald-500/15 text-emerald-200 border-emerald-500/40",
+  rejected_run: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  error: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+};
+
+export interface RfpApprovalPacket {
+  department_id: string;
+  department_label: string | null;
+  responsible: string | null;
+  approval_status: string | null;
+  approval_round: number;
+  interrupt_id: string | null;
+  provisional: boolean;
+  packet: {
+    section_markdown?: string;
+    title?: string | null;
+    executive_summary?: string | null;
+    pricing?: Array<Record<string, unknown>>;
+    sla?: Record<string, unknown>;
+    discount_tiers?: Array<Record<string, unknown>>;
+    turnaround?: Record<string, unknown>;
+    capacity?: Record<string, unknown>;
+    carriers?: Array<Record<string, unknown>>;
+    assumptions?: string[];
+    open_questions?: string[];
+    evaluation?: RfpEvaluationResult | Record<string, unknown>;
+    client?: Record<string, unknown>;
+    client_country?: string | null;
+    currency?: string | null;
+    deadline?: string | null;
+    approval_round?: number;
+    max_rounds?: number;
+    allowed_actions?: string[];
+    conflicts?: Array<Record<string, unknown>>;
+    decision_requirements?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+}
+
+export interface RfpApprovalDecisionSummary {
+  department_id: string;
+  department_label: string | null;
+  responsible: string | null;
+  approval_status: string | null;
+  approver: string | null;
+  approved_at: string | null;
+  comment: string | null;
+  provisional: boolean;
+  approval_round: number;
+}
+
+export interface RfpApprovals {
+  ticket_id: string;
+  rfp_id: string | null;
+  status: RfpStatus;
+  approval_status: string | null;
+  thread_id: string | null;
+  run: number;
+  max_rounds: number;
+  pending: RfpApprovalPacket[];
+  decisions: RfpApprovalDecisionSummary[];
+  final_document_ready: boolean;
+}
+
+export type RfpApprovalAction = "approve" | "reject" | "request_changes";
+
+export interface RfpApprovalDecision {
+  action: RfpApprovalAction;
+  approver: string;
+  comment?: string | null;
+  interrupt_id: string;
+  acknowledge_provisional?: boolean;
+}
+
+export interface RfpApprovalResumeResponse {
+  ticket_id: string;
+  task_id: string | null;
+  department_id: string;
+  action: string;
+  status: string;
+  pending_remaining: number;
+}
+
+export interface RfpApprovalStartResponse {
+  ticket_id: string;
+  task_id: string | null;
+  status: string;
+}
+
+export interface RfpFinalDocument {
+  contract_version: string;
+  ticket_id: string;
+  currency: string | null;
+  sections: Array<Record<string, unknown>>;
+  approved_by: Array<{
+    department_id: string;
+    department_label: string;
+    responsible: string;
+    approver: string;
+    approved_at: string;
+    comment: string | null;
+    provisional: boolean;
+  }>;
+  markdown: string;
+  document_path: string | null;
+  generated_at: string | null;
+}
+
+export interface RfpTraceEvent {
+  event_id: string;
+  part: number;
+  sequence: number;
+  node: string;
+  agent: string | null;
+  department_id: string | null;
+  thread_id: string | null;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  timestamp: string | null;
+  duration_ms: number | null;
+}
+
+export interface RfpArbitration {
+  round: number;
+  trigger_id: string;
+  arbitrator: string | null;
+  rule: string | null;
+  affected_sections: string[];
+  resolution: Record<string, unknown>;
+  resolved: boolean;
+  created_at: string | null;
+}
+
+export interface RfpTrace {
+  ticket_id: string;
+  events: RfpTraceEvent[];
+  arbitrations: RfpArbitration[];
 }
 
 export function formatRfpDate(value: string | null): string {

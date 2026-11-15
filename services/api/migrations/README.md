@@ -238,3 +238,43 @@ alter table public.rfp_ticket
   drop column if exists proposal_task_id,
   drop column if exists proposal_error;
 ```
+
+## 0008_rfp_approval.sql
+
+- Amplía `rfp_ticket` con el run de aprobación: `approval_status`,
+  `approval_thread_id`, `approval_run`, `approval_task_id`,
+  `approval_started_at`, `approval_completed_at` y `approval_error`.
+- Amplía `rfp_department_section` con `approval_comment`,
+  `approval_decided_at`, `approval_round`, `approval_interrupt_id` y
+  `approval_packet` (paquete mínimo que ve el humano).
+- Crea `public.rfp_node_trace` (event_id único, `thread_id`, parte, secuencia,
+  nodo, agente, departamento, input/output JSONB, timestamp y duración).
+- Crea `public.rfp_arbitration` (ronda, trigger, árbitro fijo, regla,
+  secciones afectadas, resolución y estado).
+- Crea `public.rfp_final_document` (`ticket_id` único, contrato
+  `rfp-final-v1`, moneda, secciones, aprobadores, Markdown y ruta).
+- Reemplaza el check de estado para admitir `terminado`.
+- La API crea las tablas en SQLite/tests con `SQLModel.metadata.create_all`;
+  esta migración es la vía explícita para PostgreSQL/Supabase.
+
+Rollback:
+
+```sql
+drop table if exists public.rfp_final_document;
+drop table if exists public.rfp_arbitration;
+drop table if exists public.rfp_node_trace;
+alter table public.rfp_department_section
+  drop column if exists approval_comment,
+  drop column if exists approval_decided_at,
+  drop column if exists approval_round,
+  drop column if exists approval_interrupt_id,
+  drop column if exists approval_packet;
+alter table public.rfp_ticket
+  drop column if exists approval_status,
+  drop column if exists approval_thread_id,
+  drop column if exists approval_run,
+  drop column if exists approval_task_id,
+  drop column if exists approval_started_at,
+  drop column if exists approval_completed_at,
+  drop column if exists approval_error;
+```

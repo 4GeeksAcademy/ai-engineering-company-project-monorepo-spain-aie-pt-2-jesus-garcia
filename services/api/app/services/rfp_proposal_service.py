@@ -257,6 +257,12 @@ class SqlRfpProposalRepository:
         ticket.proposal_stage = status
         ticket.proposal_error = None
         ticket.error_message = None
+        # Una propuesta nueva invalida las aprobaciones de la ejecución anterior.
+        ticket.approval_status = None
+        ticket.approval_thread_id = None
+        ticket.approval_task_id = None
+        ticket.approval_completed_at = None
+        ticket.approval_error = None
         for section in handoff.get("sections") or []:
             row = self.session.exec(
                 select(RfpDepartmentSection).where(
@@ -269,6 +275,13 @@ class SqlRfpProposalRepository:
                 continue
             row.approval_status = section.get("approval_status")
             row.needs_human_review = bool(section.get("provisional"))
+            row.approver = None
+            row.approved_at = None
+            row.approval_comment = None
+            row.approval_decided_at = None
+            row.approval_round = 0
+            row.approval_interrupt_id = None
+            row.approval_packet = None
             if section.get("provisional"):
                 row.review_reason = section.get("review_reason")
             row.updated_at = datetime.now(timezone.utc)
