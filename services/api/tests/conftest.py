@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 
 os.environ["SECRET_KEY"] = os.environ.get("SECRET_KEY", "test-secret-key")
+# El bus SSE de tests es siempre local: nunca debe tocar un Redis real.
+os.environ["REALTIME_BROKER"] = "local"
 _TEST_DIR = Path(tempfile.mkdtemp(prefix="trackflow-tests-"))
 _TEST_DB = _TEST_DIR / "test_inventory.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"

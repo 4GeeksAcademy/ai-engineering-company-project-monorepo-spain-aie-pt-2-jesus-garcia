@@ -17,6 +17,8 @@ import type {
   TelemetryReport,
   PipelineRunLatest,
   PipelineRunTriggerResponse,
+  SlaEvaluationResponse,
+  SlaStatus,
   WeeklyPerformanceReport,
 } from "./types";
 import type {
@@ -391,6 +393,23 @@ export async function triggerPipelineRun(
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data ?? {}),
+  });
+}
+
+export async function fetchSlaStatus(
+  token?: string | null,
+): Promise<SlaStatus> {
+  return request<SlaStatus>("/api/reporting/sla-status", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function evaluateSla(
+  token?: string | null,
+): Promise<SlaEvaluationResponse> {
+  return request<SlaEvaluationResponse>("/api/reporting/sla/evaluate", {
+    method: "POST",
+    headers: authHeaders(token),
   });
 }
 

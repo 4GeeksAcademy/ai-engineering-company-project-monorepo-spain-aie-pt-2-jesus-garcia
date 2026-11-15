@@ -36,6 +36,7 @@ from schemas import (
     RfpUploadResponse,
 )
 from app.core.dependencies import require_manager
+from app.realtime.events import publish_rfp_ticket_created
 from app.services.rfp_approval_service import (
     SqlRfpApprovalRepository,
     get_approvals,
@@ -141,6 +142,10 @@ def upload_ticket(
         task_id,
         safe_name,
     )
+    # Notificación en tiempo real: el ticket acaba de entrar al sistema con
+    # status=analizando. Los metadatos de la RFP aún no existen; el pipeline
+    # los publicará en `rfp_ticket_metadata_ready`.
+    publish_rfp_ticket_created(ticket)
     return RfpUploadResponse(
         ticket_id=ticket.id,
         rfp_id=ticket.rfp_id,

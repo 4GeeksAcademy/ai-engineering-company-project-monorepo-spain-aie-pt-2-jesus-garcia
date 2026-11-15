@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
         destination: `${backend}/rfp/:path*`,
       },
       {
+        source: "/api/realtime/:path*",
+        destination: `${backend}/realtime/:path*`,
+      },
+      {
         source: "/api/suppliers/:path*",
         destination: `${backend}/api/suppliers/:path*`,
       },

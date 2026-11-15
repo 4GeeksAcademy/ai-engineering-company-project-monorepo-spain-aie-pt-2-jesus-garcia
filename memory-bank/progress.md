@@ -16,6 +16,7 @@
 | Hito 9 — Parte 1: Recepción de RFPs | ✅ Completado | `data/pipelines/rfp_intake/` (clasificador, metadatos, orchestrator-worker-synthesizer), ticket + handoff en PostgreSQL, Celery, UI de recepción y tests |
 | Hito 9 — Parte 2: Generación y evaluación | ✅ Completado | `data/pipelines/rfp_proposal/` (generador por departamento, evaluadores paralelos de legibilidad/pertinencia/compliance, ciclo con límite), persistencia de borradores/evals, API y UI de propuesta |
 | Hito 9 — Parte 3: Aprobación humana y cierre | ✅ Completado | `data/pipelines/rfp_approval/` (interrupt por departamento con checkpointer, arbitraje fijo, traza por nodo, documento final), API/UI, migración 0008 y E2E Partes 1→3 (seeded + live) |
+| Tiempo real (Parte 1) — SSE de RFPs y alerta SLA | ✅ Completado | `GET /realtime/stream` (JWT manager, `rfp_ticket_created`, `rfp_ticket_metadata_ready`, `sla_threshold_alert`, keep-alive, replay `Last-Event-ID`), bus local/Redis, dashboard `/rfp` en vivo con backoff + snapshot/dedupe y banner de SLA en `/reporting` |
 
 ## Últimas decisiones
 
@@ -1551,3 +1552,35 @@ segundo servicio HTTP y sin tocar el grafo CX.
   `docs/workflows/RFP_PROPOSAL_POLICY.md` (pendiente de validar por Miguel
   Torres). Contrato del handoff a la Parte 3 en
   `docs/workflows/RFP_PROPOSAL_HANDOFF.md`.
+
+## Tiempo real (Parte 1) — SSE de RFPs + alerta de SLA
+
+- `GET /realtime/stream` (manager+): una conexión SSE independiente por
+  pestaña, protegida con el mismo JWT del backoffice. `Content-Type:
+  text/event-stream`, `Cache-Control: no-cache, no-transform`,
+  `X-Accel-Buffering: no`, keep-alive `: keep-alive` cada 15 s y preámbulo
+  `retry: 3000`.
+- Bus de eventos en `app/realtime/broker.py`: `LocalBroker` (dev/tests) y
+  `RedisBroker` (pub/sub + buffer corto de replay). Con `REDIS_URL` definido
+  —Docker— el evento nace en el worker Celery y llega a la API; sin Redis,
+  solo funciona el proceso único. `REALTIME_BROKER=local|redis` lo fuerza.
+- Eventos nombrados y con payload de la entidad (sin sobre): `rfp_ticket_created`
+  al registrar el ticket (`status=analizando`, metadatos aún null) y
+  `rfp_ticket_metadata_ready` cuando el pipeline confirma RFP válida y guarda
+  cliente/país/servicios (mismo `ticket_id`, la UI enriquece sin duplicar).
+- `sla_threshold_alert` (< 90 % por país; Thomas Harry y Ana Whitfield) sobre el
+  read model `reporting.delivery_sla_weekly`. Endpoints
+  `GET /reporting/sla-status` y `POST /reporting/sla/evaluate` (idempotente por
+  semana/país). Semana demo: `scripts/seed_delivery_sla.py`.
+- Frontend: `lib/sse.ts` (`fetch` + `ReadableStream`, parser incremental,
+  backoff 1→30 s con jitter, `Last-Event-ID`, watchdog de inactividad 45 s y sin
+  reintento en 401/403); `useRfpRealtime` aplica snapshot-after-stream y dedupe
+  por `ticket_id`; panel `RfpLiveFeed` en `/rfp` y `SlaAlertBanner` en
+  `/reporting`.
+- Migración `services/api/migrations/0009_delivery_sla.sql`; rewrite
+  `/api/realtime/*` en `next.config.ts`.
+- Tests: `services/api/tests/test_realtime_{sse,broker,sla}.py` (wire real,
+  replay, auth, umbral 90 %) y Vitest `lib/__tests__/sse.test.ts`,
+  `hooks/__tests__/useRfpRealtime.test.tsx`, banner de SLA. Verificación manual
+  en `docs/real-time-communication/verification.md`; diseño y respuestas en
+  `docs/real-time-communication/SSE_DESIGN.md`.

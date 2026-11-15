@@ -26,6 +26,8 @@ for _parent in Path(__file__).resolve().parents:
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from app.realtime.events import publish_rfp_ticket_metadata_ready
+
 from data.pipelines.rfp_intake.catalog import DEPARTMENT_ORDER
 from data.pipelines.rfp_intake.repository import TicketNotFoundError
 from models import (
@@ -397,6 +399,7 @@ class SqlRfpRepository:
         classification: dict,
     ) -> None:
         ticket = self._get(ticket_id)
+        is_first_metadata = ticket.classification is None
         row = self._metadata(ticket_id)
         row.client_name = metadata.get("client_name")
         row.client_country = metadata.get("client_country")
@@ -430,6 +433,11 @@ class SqlRfpRepository:
         self.session.add(row)
         self.session.add(ticket)
         self.session.commit()
+        if is_first_metadata:
+            # El pipeline confirmó que el documento es una RFP válida y ya
+            # conoce cliente/país/servicios: se enriquece la notificación que
+            # se emitió al registrar el ticket (mismo ticket_id, sin duplicar).
+            publish_rfp_ticket_metadata_ready(ticket, row)
 
     @_synchronized
     def save_plan(self, ticket_id: str, *, departments: list[str]) -> None:
