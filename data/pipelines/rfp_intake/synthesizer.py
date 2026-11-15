@@ -225,6 +225,17 @@ def build_handoff(
         "currency": metadata.get("currency"),
         "services_requested": metadata.get("services_requested", []),
         "unknown_services": metadata.get("unknown_services", []),
+        # Datos canónicos que la Parte 2 necesita para cotizar sin volver a
+        # leer el PDF. Campo aditivo: los handoffs anteriores a la Parte 2
+        # siguen siendo válidos (la Parte 2 cae a `rfp_metadata`).
+        "rfp_facts": {
+            "monthly_volume": metadata.get("monthly_volume"),
+            "sku_count": metadata.get("sku_count"),
+            "return_volume": metadata.get("return_volume"),
+            "return_rate": metadata.get("return_rate"),
+            "deadline": metadata.get("deadline"),
+            "budget_range": metadata.get("budget_range"),
+        },
         "departments": departments,
         "questions_to_ask": _questions_to_ask(metadata, sections),
         "conflicts": conflicts,

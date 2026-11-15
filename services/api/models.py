@@ -546,6 +546,16 @@ RFP_STATUS_ANALYZING = "analizando"
 RFP_STATUS_COMPLETE = "analisis_completo"
 RFP_STATUS_DISCARDED = "descartado"
 RFP_STATUS_ERROR = "error"
+# Hito 9, Parte 2 — generación y evaluación de secciones.
+RFP_STATUS_DRAFTING = "generando_borrador"
+RFP_STATUS_EVALUATING = "en_evaluación"
+RFP_STATUS_NEEDS_REVIEW = "needs_human_review"
+RFP_STATUS_AWAITING_APPROVAL = "esperando_aprobación"
+
+RFP_SECTION_GENERATING = "generando"
+RFP_SECTION_EVALUATING = "en_evaluación"
+RFP_SECTION_PASSED = "evaluated_pass"
+RFP_SECTION_NEEDS_REVIEW = "needs_human_review"
 
 RFP_HANDOFF_NONE = "none"
 RFP_HANDOFF_READY = "ready"
@@ -556,6 +566,10 @@ class RfpTicketStatus(StrEnum):
     analisis_completo = RFP_STATUS_COMPLETE
     descartado = RFP_STATUS_DISCARDED
     error = RFP_STATUS_ERROR
+    generando_borrador = RFP_STATUS_DRAFTING
+    en_evaluación = RFP_STATUS_EVALUATING
+    needs_human_review = RFP_STATUS_NEEDS_REVIEW
+    esperando_aprobación = RFP_STATUS_AWAITING_APPROVAL
 
 
 class RfpTicket(SQLModel, table=True):
@@ -595,6 +609,20 @@ class RfpTicket(SQLModel, table=True):
     handoff_at: datetime | None = ORMField(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    proposal_status: str | None = ORMField(default=None, max_length=40)
+    proposal_stage: str | None = ORMField(default=None, max_length=60)
+    proposal_payload: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    proposal_ready_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    proposal_task_id: str | None = ORMField(default=None, max_length=64)
+    proposal_error: str | None = ORMField(default=None, max_length=2000)
     created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -735,9 +763,82 @@ class RfpDepartmentSection(SQLModel, table=True):
     approved_at: datetime | None = ORMField(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    # Hito 9, Parte 2 — borrador y evaluación.
+    draft_payload: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    generation_status: str | None = ORMField(default=None, max_length=40)
+    iteration_count: int = ORMField(default=0)
+    needs_human_review: bool = ORMField(default=False)
+    review_reason: str | None = ORMField(default=None)
+    last_feedback: str | None = ORMField(default=None)
     created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )
     updated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpSectionEvaluation(SQLModel, table=True):
+    """Histórico de cada iteración del ciclo generador-evaluador.
+
+    ``rfp_department_section.evaluation_results`` guarda el último
+    ``EvaluationResult``; esta tabla conserva la traza completa para auditar el
+    ciclo y calcular las iteraciones medias por sección.
+    """
+
+    __tablename__ = "rfp_section_evaluation"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id",
+            "department_id",
+            "iteration",
+            name="uq_rfp_section_evaluation_ticket_department_iteration",
+        ),
+        Index(
+            "ix_rfp_section_evaluation_ticket",
+            "ticket_id",
+            "department_id",
+        ),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    department_id: str = ORMField(index=True, max_length=20)
+    iteration: int = ORMField(default=1)
+    overall_pass: bool = ORMField(default=False)
+    readability: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    relevance: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    compliance: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    feedback: str | None = ORMField(default=None)
+    created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )

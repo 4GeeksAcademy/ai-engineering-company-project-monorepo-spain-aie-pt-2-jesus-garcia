@@ -36,6 +36,14 @@ o leer directamente `rfp_ticket` donde `handoff_status = 'ready'`.
   "currency": "EUR",
   "services_requested": ["warehousing", "reverse_logistics"],
   "unknown_services": [],
+  "rfp_facts": {
+    "monthly_volume": null,
+    "sku_count": 15000,
+    "return_volume": null,
+    "return_rate": null,
+    "deadline": "2026-08-28",
+    "budget_range": null
+  },
   "departments": [
     {
       "department_id": "warehouse",
@@ -90,6 +98,10 @@ o leer directamente `rfp_ticket` donde `handoff_status = 'ready'`.
    inventarlos.
 5. `source.pdf_path` / `source.markdown_path` existen solo para trazabilidad;
    la Parte 2 no necesita reconvertir el PDF.
-6. Los campos `draft_content`, `evaluation_results`, `approval_status`,
+6. `rfp_facts` es el bloque canónico de datos de la RFP que la Parte 2 usa para
+   cotizar sin reparsear. Campo aditivo del contrato `rfp-intake-v1`: si un
+   payload antiguo no lo trae, la Parte 2 lee los mismos datos de
+   `rfp_metadata`.
+7. Los campos `draft_content`, `evaluation_results`, `approval_status`,
    `approver` y `approved_at` de `rfp_department_section` quedan preparados para
    escribir el resultado de la Parte 2/3 sin migrar el esquema.

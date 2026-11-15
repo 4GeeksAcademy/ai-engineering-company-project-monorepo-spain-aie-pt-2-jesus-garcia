@@ -20,6 +20,8 @@ import type {
   WeeklyPerformanceReport,
 } from "./types";
 import type {
+  RfpProposal,
+  RfpProposalStartResponse,
   RfpTicketDetail,
   RfpTicketListItem,
   RfpTicketStatus,
@@ -432,6 +434,30 @@ export async function fetchRfpTicketStatus(
 ): Promise<RfpTicketStatus> {
   return request<RfpTicketStatus>(
     `/api/rfp/tickets/${encodeURIComponent(ticketId)}/status`,
+    { headers: authHeaders(token) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Generación de propuestas (Hito 9, Parte 2)
+// ---------------------------------------------------------------------------
+
+export async function startRfpProposal(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpProposalStartResponse> {
+  return request<RfpProposalStartResponse>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/proposal`,
+    { method: "POST", headers: authHeaders(token) },
+  );
+}
+
+export async function fetchRfpProposal(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpProposal> {
+  return request<RfpProposal>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/proposal`,
     { headers: authHeaders(token) },
   );
 }

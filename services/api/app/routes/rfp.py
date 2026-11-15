@@ -9,14 +9,27 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlmodel import Session
 
 from database import get_db
-from models import RFP_STATUS_ANALYZING, RFP_STATUS_ERROR, RfpTicket
+from models import (
+    RFP_HANDOFF_READY,
+    RFP_STATUS_ANALYZING,
+    RFP_STATUS_AWAITING_APPROVAL,
+    RFP_STATUS_COMPLETE,
+    RFP_STATUS_DRAFTING,
+    RFP_STATUS_ERROR,
+    RFP_STATUS_EVALUATING,
+    RFP_STATUS_NEEDS_REVIEW,
+    RfpTicket,
+)
 from schemas import (
+    RfpProposalRead,
+    RfpProposalStartResponse,
     RfpTicketListItem,
     RfpTicketRead,
     RfpTicketStatusRead,
     RfpUploadResponse,
 )
 from app.core.dependencies import require_manager
+from app.services.rfp_proposal_service import get_proposal_detail
 from app.services.rfp_service import (
     MAX_UPLOAD_BYTES,
     RfpUploadError,
@@ -28,10 +41,22 @@ from app.services.rfp_service import (
     store_pdf_bytes,
 )
 from app.tasks.rfp_intake import process_rfp_ticket
+from app.tasks.rfp_proposal import generate_proposal
+from data.pipelines.rfp_proposal.contract import (
+    HandoffContractError,
+    parse_intake_handoff,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rfp", tags=["rfp"])
+
+ACTIVE_PROPOSAL_STATUSES = {RFP_STATUS_DRAFTING, RFP_STATUS_EVALUATING}
+READY_PROPOSAL_STATUSES = {
+    RFP_STATUS_COMPLETE,
+    RFP_STATUS_NEEDS_REVIEW,
+    RFP_STATUS_AWAITING_APPROVAL,
+}
 
 
 @router.post(
@@ -160,3 +185,100 @@ def get_rfp_handoff(
             detail="El ticket todavía no tiene un handoff disponible.",
         )
     return ticket.handoff_payload
+
+
+@router.post(
+    "/tickets/{ticket_id}/proposal",
+    response_model=RfpProposalStartResponse,
+    status_code=202,
+    summary="Generar y evaluar la propuesta desde el handoff de la Parte 1",
+)
+def start_rfp_proposal(
+    ticket_id: str,
+    _=Depends(require_manager),
+    session: Session = Depends(get_db),
+) -> RfpProposalStartResponse:
+    ticket = get_ticket(session, ticket_id)
+
+    if ticket.status in ACTIVE_PROPOSAL_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya hay una generación de propuesta en curso para este ticket.",
+        )
+    if ticket.proposal_status == "encolado":
+        raise HTTPException(
+            status_code=409,
+            detail="La generación de propuesta ya está encolada para este ticket.",
+        )
+    if ticket.status not in READY_PROPOSAL_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El ticket no está listo para la Parte 2: debe estar en "
+                "'analisis_completo' (o en revisión) con el handoff marcado "
+                f"como listo. Estado actual: {ticket.status}."
+            ),
+        )
+    if ticket.handoff_status != RFP_HANDOFF_READY:
+        raise HTTPException(
+            status_code=409,
+            detail="El ticket todavía no tiene el handoff de la Parte 1.",
+        )
+
+    try:
+        parse_intake_handoff(ticket.handoff_payload, ticket_id=ticket.id)
+    except HandoffContractError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"El handoff de la Parte 1 no es válido: {exc}",
+        ) from exc
+
+    ticket.proposal_status = "encolado"
+    ticket.proposal_stage = "encolado"
+    ticket.proposal_error = None
+    session.add(ticket)
+    session.commit()
+
+    try:
+        async_result = generate_proposal.delay(ticket.id)
+        task_id = async_result.id
+    except Exception as exc:  # pragma: no cover - broker caído
+        logger.exception("No se pudo encolar la propuesta %s", ticket.id)
+        ticket.proposal_status = "error"
+        ticket.proposal_error = f"No se pudo encolar la generación: {exc}"[:2000]
+        session.add(ticket)
+        session.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo encolar la generación de la propuesta.",
+        ) from exc
+
+    ticket.proposal_task_id = task_id
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    logger.info(
+        "rfp_proposal_enqueue ticket=%s rfp_id=%s task_id=%s",
+        ticket.id,
+        ticket.rfp_id,
+        task_id,
+    )
+    return RfpProposalStartResponse(
+        ticket_id=ticket.id,
+        task_id=task_id,
+        status=ticket.status,
+    )
+
+
+@router.get(
+    "/tickets/{ticket_id}/proposal",
+    response_model=RfpProposalRead,
+    summary="Borradores, evaluaciones y estado de la propuesta",
+)
+def get_rfp_proposal(
+    ticket_id: str,
+    _=Depends(require_manager),
+    session: Session = Depends(get_db),
+) -> RfpProposalRead:
+    return get_proposal_detail(session, ticket_id)

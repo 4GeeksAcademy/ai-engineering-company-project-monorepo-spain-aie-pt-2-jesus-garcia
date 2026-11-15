@@ -20,7 +20,7 @@ celery_app = Celery(
     "trackflow",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=("app.tasks.incidents", "app.tasks.rfp_intake"),
+    include=("app.tasks.incidents", "app.tasks.rfp_intake", "app.tasks.rfp_proposal"),
 )
 
 celery_app.conf.update(

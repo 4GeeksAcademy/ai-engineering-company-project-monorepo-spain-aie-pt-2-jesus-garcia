@@ -176,6 +176,13 @@ class RfpDepartmentSectionRead(BaseModel):
     unsupported_claims: list[dict] = []
     approval_status: str | None = None
     approver: str | None = None
+    draft_content: str | None = None
+    draft_payload: dict | None = None
+    evaluation_results: dict | None = None
+    generation_status: str | None = None
+    iteration_count: int = 0
+    needs_human_review: bool = False
+    review_reason: str | None = None
 
 
 class RfpTicketStatusRead(BaseModel):
@@ -183,10 +190,48 @@ class RfpTicketStatusRead(BaseModel):
     rfp_id: str
     status: str
     pipeline_stage: str | None = None
+    proposal_status: str | None = None
     discard_reason: str | None = None
     error_message: str | None = None
     handoff_status: str = "none"
     updated_at: datetime
+
+
+class RfpProposalStartResponse(BaseModel):
+    ticket_id: str
+    task_id: str | None = None
+    status: str
+
+
+class RfpProposalSectionRead(BaseModel):
+    section_id: str
+    department_id: str
+    department_label: str | None = None
+    responsible: str | None = None
+    status: str
+    provisional: bool = False
+    iteration_count: int = 0
+    draft_content: str | None = None
+    draft_payload: dict | None = None
+    evaluation_results: dict | None = None
+    review_reason: str | None = None
+    approval_status: str | None = None
+    approver: str | None = None
+
+
+class RfpProposalRead(BaseModel):
+    ticket_id: str
+    rfp_id: str | None = None
+    status: str
+    generated_at: str | None = None
+    client: dict = {}
+    client_country: str | None = None
+    currency: str | None = None
+    services_requested: list[str] = []
+    sections: list[RfpProposalSectionRead] = []
+    needs_human_review_sections: list[str] = []
+    metrics: dict = {}
+    source_handoff: dict = {}
 
 
 class RfpTicketRead(BaseModel):
@@ -203,6 +248,8 @@ class RfpTicketRead(BaseModel):
     error_message: str | None = None
     handoff_status: str = "none"
     handoff: dict | None = None
+    proposal_status: str | None = None
+    proposal_error: str | None = None
     metadata: RfpMetadataRead | None = None
     sections: list[RfpDepartmentSectionRead] = []
     created_at: datetime

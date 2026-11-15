@@ -202,3 +202,39 @@ drop table if exists public.rfp_department_section;
 drop table if exists public.rfp_metadata;
 drop table if exists public.rfp_ticket;
 ```
+
+## 0007_rfp_proposal.sql
+
+- Amplía `rfp_ticket` con el ciclo de la propuesta: `proposal_status`,
+  `proposal_stage`, `proposal_payload` (contrato `rfp-proposal-v1`),
+  `proposal_ready_at`, `proposal_task_id` y `proposal_error`.
+- Amplía `rfp_department_section` con `draft_payload`, `generation_status`,
+  `iteration_count`, `needs_human_review`, `review_reason` y `last_feedback`.
+- Crea `public.rfp_section_evaluation`, histórico por
+  `(ticket_id, department_id, iteration)` con `readability`, `relevance`,
+  `compliance` y `feedback`.
+- Reemplaza el check de estado del ticket para admitir `generando_borrador`,
+  `en_evaluación`, `needs_human_review` y `esperando_aprobación`.
+- La API sigue creando las tablas en SQLite/tests con
+  `SQLModel.metadata.create_all`; esta migración es la vía explícita para
+  PostgreSQL/Supabase.
+
+Rollback:
+
+```sql
+drop table if exists public.rfp_section_evaluation;
+alter table public.rfp_department_section
+  drop column if exists draft_payload,
+  drop column if exists generation_status,
+  drop column if exists iteration_count,
+  drop column if exists needs_human_review,
+  drop column if exists review_reason,
+  drop column if exists last_feedback;
+alter table public.rfp_ticket
+  drop column if exists proposal_status,
+  drop column if exists proposal_stage,
+  drop column if exists proposal_payload,
+  drop column if exists proposal_ready_at,
+  drop column if exists proposal_task_id,
+  drop column if exists proposal_error;
+```

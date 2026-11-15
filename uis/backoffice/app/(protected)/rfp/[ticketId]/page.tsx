@@ -1,17 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { fetchRfpTicket, friendlyError } from "@/lib/api";
+import { fetchRfpTicket, friendlyError, startRfpProposal } from "@/lib/api";
 import {
   DEPARTMENT_LABELS,
+  RFP_POLLING_STATUSES,
   SERVICE_LABELS,
   formatRfpDate,
 } from "@/lib/rfp-types";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useAuth } from "@/contexts/AuthContext";
 import { RfpStatusBadge } from "@/components/rfp/RfpStatusBadge";
+import { ProposalSectionCard } from "@/components/rfp/ProposalSectionCard";
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
@@ -28,6 +30,8 @@ export default function RfpDetailPage() {
     ? params.ticketId[0]
     : params.ticketId;
   const { token } = useAuth();
+  const [generating, setGenerating] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
 
   const { data, loading, error, reload } = useAsyncData(
     () => fetchRfpTicket(ticketId, token),
@@ -35,11 +39,29 @@ export default function RfpDetailPage() {
     friendlyError,
   );
 
+  const isPolling =
+    !!data &&
+    (RFP_POLLING_STATUSES.includes(data.status) ||
+      data.proposal_status === "encolado");
+
   useEffect(() => {
-    if (!data || data.status !== "analizando") return;
+    if (!isPolling) return;
     const timer = window.setInterval(reload, 3000);
     return () => window.clearInterval(timer);
-  }, [data, reload]);
+  }, [isPolling, reload]);
+
+  async function handleGenerateProposal() {
+    setGenerating(true);
+    setProposalError(null);
+    try {
+      await startRfpProposal(ticketId, token);
+      reload();
+    } catch (err) {
+      setProposalError(friendlyError(err));
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   if (loading && !data) {
     return <p className="text-sm text-slate-400">Cargando ticket…</p>;
@@ -62,6 +84,14 @@ export default function RfpDetailPage() {
   const readability = metadata?.readability_metrics ?? {};
   const classification = data.classification ?? {};
   const handoff = data.handoff;
+  const canGenerateProposal =
+    data.handoff_status === "ready" &&
+    ["analisis_completo", "needs_human_review", "esperando_aprobación"].includes(
+      data.status,
+    );
+  const hasProposalSections = data.sections.some(
+    (section) => section.draft_content || section.evaluation_results,
+  );
 
   return (
     <div className="space-y-6">
@@ -85,12 +115,42 @@ export default function RfpDetailPage() {
             actualizado {formatRfpDate(data.updated_at)}
           </p>
         </div>
-        {data.status === "analizando" && (
-          <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
-            Actualizando cada 3 s…
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {isPolling && (
+            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
+              Actualizando cada 3 s…
+            </span>
+          )}
+          {canGenerateProposal && (
+            <button
+              type="button"
+              onClick={handleGenerateProposal}
+              disabled={generating}
+              className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {generating
+                ? "Encolando…"
+                : data.proposal_status
+                  ? "Regenerar propuesta"
+                  : "Generar propuesta"}
+            </button>
+          )}
+        </div>
       </header>
+
+      {proposalError && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <p className="font-semibold">No se pudo iniciar la propuesta</p>
+          <p className="mt-1">{proposalError}</p>
+        </div>
+      )}
+
+      {data.proposal_error && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
+          <p className="font-semibold">La generación de la propuesta falló</p>
+          <p className="mt-1">{data.proposal_error}</p>
+        </div>
+      )}
 
       {data.status === "error" && data.error_message && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -212,6 +272,25 @@ export default function RfpDetailPage() {
               value={String(metadata.document_metadata.converter ?? "—")}
             />
           </div>
+        </section>
+      )}
+
+      {hasProposalSections && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+            Propuesta económica por departamento
+          </h2>
+          {data.sections
+            .filter(
+              (section) =>
+                section.draft_content || section.evaluation_results,
+            )
+            .map((section) => (
+              <ProposalSectionCard
+                key={section.department_id}
+                section={section}
+              />
+            ))}
         </section>
       )}
 
