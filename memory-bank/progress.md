@@ -1584,3 +1584,58 @@ segundo servicio HTTP y sin tocar el grafo CX.
   `hooks/__tests__/useRfpRealtime.test.tsx`, banner de SLA. Verificación manual
   en `docs/real-time-communication/verification.md`; diseño y respuestas en
   `docs/real-time-communication/SSE_DESIGN.md`.
+
+## Tiempo real (Parte 2) — Chat WebSocket del First-line CX agent
+
+Canal bidireccional para el agente `first_line_cx`: streaming token a token,
+interrupción a mitad de respuesta y rehidratación al reconectar. No comparte
+router, bus ni payloads con el SSE de RFPs de la Parte 1.
+
+- **Persistencia** (`app/chat/models.py` + `store.py`): `chat_sessions`
+  (`session_id`, `agent_id`, `user_id`, `client_id`, `status`
+  `active`/`interrupted`/`closed`, `created_at`) y `chat_messages`
+  (`message_id`, `role`, `text`, `status` `streaming`/`completed`/`interrupted`/
+  `failed`, `sequence`, `run_id`). El `session_id` es también el `thread_id` del
+  checkpointer. Un mensaje cerrado no se puede sobrescribir; al arrancar, los
+  `streaming` huérfanos pasan a `interrupted`.
+- **WebSocket** (`GET /chat/ws`): mismo JWT del backoffice por `?token=` o
+  primer frame `auth`; rechazo antes de eventos (4401/4403/4404). Exige
+  `session_id` (alias `thread_id`) existente y del usuario; `manager/admin`
+  pueden observar en solo lectura. REST auxiliar: `POST /chat/sessions`,
+  `GET /chat/sessions/{id}` y `GET /chat/sessions/{id}/messages`.
+- **Streaming**: `run_agent` usa `stream_mode=["updates","custom"]`; el nodo
+  `generate` pasa `get_stream_writer()` al generador y `chat_json_stream`
+  emite solo el campo `respuesta` del JSON de memoria (sin filtrar
+  `propuesta_memoria`). Las rutas deterministas se emiten en trozos al cerrar.
+- **Aborto**: `threading.Event` + `emit_lock` por generación. Orden garantizado
+  `token_chunk* → interrupt_requested → generation_interrupted`; no se publica
+  ningún token antiguo después. El parcial se conserva y el nuevo `new_input`
+  arranca otro `message_id`/`run_id` sobre el mismo hilo. No se usa
+  `interrupt()` HITL como sustituto; una caída de red no aborta.
+- **Pub/sub**: `ChatEventBus` con canal `chat.<session_id>` y
+  `GenerationRegistry` (una generación por sesión, sin duplicar llamadas al
+  agente). En memoria para un proceso; sustituible por Redis pub/sub.
+- **Reconexión**: backoff 1→30 s con jitter en `lib/chat-socket.ts`; al
+  reconectar se envía el mismo `session_id` y el servidor responde
+  `session_snapshot` con historial + `active_generation` antes de tokens
+  nuevos. Dedupe por `(message_id, sequence)`.
+- **UI** (`uis/backoffice` `/chat`): streaming en vivo con cursor, botón
+  “Detener” y “Interrumpir y enviar”, parcial con badge **Interrumpido**,
+  respuesta redirigida como mensaje nuevo, pill de conexión y “Nueva
+  conversación”. Sesión persistida en `?session=` y `localStorage`.
+- **Tests**: `tests/test_chat_{streaming,store,events,bus,ws}.py` y Vitest
+  `lib/__tests__/chat-{types,socket}.test.ts` + `app/(protected)/chat/page.test.tsx`.
+  Verificación E2E real con `scripts/chat_ws_smoke.py` (interrupción sin más
+  tokens, parcial inmutable, turno nuevo y reconexión con 4 mensajes).
+- **Docs**: `docs/real-time-communication/WEBSOCKETS_CHAT_DESIGN.md` (incluye
+  las respuestas a las 3 preguntas de diseño) y
+  `WEBSOCKETS_CHAT_VERIFICATION.md`.
+- **Verificado**: API **480 passed**, backoffice **124 Vitest**, lint/build y
+  typecheck raíz OK; `scripts/chat_ws_smoke.py` contra Docker (parcial
+  inmutable, sin tokens posteriores y reconexión con historial) y prueba real
+  en navegador del flujo interrumpir → badge **Interrumpido** → turno nuevo.
+- **Variables** (defaults, sin tocar `.env*`): `CHAT_HISTORY_LIMIT`,
+  `CHAT_PROMPT_HISTORY_MESSAGES`, `CHAT_PROMPT_HISTORY_CHARS`,
+  `CHAT_MAX_MESSAGE_CHARS`, `CHAT_AUTH_TIMEOUT_SECONDS`,
+  `CHAT_KEEPALIVE_SECONDS`, `CHAT_ABORT_WAIT_SECONDS`,
+  `CHAT_PARTIAL_PERSIST_EVERY`.

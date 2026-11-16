@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from collections.abc import Callable
 
 from data.pipelines import rag
 
 from . import config
-from .llm import chat_json, json_or_raw_answer
+from .llm import chat_json, chat_json_stream, json_or_raw_answer
 from .prompts import build_generation_messages, format_memory_context
 from .scopes import normalize_scope
 from .schemas import GenerationOutcome, MemoryProposalDraft
@@ -23,6 +24,7 @@ from .validation import validate_proposal
 logger = logging.getLogger(__name__)
 
 JsonChat = Callable[..., tuple[dict | None, str]]
+TokenCallback = Callable[[str], None]
 
 _CONFIRMATION_PREFIXES = (
     "¿quieres que lo recuerde",
@@ -104,6 +106,9 @@ def generate_with_memory(
     memory_context: list[dict] | None = None,
     *,
     policy_correction: str | None = None,
+    conversation_history: list[dict] | None = None,
+    on_token: TokenCallback | None = None,
+    abort: threading.Event | None = None,
     llm: JsonChat | None = None,
 ) -> GenerationOutcome:
     question = question.strip()
@@ -117,9 +122,19 @@ def generate_with_memory(
         context,
         memory_context or [],
         policy_correction=policy_correction,
+        conversation_history=conversation_history,
     )
-    call = llm or chat_json
-    parsed, raw = call(messages, max_tokens=1_100, temperature=0.1)
+    if on_token is not None:
+        parsed, raw = chat_json_stream(
+            messages,
+            on_token=on_token,
+            abort=abort,
+            max_tokens=1_100,
+            temperature=0.1,
+        )
+    else:
+        call = llm or chat_json
+        parsed, raw = call(messages, max_tokens=1_100, temperature=0.1)
 
     if parsed is None:
         answer = json_or_raw_answer(raw)

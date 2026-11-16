@@ -421,6 +421,19 @@ class TraceRecorder:
         self._last_perf = time.perf_counter()
         self.events.append(event)
 
+    def record_abort(self) -> None:
+        """Deja constancia de una interrupción pedida por el cliente."""
+
+        event = TraceEvent(
+            seq=len(self.events),
+            node="<run>",
+            at=utc_now(),
+            elapsed_ms=round((time.perf_counter() - self._last_perf) * 1000, 2),
+            output={"status": "interrupted", "reason": "client_interrupt"},
+        )
+        self._last_perf = time.perf_counter()
+        self.events.append(event)
+
     def finish(self, *, status: str, answer: str, error: str | None) -> AgentTrace:
         return AgentTrace(
             run_id=self.run_id,

@@ -93,6 +93,27 @@ def _clean_agent_memory():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clean_chat():
+    """Aísla sesiones y mensajes del chat entre tests."""
+
+    from sqlmodel import Session, delete
+
+    from app.chat.models import ChatMessageRecord, ChatSessionRecord, create_chat_tables
+    from app.chat.service import reset_chat_service
+    from database import engine
+
+    if engine is not None:
+        create_chat_tables(engine)
+        with Session(engine) as session:
+            session.exec(delete(ChatMessageRecord))
+            session.exec(delete(ChatSessionRecord))
+            session.commit()
+    reset_chat_service()
+    yield
+    reset_chat_service()
+
+
 @pytest.fixture()
 def admin_token():
     return create_token({"sub": "1", "role": "admin"})

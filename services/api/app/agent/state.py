@@ -79,6 +79,9 @@ class AgentState(TypedDict, total=False):
     memory_context: list[dict]
     """Hechos aprobados y relevantes leídos del store antes de la corrida."""
 
+    conversation_context: list[dict]
+    """Turnos previos de la sesión (solo para el prompt de generación)."""
+
     memory_proposal: dict | None
     """Propuesta de memoria validada que el servicio puede persistir."""
 

@@ -78,6 +78,10 @@ def chat(
     graph=None,
     trace_dir=None,
     intent_llm=None,
+    thread_id: str | None = None,
+    token_sink=None,
+    abort=None,
+    conversation_history: list[dict] | None = None,
 ) -> ChatResult:
     text = (message or "").strip()
     session = session_id or str(uuid.uuid4())
@@ -184,6 +188,10 @@ def chat(
             graph=graph,
             trace_dir=trace_dir,
             session_id=session,
+            thread_id=thread_id,
+            token_sink=token_sink,
+            abort=abort,
+            conversation_history=conversation_history,
         )
     except AgentRunError as exc:
         logger.error("La corrida del agente falló en el chat: %s", exc)
