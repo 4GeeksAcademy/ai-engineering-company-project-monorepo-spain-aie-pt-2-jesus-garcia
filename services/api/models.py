@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Index,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
@@ -496,6 +497,31 @@ class TelemetryEventRecord(SQLModel, table=True):
     )
 
 
+class CustomerOrder(SQLModel, table=True):
+    """Pedido mínimo para autorizar consultas de tracking por sesión.
+
+    No sustituye al futuro servicio de tracking: solo guarda el propietario y
+    el país del pedido, que son los dos datos que necesita el guard para
+    rechazar accesos cruzados y para no mezclar políticas de país.
+    """
+
+    __tablename__ = "customer_order"
+    id: int | None = ORMField(default=None, primary_key=True)
+    order_ref: str = ORMField(index=True, unique=True, max_length=40)
+    owner_user_id: str | None = ORMField(default=None, max_length=64)
+    owner_email: str = ORMField(index=True, max_length=255)
+    country: str = ORMField(max_length=2)
+    carrier: str = ORMField(default="", max_length=40)
+    status: str = ORMField(default="", max_length=40)
+    delivered_at: datetime | None = ORMField(default=None)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
 class DeadLetterTask(SQLModel, table=True):
     """Tarea que agotó sus reintentos y se conserva para diagnóstico.
 
@@ -510,6 +536,466 @@ class DeadLetterTask(SQLModel, table=True):
     attempts: int
     max_retries: int
     error_message: str
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+# --- Recepción de RFPs (Hito 9, Parte 1) -------------------------------------
+
+RFP_STATUS_ANALYZING = "analizando"
+RFP_STATUS_COMPLETE = "analisis_completo"
+RFP_STATUS_DISCARDED = "descartado"
+RFP_STATUS_ERROR = "error"
+# Hito 9, Parte 2 — generación y evaluación de secciones.
+RFP_STATUS_DRAFTING = "generando_borrador"
+RFP_STATUS_EVALUATING = "en_evaluación"
+RFP_STATUS_NEEDS_REVIEW = "needs_human_review"
+RFP_STATUS_AWAITING_APPROVAL = "esperando_aprobación"
+RFP_STATUS_FINISHED = "terminado"
+
+RFP_APPROVAL_PENDING = "pending_approval"
+RFP_APPROVAL_APPROVED = "approved"
+RFP_APPROVAL_REJECTED = "rejected"
+RFP_APPROVAL_CHANGES = "changes_requested"
+RFP_APPROVAL_RUNNING = "resuming"
+
+RFP_SECTION_GENERATING = "generando"
+RFP_SECTION_EVALUATING = "en_evaluación"
+RFP_SECTION_PASSED = "evaluated_pass"
+RFP_SECTION_NEEDS_REVIEW = "needs_human_review"
+
+RFP_HANDOFF_NONE = "none"
+RFP_HANDOFF_READY = "ready"
+
+
+class RfpTicketStatus(StrEnum):
+    analizando = RFP_STATUS_ANALYZING
+    analisis_completo = RFP_STATUS_COMPLETE
+    descartado = RFP_STATUS_DISCARDED
+    error = RFP_STATUS_ERROR
+    generando_borrador = RFP_STATUS_DRAFTING
+    en_evaluación = RFP_STATUS_EVALUATING
+    needs_human_review = RFP_STATUS_NEEDS_REVIEW
+    esperando_aprobación = RFP_STATUS_AWAITING_APPROVAL
+    terminado = RFP_STATUS_FINISHED
+
+
+class RfpTicket(SQLModel, table=True):
+    """Ticket de recepción de una RFP; fuente de verdad del estado del job."""
+
+    __tablename__ = "rfp_ticket"
+    __table_args__ = (
+        Index("ix_rfp_ticket_status_created", "status", "created_at"),
+    )
+
+    id: str = ORMField(default_factory=lambda: str(uuid4()), primary_key=True)
+    rfp_id: str = ORMField(index=True, unique=True, max_length=40)
+    status: str = ORMField(default=RFP_STATUS_ANALYZING, index=True, max_length=40)
+    pipeline_stage: str | None = ORMField(default=None, max_length=60)
+    raw_pdf_path: str = ORMField(max_length=1024)
+    markdown_path: str | None = ORMField(default=None, max_length=1024)
+    original_filename: str = ORMField(max_length=255)
+    file_sha256: str = ORMField(index=True, max_length=64)
+    celery_task_id: str | None = ORMField(default=None, max_length=64)
+    classification: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    discard_reason: str | None = ORMField(default=None, max_length=2000)
+    error_message: str | None = ORMField(default=None, max_length=2000)
+    handoff_status: str = ORMField(default=RFP_HANDOFF_NONE, max_length=20)
+    handoff_payload: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    handoff_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    proposal_status: str | None = ORMField(default=None, max_length=40)
+    proposal_stage: str | None = ORMField(default=None, max_length=60)
+    proposal_payload: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    proposal_ready_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    proposal_task_id: str | None = ORMField(default=None, max_length=64)
+    proposal_error: str | None = ORMField(default=None, max_length=2000)
+    # Hito 9, Parte 3 — aprobación humana y cierre.
+    approval_status: str | None = ORMField(default=None, max_length=40)
+    approval_thread_id: str | None = ORMField(default=None, max_length=120)
+    approval_run: int = ORMField(default=0)
+    approval_task_id: str | None = ORMField(default=None, max_length=64)
+    approval_started_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    approval_completed_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    approval_error: str | None = ORMField(default=None, max_length=2000)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpMetadata(SQLModel, table=True):
+    """Metadatos normalizados y métricas de legibilidad del documento."""
+
+    __tablename__ = "rfp_metadata"
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, unique=True, max_length=36
+    )
+    client_name: str | None = ORMField(default=None, max_length=255)
+    client_country: str | None = ORMField(default=None, max_length=20)
+    currency: str | None = ORMField(default=None, max_length=3)
+    language: str | None = ORMField(default=None, max_length=5)
+    services_requested: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    departments_needed: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    monthly_volume: int | None = ORMField(default=None)
+    deadline: date | None = ORMField(default=None)
+    budget_range: str | None = ORMField(default=None, max_length=255)
+    extraction: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    readability_metrics: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    document_metadata: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpDepartmentSection(SQLModel, table=True):
+    """Aspectos clave y estado de aprobación por departamento.
+
+    En la Parte 1 solo se rellenan ``key_aspects`` y ``open_questions``; los
+    campos de borrador/evaluación/aprobación quedan preparados para las Partes
+    2 y 3 sin migrar el modelo.
+    """
+
+    __tablename__ = "rfp_department_section"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id",
+            "department_id",
+            name="uq_rfp_department_section_ticket_department",
+        ),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    department_id: str = ORMField(index=True, max_length=20)
+    responsible: str | None = ORMField(default=None, max_length=120)
+    key_aspects: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    open_questions: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    assumed_facts: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    unsupported_claims: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    draft_content: str | None = ORMField(default=None)
+    evaluation_results: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    approval_status: str | None = ORMField(default=None, max_length=40)
+    approver: str | None = ORMField(default=None, max_length=120)
+    approved_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    # Hito 9, Parte 2 — borrador y evaluación.
+    draft_payload: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    generation_status: str | None = ORMField(default=None, max_length=40)
+    iteration_count: int = ORMField(default=0)
+    needs_human_review: bool = ORMField(default=False)
+    review_reason: str | None = ORMField(default=None)
+    last_feedback: str | None = ORMField(default=None)
+    # Hito 9, Parte 3 — decisión humana y paquete de aprobación.
+    approval_comment: str | None = ORMField(default=None, max_length=4000)
+    approval_decided_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    approval_round: int = ORMField(default=0)
+    approval_interrupt_id: str | None = ORMField(default=None, max_length=64)
+    approval_packet: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpSectionEvaluation(SQLModel, table=True):
+    """Histórico de cada iteración del ciclo generador-evaluador.
+
+    ``rfp_department_section.evaluation_results`` guarda el último
+    ``EvaluationResult``; esta tabla conserva la traza completa para auditar el
+    ciclo y calcular las iteraciones medias por sección.
+    """
+
+    __tablename__ = "rfp_section_evaluation"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticket_id",
+            "department_id",
+            "iteration",
+            name="uq_rfp_section_evaluation_ticket_department_iteration",
+        ),
+        Index(
+            "ix_rfp_section_evaluation_ticket",
+            "ticket_id",
+            "department_id",
+        ),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    department_id: str = ORMField(index=True, max_length=20)
+    iteration: int = ORMField(default=1)
+    overall_pass: bool = ORMField(default=False)
+    readability: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    relevance: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    compliance: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    feedback: str | None = ORMField(default=None)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpNodeTrace(SQLModel, table=True):
+    """Traza por ejecución de nodo: agente, input, output y timestamp."""
+
+    __tablename__ = "rfp_node_trace"
+    __table_args__ = (
+        Index("ix_rfp_node_trace_ticket_sequence", "ticket_id", "sequence"),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    event_id: str = ORMField(index=True, unique=True, max_length=36)
+    thread_id: str = ORMField(max_length=120)
+    part: int = ORMField(default=3)
+    sequence: int = ORMField(default=0)
+    node: str = ORMField(max_length=80)
+    agent: str | None = ORMField(default=None, max_length=120)
+    department_id: str | None = ORMField(default=None, max_length=20)
+    input: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    output: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    occurred_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    duration_ms: int | None = ORMField(default=None)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpArbitration(SQLModel, table=True):
+    """Decisión del nodo de arbitraje con el árbitro fijo del BRIEFING."""
+
+    __tablename__ = "rfp_arbitration"
+    __table_args__ = (
+        Index("ix_rfp_arbitration_ticket_round", "ticket_id", "round"),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    round: int = ORMField(default=1)
+    trigger_id: str = ORMField(max_length=40)
+    arbitrator: str | None = ORMField(default=None, max_length=120)
+    rule: str | None = ORMField(default=None)
+    affected_sections: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    resolution: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    resolved: bool = ORMField(default=False)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpFinalDocument(SQLModel, table=True):
+    """Documento final consolidado de las secciones aprobadas."""
+
+    __tablename__ = "rfp_final_document"
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, unique=True, max_length=36
+    )
+    contract_version: str = ORMField(default="rfp-final-v1", max_length=40)
+    currency: str | None = ORMField(default=None, max_length=3)
+    sections: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    approved_by: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    markdown: str = ORMField(
+        default="",
+        sa_column=Column(Text, nullable=False, server_default=text("''")),
+    )
+    document_path: str | None = ORMField(default=None, max_length=1024)
+    generated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )

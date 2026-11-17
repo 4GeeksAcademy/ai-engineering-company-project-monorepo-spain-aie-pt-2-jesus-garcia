@@ -1,0 +1,21 @@
+# Docker después del hardening — 2026-11-17T20:22:59Z
+
+NAMES                                                                             PORTS                                STATUS
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-flower-1      127.0.0.1:5555->5555/tcp             Up 9 seconds
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-worker-1      8000/tcp                             Up 9 seconds
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-mcp-1         127.0.0.1:8001->8001/tcp             Up About a minute
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-services-1    127.0.0.1:8000->8000/tcp             Up About a minute
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-redis-1       6379/tcp                             Up About a minute (healthy)
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-uis-1         127.0.0.1:3000-3001->3000-3001/tcp   Up About a minute
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-scheduler-1                                        Up About a minute
+ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia-qdrant-1      127.0.0.1:6333-6334->6333-6334/tcp   Up About a minute (healthy)
+
+## IDs
+time="2026-11-17T21:22:59+01:00" level=warning msg="The \"DATABASE_URL_PIPELINE\" variable is not set. Defaulting to a blank string."
+uid=10001(appuser) gid=10001(appuser) groups=10001(appuser)
+time="2026-11-17T21:22:59+01:00" level=warning msg="The \"DATABASE_URL_PIPELINE\" variable is not set. Defaulting to a blank string."
+uid=1000(node) gid=1000(node) groups=1000(node)
+time="2026-11-17T21:22:59+01:00" level=warning msg="The \"DATABASE_URL_PIPELINE\" variable is not set. Defaulting to a blank string."
+uid=10001(appuser) gid=10001(appuser) groups=10001(appuser)
+time="2026-11-17T21:22:59+01:00" level=warning msg="The \"DATABASE_URL_PIPELINE\" variable is not set. Defaulting to a blank string."
+uid=10001(appuser) gid=10001(appuser) groups=10001(appuser)

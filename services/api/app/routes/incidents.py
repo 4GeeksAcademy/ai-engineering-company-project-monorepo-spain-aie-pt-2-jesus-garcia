@@ -23,6 +23,8 @@ UPLOAD_DIR = Path(
     os.getenv("INCIDENT_UPLOAD_DIR", "/tmp/trackflow/uploads")
 )
 
+MAX_CSV_BYTES = int(os.getenv("INCIDENT_MAX_UPLOAD_MB", "10")) * 1024 * 1024
+
 
 def _save_upload(task_id: str, raw: bytes) -> Path:
     """Write the CSV atomically to the volume shared with the worker."""
@@ -70,12 +72,21 @@ async def analyze_incidents(
         )
 
     try:
-        raw = await file.read()
+        raw = await file.read(MAX_CSV_BYTES + 1)
     except OSError as exc:
         raise HTTPException(
             status_code=400,
             detail="No se pudo leer el archivo subido. Inténtalo de nuevo.",
         ) from exc
+
+    if len(raw) > MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "El CSV supera el límite de "
+                f"{MAX_CSV_BYTES // (1024 * 1024)} MB."
+            ),
+        )
 
     try:
         service.validate_upload(raw)

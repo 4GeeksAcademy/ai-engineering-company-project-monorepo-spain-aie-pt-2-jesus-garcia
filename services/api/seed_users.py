@@ -1,8 +1,26 @@
+"""Crea el usuario admin de desarrollo.
+
+La contraseña no está en el código: se lee de ``SEED_ADMIN_PASSWORD`` o se
+genera aleatoriamente y se imprime una sola vez. En producción la cuenta se
+crea por el procedimiento operativo, nunca con este script.
+"""
+
 from datetime import datetime, timezone
+import os
+import secrets
 import sys
 
 from database import get_tinydb
 from app.core.security import hash_password
+
+ADMIN_EMAIL = "admin@trackflow.com"
+
+
+def resolve_admin_password() -> str:
+    configured = (os.getenv("SEED_ADMIN_PASSWORD") or "").strip()
+    if configured:
+        return configured
+    return secrets.token_urlsafe(12)
 
 
 def seed_users():
@@ -11,15 +29,16 @@ def seed_users():
     profiles_table = db.table("profiles")
 
     for doc in table.all():
-        if doc.get("email") == "admin@trackflow.com":
+        if doc.get("email") == ADMIN_EMAIL:
             db.close()
             print("Admin user already exists. Skipping seed.")
             return
 
+    password = resolve_admin_password()
     now = datetime.now(timezone.utc).isoformat()
     user_doc = {
-        "email": "admin@trackflow.com",
-        "hashed_password": hash_password("admin123"),
+        "email": ADMIN_EMAIL,
+        "hashed_password": hash_password(password),
         "is_active": True,
         "role": "admin",
         "created_at": now,
@@ -35,7 +54,15 @@ def seed_users():
     })
 
     db.close()
-    print(f"Seeded admin user (id={doc_id}, email=admin@trackflow.com, password=admin123).")
+    print(
+        f"Seeded admin user (id={doc_id}, email={ADMIN_EMAIL}, "
+        f"password={password})."
+    )
+    if not (os.getenv("SEED_ADMIN_PASSWORD") or "").strip():
+        print(
+            "Contraseña generada: guárdala ahora, no se vuelve a mostrar. "
+            "Para fijarla, define SEED_ADMIN_PASSWORD."
+        )
 
 
 def main():

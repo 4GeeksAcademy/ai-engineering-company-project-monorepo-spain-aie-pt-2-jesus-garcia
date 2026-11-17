@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlmodel import Session
 
 from app.core.cache import cache, cached
+from app.core.dependencies import require_manager
+from app.core.rate_limit import enforce_rate_limit
 from app.telemetry import analysis
 from app.telemetry.ingest import ingest_batch
 from database import get_db
@@ -53,6 +55,12 @@ def ingest_events(
     request: Request,
     session: Session = Depends(get_db),
 ) -> TelemetryIngestResponse:
+    enforce_rate_limit(
+        request,
+        bucket="telemetry:ingest",
+        limit=300,
+        window_seconds=60,
+    )
     logger.info("Telemetry events received: %d", len(payload.events))
 
     result = ingest_batch(
@@ -121,6 +129,7 @@ def telemetry_report(
         description="Fin del periodo, exclusivo (ISO 8601, UTC). Por defecto, now.",
     ),
     session: Session = Depends(get_db),
+    _=Depends(require_manager),
 ) -> TelemetryReportResponse:
     resolved_start, resolved_end = _resolve_period(start_date, end_date)
 

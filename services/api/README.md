@@ -106,6 +106,50 @@ el pipeline (`pipelines/weekly_performance`). Requiere rol `manager`/`admin`.
 `PREFECT_API_URL` (por defecto `http://localhost:4200/api`) apunta al servidor
 Prefect self-hosted o a Prefect Cloud.
 
+## Agente RAG (LangGraph)
+
+Grafo en `app/agent/` que reutiliza `retrieve()` del pipeline RAG
+(`data/pipelines/rag.py`). La generación añade el bloque de memoria y devuelve
+respuesta + propuesta estructurada en una sola llamada
+(`app/agent/memory/generation.py`). Compila al importar el router y escribe una
+traza por corrida en `data/eval/agent-traces/` (`AGENT_TRACE_DIR`).
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/agent/query` | `{"question": "..."}` → `{"answer", "run_id"}` (stateless) |
+| POST | `/agent/chat` | `{"message", "session_id"}` → `{"answer", "run_id", "memory"}`; propuesta/confirmación |
+| GET | `/agent/memory` | Memoria activa (cualquier usuario autenticado) |
+| GET | `/agent/memory/proposals` | Auditoría de propuestas (manager/admin) |
+| POST | `/agent/memory/proposals/{proposal_id}/approve` | Aprobar/rechazar una propuesta ajena cuando el gate de roles está activo (manager/admin) |
+| POST | `/agent/memory/{entry_id}/retire` | Retirar una entrada (manager/admin) |
+| POST | `/agent/memory/consolidate` | Ejecutar consolidación (manager/admin) |
+
+La memoria vive en tablas propias `agent_memory_*` (PostgreSQL/Supabase o
+SQLite en tests) y **nunca** en Qdrant ni en `trackflow_knowledge`. Diseño:
+`docs/memory/agent-memory-design.md`; evidencia:
+`docs/memory/agent-memory-evidence.md`; migración:
+`migrations/0004_agent_memory.sql`.
+
+El grafo incluye un nodo `classify` que decide automáticamente entre la base de
+conocimiento, el gestor de incidencias (`incident_lookup`) y el inventario
+(`inventory_lookup`), o una combinación de tool + RAG. Las tools ya **no** se
+ejecutan in-process: el agente las carga desde el **MCP Server**
+(`mcps/trackflow-mcp`) con `langchain-mcp-adapters` y un token OAuth propio
+(client credentials). El MCP llama a la API real (`/api/incidents`,
+`PATCH /api/incidents/{id}/status`, `/inventory/products`).
+
+Timeout del handshake + tool: `AGENT_MCP_TIMEOUT_SECONDS` (10 s por defecto).
+Cualquier fallo del MCP (sin token, caído, timeout, scope insuficiente) se
+traduce a un fallback honesto; el endpoint sigue devolviendo `200` con la
+respuesta de recuperación. La traza incluye `route`, `sources_used` y el orden
+exacto de nodos.
+
+Diseño: `docs/rag/agent-design.md`; evals:
+`tests/pipelines/test_agent_evals.py`; tests del cliente MCP:
+`tests/test_agent_tools.py` y `tests/test_agent_mcp_failures.py`.
+Configuración: `services/api/.env.example` (`MCP_SERVER_URL`,
+`MCP_OAUTH_*`).
+
 ## Errores HTTP
 
 | Código | Situación |

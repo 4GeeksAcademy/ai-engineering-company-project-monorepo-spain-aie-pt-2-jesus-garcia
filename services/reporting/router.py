@@ -7,11 +7,13 @@ from app.core.cache import cache
 from app.core.dependencies import require_manager
 from database import get_db
 
-from . import prefect_client, service
+from . import prefect_client, service, sla
 from .schemas import (
+    DeliverySlaStatus,
     PipelineRunLatest,
     PipelineRunTriggerRequest,
     PipelineRunTriggerResponse,
+    SlaEvaluationResponse,
     WeeklyPerformanceResponse,
 )
 
@@ -102,3 +104,49 @@ def trigger_pipeline_run(
     cache.delete("reporting:latest")
     cache.delete_prefix("reporting:weekly:")
     return PipelineRunTriggerResponse(**result)
+
+
+# --- Alerta de umbral de negocio: SLA de entrega por país -------------------
+
+SLA_TTL = 60.0
+
+
+@router.get(
+    "/sla-status",
+    response_model=DeliverySlaStatus,
+    summary="Estado del SLA de entrega por país (umbral del briefing)",
+)
+def delivery_sla_status(
+    _=Depends(require_manager),
+    session: Session = Depends(get_db),
+) -> DeliverySlaStatus:
+    key = "reporting:sla-status"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
+    try:
+        result = sla.get_delivery_sla_status(session)
+    except service.ReportNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    cache.set(key, result, ttl=SLA_TTL)
+    return result
+
+
+@router.post(
+    "/sla/evaluate",
+    response_model=SlaEvaluationResponse,
+    summary="Evalúa el umbral de SLA y emite la alerta por país",
+)
+def evaluate_sla_threshold(
+    _=Depends(require_manager),
+    session: Session = Depends(get_db),
+) -> SlaEvaluationResponse:
+    try:
+        status, published = sla.evaluate_sla_alerts(session)
+    except service.ReportNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    cache.set("reporting:sla-status", status, ttl=SLA_TTL)
+    return SlaEvaluationResponse(status=status, published=published)

@@ -26,6 +26,16 @@ const navItems = [
     ),
   },
   {
+    href: "/rfp",
+    label: "Recepción RFPs",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
+        <path fillRule="evenodd" d="M5.478 5.559A1.5 1.5 0 0 1 6.912 4.5H9A.75.75 0 0 0 9 3H6.912a3 3 0 0 0-2.868 2.118l-2.411 7.232a3 3 0 0 0-.075.293l-.001.001A3 3 0 0 0 4.5 16.5h15a3 3 0 0 0 2.943-3.646l-.001-.001a3 3 0 0 0-.075-.293l-2.411-7.232A3 3 0 0 0 17.088 3H15a.75.75 0 0 0 0 1.5h2.088a1.5 1.5 0 0 1 1.434 1.059l1.5 4.5a1.5 1.5 0 0 1-1.434 1.941H5.412a1.5 1.5 0 0 1-1.434-1.941l1.5-4.5Z" clipRule="evenodd" />
+        <path d="M3 19.5A2.25 2.25 0 0 1 5.25 17.25h13.5A2.25 2.25 0 0 1 21 19.5v.75a.75.75 0 0 1-1.5 0v-.75a.75.75 0 0 0-.75-.75H5.25a.75.75 0 0 0-.75.75v.75a.75.75 0 0 1-1.5 0v-.75Z" />
+      </svg>
+    ),
+  },
+  {
     href: "/suppliers",
     label: "Proveedores",
     icon: (
@@ -52,6 +62,24 @@ const navItems = [
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
         <path fillRule="evenodd" d="M2.25 4.5A2.25 2.25 0 0 1 4.5 2.25h15A2.25 2.25 0 0 1 21.75 4.5v11.25A2.25 2.25 0 0 1 19.5 18h-3.75v1.5h.75a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1 0-1.5h.75V18H4.5a2.25 2.25 0 0 1-2.25-2.25V4.5Zm12.804 3.03a.75.75 0 0 0-1.06-1.06l-2.47 2.47-1.72-1.72a.75.75 0 0 0-1.06 0L5.47 10.22a.75.75 0 1 0 1.06 1.06l2.72-2.72 1.72 1.72a.75.75 0 0 0 1.06 0l3-3Z" clipRule="evenodd" />
+      </svg>
+    ),
+  },
+  {
+    href: "/chat",
+    label: "Chat de soporte",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
+        <path fillRule="evenodd" d="M4.804 21.644A6.707 6.707 0 0 0 6 21.75a6.721 6.721 0 0 0 3.583-1.029c.774.182 1.584.279 2.417.279 5.322 0 9.75-3.97 9.75-9 0-5.03-4.428-9-9.75-9s-9.75 3.97-9.75 9c0 1.784.606 3.45 1.646 4.822a9.36 9.36 0 0 1-.842 3.043.75.75 0 0 0 .75 1.029ZM8.25 9.75a.75.75 0 0 1 .75-.75h6a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75Zm.75 3.75a.75.75 0 0 0 0 1.5h3.5a.75.75 0 0 0 0-1.5H9Z" clipRule="evenodd" />
+      </svg>
+    ),
+  },
+  {
+    href: "/knowledge",
+    label: "Asistente comercial",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
+        <path d="M11.25 4.533A9.707 9.707 0 0 0 6 3a9.735 9.735 0 0 0-3.25.555.75.75 0 0 0-.5.707v14.25a.75.75 0 0 0 1 .707A8.237 8.237 0 0 1 6 18.75c1.995 0 3.823.707 5.25 1.886V4.533ZM12.75 20.636A8.214 8.214 0 0 1 18 18.75c1.025 0 1.997.185 2.898.516a.75.75 0 0 0 1-.707V4.262a.75.75 0 0 0-.5-.707A9.735 9.735 0 0 0 18 3a9.707 9.707 0 0 0-5.25 1.533V20.636Z" />
       </svg>
     ),
   },
@@ -102,7 +130,9 @@ export function Sidebar() {
       </div>
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(`${item.href}/`));
           return (
             <Link
               key={item.href}

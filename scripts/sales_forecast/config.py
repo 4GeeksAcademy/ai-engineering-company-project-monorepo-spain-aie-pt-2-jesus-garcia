@@ -112,3 +112,32 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "docs" / "models-training-rag"
 FIGURE_FILENAME = "sales_forecast_test_2024_2025.png"
 PREDICTIONS_FILENAME = "predictions_test.csv"
 METRICS_FILENAME = "metrics.json"
+
+# ---------------------------------------------------------------------------
+# Evaluación temporal (docs/models-training-rag/evaluating-regression-model.md)
+# ---------------------------------------------------------------------------
+# La CV se hace solo sobre el set de entrenamiento (96 meses), y en la práctica
+# sobre las 72 filas con features completas (2018-01 → 2023-12). Seis folds de
+# 8 meses garantizan al menos 5 folds y que todos tengan >= 2 años de historia;
+# con 5 folds de 12 meses el primero tendría solo 12 filas (arranque en frío).
+CV_N_SPLITS = 6
+CV_TEST_MONTHS = 8
+CV_GAP_MONTHS = 0
+
+# Curva de aprendizaje: validación fija en el último año del train (2023) y
+# ventana de entrenamiento que crece hacia atrás desde 2022-12. Así cada punto
+# respeta el orden temporal y se mide el efecto de añadir historia, no de
+# mezclar filas al azar.
+LEARNING_CURVE_VALIDATION_MONTHS = 12
+LEARNING_CURVE_TRAIN_SIZES = (24, 30, 36, 42, 48, 54, 60)
+
+# Acción correctiva propuesta en el informe: reducir la varianza del bosque
+# subiendo el tamaño mínimo de hoja. Se evalúa en los mismos folds, sin tocar
+# el modelo que produce los artefactos 2024-2025.
+REGULARIZED_MIN_SAMPLES_LEAF = 5
+
+EVAL_OUTPUT_DIR = PROJECT_ROOT / "data" / "eval"
+LEARNING_CURVE_FILENAME = "learning_curve.png"
+CV_RESULTS_FILENAME = "cv_results.json"
+CV_FOLDS_FILENAME = "cv_folds.csv"
+LEARNING_CURVE_CSV_FILENAME = "learning_curve.csv"

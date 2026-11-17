@@ -21,8 +21,15 @@ const ENV = {
   backofficeOrigin:
     process.env.AUDIT_BACKOFFICE_ORIGIN ?? "http://localhost:3001",
   adminEmail: process.env.AUDIT_ADMIN_EMAIL ?? "admin@trackflow.com",
-  adminPassword: process.env.AUDIT_ADMIN_PASSWORD ?? "admin123",
+  adminPassword: process.env.AUDIT_ADMIN_PASSWORD ?? "",
 };
+
+if (!ENV.adminPassword) {
+  console.error(
+    "Falta AUDIT_ADMIN_PASSWORD. Exporta la contraseña del admin sembrado."
+  );
+  process.exit(2);
+}
 
 const phase = process.argv[2] ?? "before";
 const outDir = path.join(ENV.baseDir, phase);

@@ -181,8 +181,17 @@ class TestAuth:
         )
         assert res.status_code == 403
 
-    def test_get_products_with_normal_user_returns_200(self, client, user_headers):
-        assert client.get("/inventory/products", headers=user_headers).status_code == 200
+    def test_get_products_with_normal_user_returns_403(self, client, user_headers):
+        assert client.get("/inventory/products", headers=user_headers).status_code == 403
+
+    def test_get_product_with_normal_user_returns_403(self, client, auth_headers, user_headers):
+        sku = _create_product(client, auth_headers)
+        assert (
+            client.get(
+                f"/inventory/products/{sku['id']}", headers=user_headers
+            ).status_code
+            == 403
+        )
 
 
 class TestOrdersEndpoint:

@@ -21,3 +21,22 @@ os.environ["PREFECT_LOGGING_TO_API_WHEN_MISSING_FLOW"] = "ignore"
 os.environ.setdefault("PREFECT_LOGGING_SERVER_LEVEL", "CRITICAL")
 os.environ.setdefault("PREFECT_SERVER_ANALYTICS_ENABLED", "false")
 logging.getLogger("prefect").setLevel(logging.CRITICAL)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _rfp_trace_dir(tmp_path, monkeypatch):
+    """Las trazas de los grafos RFP no deben escribir en el repo durante tests."""
+
+    monkeypatch.setenv("RFP_TRACE_DIR", str(tmp_path / "rfp-traces"))
+    monkeypatch.setenv(
+        "RFP_PROPOSAL_TRACE_DIR", str(tmp_path / "rfp-proposal-traces")
+    )
+    monkeypatch.setenv(
+        "RFP_APPROVAL_TRACE_DIR", str(tmp_path / "rfp-approval-traces")
+    )
+    monkeypatch.setenv(
+        "RFP_APPROVAL_CHECKPOINT_DB", str(tmp_path / "rfp-approval" / "checkpoints.db")
+    )

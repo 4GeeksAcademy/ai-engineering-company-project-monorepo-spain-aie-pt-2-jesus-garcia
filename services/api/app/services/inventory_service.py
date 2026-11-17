@@ -4,7 +4,12 @@ from sqlmodel import Session, func, select
 from app.telemetry.emitter import build_event, emit_event
 from app.telemetry.outbox import enqueue_event
 from models import InventoryDiscrepancy, SKU, StockEntry, StockExit
-from schemas import InventoryDiscrepancyCreate, StockEntryCreate, StockExitCreate
+from schemas import (
+    InventoryDiscrepancyCreate,
+    SKURead,
+    StockEntryCreate,
+    StockExitCreate,
+)
 
 WAREHOUSES = ("los_angeles", "zaragoza")
 
@@ -23,6 +28,60 @@ def compute_stock(session: Session, sku_id: int, warehouse: str) -> int:
 
 def compute_stock_by_warehouse(session: Session, sku_id: int) -> dict[str, int]:
     return {wh: compute_stock(session, sku_id, wh) for wh in WAREHOUSES}
+
+
+def sku_to_read(session: Session, sku: SKU) -> SKURead:
+    """Mapea el ORM al contrato de lectura de la API (stock siempre calculado)."""
+    by_warehouse = compute_stock_by_warehouse(session, sku.id)
+    return SKURead(
+        id=sku.id,
+        name=sku.name,
+        sku_code=sku.sku_code,
+        warehouse=sku.warehouse,
+        client_id=sku.client_id,
+        min_stock=sku.min_stock,
+        current_stock=sum(by_warehouse.values()),
+        current_stock_by_warehouse=by_warehouse,
+    )
+
+
+def list_skus_with_stock(
+    session: Session,
+    *,
+    sku_id: int | None = None,
+    sku_code: str | None = None,
+    name_query: str | None = None,
+    warehouse: str | None = None,
+) -> list[SKURead]:
+    """Lectura de productos con stock calculado, compartida con la tool del agente.
+
+    Es una consulta de solo lectura: únicamente ejecuta ``SELECT`` y delega el
+    cálculo en ``compute_stock_by_warehouse`` (nunca lee ni escribe un contador
+    de stock almacenado). ``sku_code`` tiene prioridad sobre ``name_query``
+    porque es el identificador exacto del producto.
+    """
+    statement = select(SKU)
+    if sku_id is not None:
+        statement = statement.where(SKU.id == sku_id)
+    if sku_code:
+        statement = statement.where(
+            func.lower(SKU.sku_code) == sku_code.strip().lower()
+        )
+
+    skus = session.exec(statement).all()
+
+    if not sku_code and name_query:
+        needle = name_query.strip().lower()
+        skus = [
+            sku
+            for sku in skus
+            if needle in sku.name.lower() or needle in sku.sku_code.lower()
+        ]
+
+    if warehouse:
+        skus = [sku for sku in skus if sku.warehouse == warehouse]
+
+    return [sku_to_read(session, sku) for sku in skus]
 
 
 def _validate_order_input(session: Session, sku_id: int, quantity: int, warehouse: str) -> SKU:
