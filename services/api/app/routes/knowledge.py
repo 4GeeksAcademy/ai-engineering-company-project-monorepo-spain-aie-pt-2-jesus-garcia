@@ -1,17 +1,39 @@
-"""Endpoint de consulta a la base de conocimiento (RAG)."""
+"""Endpoint de consulta a la base de conocimiento (RAG).
+
+La ruta es la frontera de seguridad de este caso de uso: valida y sanea la
+pregunta antes de invocar al modelo, aísla los chunks recuperados (contenido
+externo no confiable) y aplica rate limiting por usuario. La lógica RAG vive
+en ``data.pipelines.rag`` y no se duplica aquí.
+"""
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from app.agent.harness.external import isolate_context
+from app.agent.harness.injection import detect_injection
+from app.agent.harness.observability import (
+    ACTION_BLOCKED,
+    CATEGORY_SECURITY,
+    GuardrailEvent,
+    question_hash,
+    safe_snippet,
+)
+from app.agent.harness.observability import metrics as guard_metrics
 from app.core.dependencies import require_manager
-from data.pipelines.rag import query
+from app.core.rate_limit import enforce_rate_limit
+from data.pipelines.rag import generate_answer, retrieve
 from data.process.rag_config import RagConfigurationError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+
+INJECTION_REFUSAL = (
+    "No puedo cambiar mis instrucciones ni revelar configuración interna. "
+    "Reformula la consulta sobre políticas de TrackFlow."
+)
 
 
 class KnowledgeQueryRequest(BaseModel):
@@ -37,10 +59,37 @@ class KnowledgeQueryResponse(BaseModel):
 )
 def knowledge_query(
     payload: KnowledgeQueryRequest,
-    _=Depends(require_manager),
+    request: Request,
+    current_user: dict = Depends(require_manager),
 ) -> KnowledgeQueryResponse:
+    enforce_rate_limit(
+        request,
+        bucket="knowledge:query",
+        limit=30,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
+
+    match = detect_injection(payload.question)
+    if match is not None:
+        guard_metrics.record(
+            GuardrailEvent(
+                guard="knowledge_injection_guard",
+                category=CATEGORY_SECURITY,
+                action=ACTION_BLOCKED,
+                reason=match.reason,
+                snippet=safe_snippet(payload.question),
+                question_sha256=question_hash(payload.question),
+            )
+        )
+        return KnowledgeQueryResponse(answer=INJECTION_REFUSAL)
+
     try:
-        answer = query(payload.question)
+        context = isolate_context(
+            retrieve(payload.question),
+            log=True,
+        )
+        answer = generate_answer(payload.question, context)
     except RagConfigurationError as exc:
         logger.error("RAG sin configuración: %s", exc)
         raise HTTPException(

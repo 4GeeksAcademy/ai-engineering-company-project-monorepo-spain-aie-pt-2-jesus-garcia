@@ -136,3 +136,22 @@ def test_raw_dir_is_under_data_raw_by_default(monkeypatch):
     path = raw_base_dir()
     assert path.parts[-3:] == ("data", "raw", "rfp")
     assert Path(path).name == "rfp"
+
+
+def test_upload_rate_limit_returns_429(client, auth_headers, monkeypatch):
+    from app.core.rate_limit import reset_rate_limits
+
+    _patch_task(monkeypatch)
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "1")
+    reset_rate_limits()
+
+    statuses = [
+        client.post(
+            "/rfp/tickets",
+            headers=auth_headers,
+            files={"file": ("rfp.pdf", MINIMAL_PDF, "application/pdf")},
+        ).status_code
+        for _ in range(11)
+    ]
+
+    assert statuses[-1] == 429

@@ -22,6 +22,7 @@ from .contracts import (
     build_approval_packet,
     validate_decision,
 )
+from ..rfp_intake.sanitize import sanitize_document_text
 from .state import BranchState
 from .trace import trace_event, utc_now
 
@@ -255,11 +256,14 @@ def build_approval_branch_graph(
                     )
                 ],
             }
+        feedback = sanitize_document_text(
+            str(decision.get("comment") or "")
+        )
         updated = regenerate(
             ticket_id,
             department_id,
             state["section"],
-            decision.get("comment") or "",
+            feedback.text,
             next_round,
         )
         updated = {
@@ -283,7 +287,7 @@ def build_approval_branch_graph(
                     department_id=department_id,
                     input={
                         "department_id": department_id,
-                        "feedback": decision.get("comment") or "",
+                        "feedback": feedback.text,
                         "round": next_round,
                     },
                     output={

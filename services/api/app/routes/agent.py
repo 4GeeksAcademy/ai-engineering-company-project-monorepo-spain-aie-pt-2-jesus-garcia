@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 
 from app.agent.graph import get_agent_graph
 from app.agent.runner import AgentRunError, run_agent
-from app.core.dependencies import get_current_user
+from app.agent.tracing import AgentTrace
+from app.core.dependencies import get_current_user, require_manager
 from app.core.rate_limit import enforce_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -88,3 +89,24 @@ def agent_query(
         raise HTTPException(status_code=502, detail=GENERIC_ERROR_DETAIL)
 
     return AgentQueryResponse(answer=result.answer, run_id=result.run_id)
+
+
+@router.get(
+    "/traces/{run_id}",
+    response_model=dict,
+    summary="Recuperar la traza de una corrida del agente (auditoría)",
+)
+def agent_trace(
+    run_id: str,
+    current_user: dict = Depends(require_manager),
+) -> dict:
+    """Devuelve la traza completa: nodos, ruta, fuentes y eventos de guardrail."""
+
+    try:
+        trace = AgentTrace.load_run(run_id)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=404,
+            detail="No hay traza para esa corrida.",
+        ) from None
+    return trace.to_dict()

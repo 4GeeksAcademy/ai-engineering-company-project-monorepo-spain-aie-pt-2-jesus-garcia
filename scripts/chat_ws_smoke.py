@@ -28,7 +28,14 @@ from websockets.sync.client import connect
 
 API_URL = os.getenv("CHAT_SMOKE_API_URL", "http://localhost:8000").rstrip("/")
 EMAIL = os.getenv("CHAT_SMOKE_EMAIL", "admin@trackflow.com")
-PASSWORD = os.getenv("CHAT_SMOKE_PASSWORD", "admin123")
+PASSWORD = (os.getenv("CHAT_SMOKE_PASSWORD") or "").strip()
+if not PASSWORD:
+    print(
+        "Falta CHAT_SMOKE_PASSWORD. Exporta la contraseña del usuario admin "
+        "(por ejemplo, la que imprime seed_users.py).",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 FIRST_QUESTION = "¿Cuánto tarda una entrega estándar en España?"
 NEW_INPUT = "espera, quiero hacer una devolución"
 

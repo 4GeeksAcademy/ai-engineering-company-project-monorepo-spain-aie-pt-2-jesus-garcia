@@ -24,7 +24,8 @@ docker compose exec services python scripts/seed_delivery_sla.py --force
 # cd services/api && ./venv/bin/python ../../scripts/seed_delivery_sla.py --force
 
 # 3) Login en http://localhost:3001 con un usuario manager/admin
-#    (seed: admin@trackflow.com / admin123)
+#    (seed: admin@trackflow.com; la contraseña la imprime `seed_users.py`
+#     o la defines con SEED_ADMIN_PASSWORD)
 ```
 
 > En desarrollo local con `npm run dev` (puerto 3000) el navegador usa el

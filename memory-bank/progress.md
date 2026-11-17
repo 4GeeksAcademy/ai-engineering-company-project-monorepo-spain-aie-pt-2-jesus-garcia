@@ -1702,3 +1702,57 @@ Entregable de `docs/cybersecurity/cybersecurity-analysis.md` §7. Rama
   `:8000`, `:3000`, `:3001` responden 200; puertos internos en loopback.
 - Pendiente de host real: ejecutar `50-verify-baseline.sh` y capturar
   `server-baseline.md`; rotar secretos reales y fijar imágenes por digest.
+
+## Seguridad de IA — ciclo NIST AI Security (2026-11-18)
+
+Entregable de `docs/cybersecurity/nist-security-practices.md`. La carpeta de
+entrega es **`docs/cybersecurity/nist-ai-security/`**:
+
+- `README.md` — mapa de los 14 puntos donde un modelo recibe input externo
+  (usuario, documento KB, tool MCP, memoria, otro LLM), gestión de credenciales
+  y comandos de reproducción.
+- `ai-system-inventory.md` — inventario de 20 componentes (implementados y
+  planificados) con responsable de negocio, técnico, proveedor y control de
+  terceros; matriz RACI y clasificación de datos.
+- `nist-ai-rmf-report.md` — informe de las seis funciones NIST con acciones
+  P0/P1/P2, marco RGPD/AEPD (72 h) y CCPA/CPRA, acciones irreversibles y
+  registro de brechas `NIST-01`…`NIST-19`.
+- `prompt-injection-tests.md` — matriz de casos directos e indirectos y
+  comandos de reproducción.
+- `evidence/` — salidas reales (secretos, harness, inyección, traza, rate
+  limit, aprobación humana y suites).
+
+Cambios de código:
+
+- `app/routes/knowledge.py` — screening de inyección, `isolate_context` y rate
+  limit 30/min.
+- `data/pipelines/rag.py` — contexto envuelto en `<untrusted_content>` y
+  delimitadores escapados.
+- `data/pipelines/rfp_intake/sanitize.py` (nuevo) — neutraliza instrucciones y
+  escapa `--- FIN ---`; aplicado a clasificador, metadatos, orquestador y
+  workers. Regla "documento = DATOS" en los 5 prompts del intake; regla
+  equivalente en el generador y el evaluador de pertinencia de la Parte 2.
+- `data/pipelines/rfp_approval/approval_graph.py` — el comentario humano de
+  `request_changes` se sanea antes de regenerar la sección.
+- `app/routes/rfp.py` — rate limit en subida, propuesta y aprobaciones.
+- `app/routes/chat.py` — rate limit por usuario y sesión en el WebSocket.
+- `app/routes/agent.py` + `app/agent/tracing.py` — `GET /agent/traces/{run_id}`
+  con `load_run()` y validación anti path traversal.
+- Credenciales de desarrollo: `seed_users.py`, `seed_perf.py`,
+  `scripts/chat_ws_smoke.py` y `scripts/perf-audit/run.mjs` sin contraseñas
+  literales; `mcps/trackflow-mcp/.env.example` sin `admin123` (cuenta
+  `mcp-service`).
+- Scripts nuevos: `scripts/security/prompt_injection_demo.py` (6 casos, exit 0/1)
+  y `scripts/security/agent_trace_demo.py`.
+
+Verificación:
+
+- API: **513 passed** (antes 504; +9 de knowledge/traces/rate limits).
+- Pipelines RFP + evals: **139 passed**; `test_rfp_injection.py` **9 passed** y
+  `test_rfp_approval_graph.py` **6 passed** (incluye feedback humano saneado).
+- Typecheck raíz OK. `scripts/rfp_e2e.py` completa Partes 1→3 con aprobación
+  humana y documento final.
+- Brechas pendientes con dueño: DPA/DPIA (NIST-14), SLA interno de incidentes
+  (NIST-13), alertas persistentes (NIST-12), CI de evals (NIST-15), presupuesto
+  de coste (NIST-09) y los motores de carrier/devoluciones aún no construidos
+  (NIST-08).

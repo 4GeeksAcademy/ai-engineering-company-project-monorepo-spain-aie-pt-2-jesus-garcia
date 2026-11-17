@@ -33,7 +33,7 @@ pip install -r requirements.txt # deps: fastapi, uvicorn, bcrypt, jose, pandas, 
 uvicorn app.main:app --port 8000
 ```
 
-- Seed opcional (crea admin@trackflow.com / admin123): `python seed_users.py`
+- Seed opcional (crea admin@trackflow.com; la contraseña se lee de `SEED_ADMIN_PASSWORD` o se genera y se imprime una sola vez): `python seed_users.py`
 - Seed de inventario (SQL, requiere `DATABASE_URL`): `python seed_inventory.py --force` (destructivo; `--dry-run` para previsualizar)
 - Benchmark de caché (cold/warm): `DATABASE_URL=sqlite:///./perf_measure.db python bench_cache.py` (tras `seed_perf.py --force`; `--repeats N`, `--json`)
 - Usar SIEMPRE `services/api/venv`. El `.venv` raíz no tiene las deps de la API.
@@ -441,3 +441,32 @@ Ver `AGENTS.md` en la raíz para la lista de archivos/directorios que no deben m
   `/rfp/[ticketId]`; polling mientras `approval_status` es `encolado`/`resuming`.
 - Diseño y contrato: `docs/workflows/RFP_APPROVAL_DESIGN.md` y
   `docs/workflows/RFP_APPROVAL_HANDOFF.md`.
+
+## Seguridad de IA — ciclo NIST (2026-11-18)
+
+- Informe y evidencias: `docs/cybersecurity/nist-ai-security/`.
+  `README.md` contiene el mapa de entradas externas al modelo; el inventario con
+  responsables está en `ai-system-inventory.md`; el registro de brechas en
+  `nist-ai-rmf-report.md` §5.
+- Endurecimiento añadido:
+  - `POST /knowledge/query`: screening de inyección, aislamiento de chunks RAG
+    (`isolate_context`) y rate limit 30/min por usuario.
+  - `POST /rfp/tickets` (10/min), `POST /rfp/tickets/{id}/proposal` (5/min) y
+    aprobaciones (20/min).
+  - WebSocket `/chat/ws`: `CHAT_WS_MESSAGE_LIMIT` (30) y
+    `CHAT_WS_MESSAGE_WINDOW_SECONDS` (60) por usuario y sesión.
+  - PDFs RFP: `data/pipelines/rfp_intake/sanitize.py` neutraliza instrucciones
+    y escapa delimitadores antes de cualquier prompt.
+  - `GET /agent/traces/{run_id}` (manager) para auditar una corrida.
+- Credenciales de desarrollo: `seed_users.py` y `seed_perf.py` leen
+  `SEED_ADMIN_PASSWORD` / `SEED_PERF_PASSWORD` o generan una contraseña
+  aleatoria y la imprimen una vez. `scripts/chat_ws_smoke.py` y
+  `scripts/perf-audit/run.mjs` exigen la contraseña por entorno.
+- Comandos:
+  ```bash
+  services/api/venv/bin/python scripts/demo_agent_harness.py
+  services/api/venv/bin/python scripts/security/prompt_injection_demo.py
+  services/api/venv/bin/python scripts/security/agent_trace_demo.py
+  cd services/api && ./venv/bin/python -m pytest
+  uv run pytest tests/pipelines/test_rfp_injection.py -q
+  ```

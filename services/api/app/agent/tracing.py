@@ -24,6 +24,7 @@ INDEX_FILENAME = "index.jsonl"
 TRACE_DIR_ENV_VAR = "AGENT_TRACE_DIR"
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+_RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
 
 
 def utc_now() -> str:
@@ -351,6 +352,28 @@ class AgentTrace:
         if not files:
             raise FileNotFoundError(f"No hay traces en {trace_dir}")
         return cls.load(files[-1])
+
+    @classmethod
+    def load_run(
+        cls,
+        run_id: str,
+        directory: str | Path | None = None,
+    ) -> AgentTrace:
+        """Carga la traza de una corrida por ``run_id``.
+
+        El identificador se valida contra una lista blanca estricta para que no
+        pueda escapar del directorio de trazas (path traversal).
+        """
+
+        if not _RUN_ID_RE.fullmatch(str(run_id or "")):
+            raise ValueError("run_id inválido")
+        trace_dir = resolve_trace_dir(directory)
+        path = (trace_dir / f"{run_id}.json").resolve()
+        if trace_dir.resolve() not in path.parents:
+            raise ValueError("run_id inválido")
+        if not path.is_file():
+            raise FileNotFoundError(f"No hay traza para {run_id}")
+        return cls.load(path)
 
 
 class TraceRecorder:

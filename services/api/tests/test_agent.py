@@ -126,3 +126,77 @@ def test_agent_query_maps_run_failure_to_502_without_stack_trace(client, auth_he
     assert agent_route.GENERIC_ERROR_DETAIL in body
     assert "detalle interno" not in body
     assert "Traceback" not in body
+
+
+def _write_trace(directory, run_id: str) -> None:
+    import json
+    from pathlib import Path
+
+    payload = {
+        "run_id": run_id,
+        "thread_id": run_id,
+        "question": "¿SLA estándar?",
+        "status": "ok",
+        "answer": "de 3 a 5 días hábiles",
+        "error": None,
+        "started_at": "2026-11-17T10:00:00.000+00:00",
+        "finished_at": "2026-11-17T10:00:01.000+00:00",
+        "duration_ms": 1000.0,
+        "events": [
+            {
+                "node": "classify",
+                "input": {},
+                "output": {"route": "rag"},
+                "duration_ms": 1.0,
+                "timestamp": "2026-11-17T10:00:00.100+00:00",
+            },
+            {
+                "node": "retrieve",
+                "input": {},
+                "output": {"sources": []},
+                "duration_ms": 2.0,
+                "timestamp": "2026-11-17T10:00:00.200+00:00",
+            },
+        ],
+        "checkpoints": [],
+        "guard_events": [],
+    }
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    (Path(directory) / f"{run_id}.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+
+def test_agent_trace_returns_route_and_sources(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_TRACE_DIR", str(tmp_path))
+    _write_trace(tmp_path, "run-trace-1")
+
+    response = client.get("/agent/traces/run-trace-1", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] == "run-trace-1"
+    assert body["route"] == "rag"
+    assert body["sources_used"] == ["rag"]
+
+
+def test_agent_trace_missing_returns_404(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_TRACE_DIR", str(tmp_path))
+
+    response = client.get("/agent/traces/run-inexistente", headers=auth_headers)
+
+    assert response.status_code == 404
+
+
+def test_agent_trace_rejects_path_traversal(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_TRACE_DIR", str(tmp_path))
+
+    response = client.get("/agent/traces/..", headers=auth_headers)
+
+    assert response.status_code == 404
+
+
+def test_agent_trace_forbidden_for_normal_user(client, user_headers):
+    response = client.get("/agent/traces/run-trace-1", headers=user_headers)
+
+    assert response.status_code == 403

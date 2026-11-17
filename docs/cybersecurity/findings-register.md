@@ -75,3 +75,22 @@ npm audit --omit=dev --prefix ../../uis/website
 bash scripts/security/hardening/test-hardening.sh
 bash scripts/security/check-secret-permissions.sh
 ```
+
+---
+
+## Ciclo NIST AI Security (2026-11-18)
+
+El ciclo posterior de seguridad de IA no duplica este registro: sus brechas
+viven en
+[`nist-ai-security/nist-ai-rmf-report.md`](./nist-ai-security/nist-ai-rmf-report.md) §5
+(`NIST-01` … `NIST-19`), con la acción, el responsable y la mitigación.
+
+Correcciones de este ciclo que tocan hallazgos previos:
+
+- **FIND-06:** el `.env.example` del MCP ya no incluye `admin123`; los seeders
+  y scripts de desarrollo tampoco contienen contraseñas literales.
+- **FIND-09 / FIND-16:** se añaden rate limits a `/knowledge/query`, a los
+  endpoints RFP, al WebSocket de chat y una API de consulta de trazas
+  (`GET /agent/traces/{run_id}`).
+- **FIND-25:** la inyección indirecta de PDFs RFP se mitiga ahora con
+  `data/pipelines/rfp_intake/sanitize.py` y una regla explícita en los prompts.

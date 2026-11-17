@@ -307,3 +307,48 @@ def test_thread_id_alias_binds_to_session(client, auth_headers) -> None:
     ) as ws:
         snapshot = _next_event(ws)
         assert snapshot["data"]["thread_id"] == session_id
+
+
+def test_websocket_rate_limits_messages_that_trigger_the_agent(
+    client, auth_headers, monkeypatch
+) -> None:
+    from app.core.rate_limit import reset_rate_limits
+
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "1")
+    monkeypatch.setenv("CHAT_WS_MESSAGE_LIMIT", "1")
+    monkeypatch.setenv("CHAT_WS_MESSAGE_WINDOW_SECONDS", "60")
+    reset_rate_limits()
+
+    runner = FakeRunner()
+    _service(runner)
+    session_id = _create_session(client, auth_headers)
+    token = auth_headers["Authorization"].split(" ", 1)[1]
+
+    with client.websocket_connect(
+        f"/chat/ws?token={token}&session_id={session_id}"
+    ) as ws:
+        _next_event(ws)  # snapshot
+        ws.send_json(
+            {
+                "event": "user_message",
+                "data": {"session_id": session_id, "text": "primer mensaje"},
+            }
+        )
+        _read_until(
+            ws,
+            lambda event: event.get("event") == "generation_completed",
+        )
+
+        ws.send_json(
+            {
+                "event": "user_message",
+                "data": {"session_id": session_id, "text": "segundo mensaje"},
+            }
+        )
+        events = _read_until(
+            ws,
+            lambda event: event.get("event") == "error",
+        )
+
+    assert runner.calls == 1
+    assert events[-1]["data"]["code"] == "rate_limited"

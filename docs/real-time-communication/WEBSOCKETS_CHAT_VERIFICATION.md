@@ -53,7 +53,8 @@ OK chat WebSocket E2E
 ## Escenarios manuales en el backoffice
 
 Preparación: stack Docker arriba y login en `http://localhost:3001`
-(`admin@trackflow.com` / `admin123`). Abre **Chat de soporte** en el sidebar.
+(`admin@trackflow.com`; la contraseña la imprime `seed_users.py` o se define
+con `SEED_ADMIN_PASSWORD`). Abre **Chat de soporte** en el sidebar.
 
 ### A — Streaming en vivo
 

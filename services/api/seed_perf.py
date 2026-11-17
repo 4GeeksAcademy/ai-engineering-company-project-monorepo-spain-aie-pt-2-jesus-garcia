@@ -22,6 +22,8 @@ remota (p. ej. Supabase) salvo --allow-remote-db o TRACKFLOW_ALLOW_REMOTE_SEED=1
 
 from argparse import ArgumentParser, Namespace
 from datetime import datetime, timedelta, timezone
+import os
+import secrets
 import sys
 from typing import Callable
 
@@ -153,7 +155,16 @@ def _created_at(span_days: int = 540) -> datetime:
     return start + timedelta(seconds=RNG.randint(0, span_days * 86_400))
 
 
-def seed_users(count: int) -> list[str]:
+def seed_users(count: int) -> tuple[list[str], str]:
+    """Crea los usuarios de carga. Devuelve (uuids, contraseña usada).
+
+    La contraseña nunca está en el código: se lee de ``SEED_PERF_PASSWORD`` o
+    se genera aleatoriamente y se imprime una sola vez.
+    """
+
+    password = (os.getenv("SEED_PERF_PASSWORD") or "").strip()
+    if not password:
+        password = secrets.token_urlsafe(12)
     db = get_tinydb()
     users = db.table("users")
     profiles = db.table("profiles")
@@ -172,7 +183,6 @@ def seed_users(count: int) -> list[str]:
         domain = RNG.choice(EMAIL_DOMAINS)
         email = f"{first.lower()}.{last.lower()}{i}@{domain}"
         role = "admin" if i == 0 else weighted([("user", 86), ("manager", 10), ("admin", 4)])
-        password = "admin123" if i == 0 else "perf-password"
         user_rows.append({
             "email": email,
             "hashed_password": hash_password(password),
@@ -194,7 +204,7 @@ def seed_users(count: int) -> list[str]:
         })
     profiles.insert_multiple(profile_rows)
     db.close()
-    return uuids
+    return uuids, password
 
 
 def seed_suppliers(count: int) -> None:
@@ -399,8 +409,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print("Truncando y repoblando tablas…")
 
-    uuids = seed_users(users)
-    print(f"  Usuarios + perfiles: {len(uuids)} insertados. admin@trackflow.com / admin123 (role admin).")
+    uuids, admin_password = seed_users(users)
+    print(
+        f"  Usuarios + perfiles: {len(uuids)} insertados. "
+        f"admin@trackflow.com (role admin). Contraseña: {admin_password}"
+    )
     seed_suppliers(suppliers)
     print(f"  Suppliers: {suppliers} insertados.")
     seed_incidents(incidents)

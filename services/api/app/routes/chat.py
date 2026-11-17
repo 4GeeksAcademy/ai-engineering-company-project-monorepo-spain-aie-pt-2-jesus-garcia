@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 import anyio
 
@@ -29,6 +30,7 @@ from app.chat.bus import ChatSubscription
 from app.chat.schemas import ChatMessageView, ChatSessionCreate, ChatSessionView
 from app.chat.service import ChatService, get_chat_service
 from app.core.dependencies import authenticate_token, get_current_user
+from app.core.rate_limit import limiter, rate_limit_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,24 @@ async def _authenticate_socket(
         return None
 
 
+def _ws_message_allowed(user: dict, session_id: str) -> bool:
+    """Rate limit por usuario + sesión sobre los mensajes que disparan LLM."""
+
+    if not rate_limit_enabled():
+        return True
+    raw_limit = (os.getenv("CHAT_WS_MESSAGE_LIMIT") or "30").strip()
+    raw_window = (os.getenv("CHAT_WS_MESSAGE_WINDOW_SECONDS") or "60").strip()
+    try:
+        limit = int(raw_limit)
+        window = float(raw_window)
+    except ValueError:
+        limit, window = 30, 60.0
+    if limit <= 0:
+        return True
+    key = f"chat:ws:{user.get('id') or 'anon'}:{session_id}"
+    return limiter.hit(key, limit, window) == 0
+
+
 async def _receive_loop(
     websocket: WebSocket,
     session: ChatSessionView,
@@ -186,6 +206,15 @@ async def _receive_loop(
                 "El evento no pertenece a esta sesión.",
             )
             continue
+
+        if event in ("user_message", "interrupt_requested"):
+            if not _ws_message_allowed(user, session.session_id):
+                service.publish_error(
+                    session.session_id,
+                    "rate_limited",
+                    "Demasiados mensajes en esta sesión. Inténtalo más tarde.",
+                )
+                continue
 
         if event == "user_message":
             await service.handle_user_message(

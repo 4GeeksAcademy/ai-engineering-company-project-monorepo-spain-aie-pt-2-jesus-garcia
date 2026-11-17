@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from sqlmodel import Session
 
 from database import get_db
@@ -36,6 +36,7 @@ from schemas import (
     RfpUploadResponse,
 )
 from app.core.dependencies import require_manager
+from app.core.rate_limit import enforce_rate_limit
 from app.realtime.events import publish_rfp_ticket_created
 from app.services.rfp_approval_service import (
     SqlRfpApprovalRepository,
@@ -91,10 +92,18 @@ READY_PROPOSAL_STATUSES = {
     summary="Subir un PDF y encolar el análisis de la RFP",
 )
 def upload_ticket(
+    request: Request,
     file: UploadFile = File(...),
-    _=Depends(require_manager),
+    current_user: dict = Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> RfpUploadResponse:
+    enforce_rate_limit(
+        request,
+        bucket="rfp:upload",
+        limit=10,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
     ticket_id = str(uuid4())
     content = file.file.read(MAX_UPLOAD_BYTES + 1)
     try:
@@ -224,9 +233,17 @@ def get_rfp_handoff(
 )
 def start_rfp_proposal(
     ticket_id: str,
-    _=Depends(require_manager),
+    request: Request,
+    current_user: dict = Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> RfpProposalStartResponse:
+    enforce_rate_limit(
+        request,
+        bucket="rfp:proposal",
+        limit=5,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
     ticket = get_ticket(session, ticket_id)
 
     if ticket.status == RFP_STATUS_FINISHED:
@@ -337,9 +354,17 @@ def get_rfp_proposal(
 )
 def start_rfp_approvals(
     ticket_id: str,
-    _=Depends(require_manager),
+    request: Request,
+    current_user: dict = Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> RfpApprovalStartResponse:
+    enforce_rate_limit(
+        request,
+        bucket="rfp:approval",
+        limit=20,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
     ticket = get_ticket(session, ticket_id)
     if ticket.status == RFP_STATUS_FINISHED:
         raise HTTPException(
@@ -436,9 +461,17 @@ def resume_rfp_approval(
     ticket_id: str,
     department_id: str,
     decision: RfpApprovalDecisionRequest,
-    _=Depends(require_manager),
+    request: Request,
+    current_user: dict = Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> RfpApprovalResumeResponse:
+    enforce_rate_limit(
+        request,
+        bucket="rfp:approval",
+        limit=20,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
     ticket = get_ticket(session, ticket_id)
     if ticket.status != RFP_STATUS_AWAITING_APPROVAL:
         raise HTTPException(
