@@ -5,7 +5,11 @@ import ReportingPage from "@/app/(protected)/reporting/page";
 import * as api from "@/lib/api";
 import { ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import type { PipelineRunLatest, WeeklyPerformanceReport } from "@/lib/types";
+import type {
+  PipelineRunLatest,
+  SlaStatus,
+  WeeklyPerformanceReport,
+} from "@/lib/types";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -14,6 +18,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
     fetchWeeklyPerformance: vi.fn(),
     fetchLatestPipelineRun: vi.fn(),
     triggerPipelineRun: vi.fn(),
+    fetchSlaStatus: vi.fn(),
+    evaluateSla: vi.fn(),
   };
 });
 
@@ -21,10 +27,47 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock("@/hooks/useRealtimeStream", () => ({
+  useRealtimeStream: () => ({
+    status: "open",
+    attempt: 0,
+    nextRetryMs: null,
+    reconnected: false,
+  }),
+}));
+
 const mockUseAuth = vi.mocked(useAuth);
 const mockFetchWeekly = vi.mocked(api.fetchWeeklyPerformance);
 const mockFetchLatest = vi.mocked(api.fetchLatestPipelineRun);
 const mockTrigger = vi.mocked(api.triggerPipelineRun);
+const mockFetchSla = vi.mocked(api.fetchSlaStatus);
+
+const slaOk: SlaStatus = {
+  week_start: "2026-11-09",
+  threshold_pct: 90,
+  breached: false,
+  computed_at: "2026-11-10T08:00:00Z",
+  countries: [
+    {
+      country: "US",
+      warehouse: "los_angeles",
+      on_time_pct: 93.2,
+      total_shipments: 1520,
+      on_time_shipments: 1417,
+      breached: false,
+      recipients: [],
+    },
+    {
+      country: "Spain",
+      warehouse: "zaragoza",
+      on_time_pct: 94.1,
+      total_shipments: 980,
+      on_time_shipments: 922,
+      breached: false,
+      recipients: [],
+    },
+  ],
+};
 
 const report: WeeklyPerformanceReport = {
   week_start: "2026-07-13",
@@ -100,6 +143,7 @@ beforeEach(() => {
     flow_run_id: "flow-run-1",
     status: "scheduled",
   });
+  mockFetchSla.mockResolvedValue(slaOk);
 });
 
 describe("ReportingPage", () => {
@@ -183,5 +227,47 @@ describe("ReportingPage", () => {
         "test-token",
       ),
     );
+  });
+
+  it("muestra la alerta de umbral cuando el SLA cae por debajo del 90 %", async () => {
+    mockFetchSla.mockResolvedValue({
+      week_start: "2026-11-09",
+      threshold_pct: 90,
+      breached: true,
+      computed_at: "2026-11-10T08:00:00Z",
+      countries: [
+        {
+          country: "US",
+          warehouse: "los_angeles",
+          on_time_pct: 88.4,
+          total_shipments: 1520,
+          on_time_shipments: 1344,
+          breached: true,
+          recipients: [
+            { name: "Thomas Harry", role: "CEO" },
+            { name: "Ana Whitfield", role: "Warehouse Operations" },
+          ],
+        },
+        {
+          country: "Spain",
+          warehouse: "zaragoza",
+          on_time_pct: 93.1,
+          total_shipments: 980,
+          on_time_shipments: 912,
+          breached: false,
+          recipients: [],
+        },
+      ],
+    });
+
+    render(<ReportingPage />);
+
+    expect(
+      await screen.findByText("Estados Unidos · Los Ángeles"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/88.4% de entregas a tiempo/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Thomas Harry y Ana Whitfield/)).toBeInTheDocument();
   });
 });

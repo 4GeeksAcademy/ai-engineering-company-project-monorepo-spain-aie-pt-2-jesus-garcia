@@ -1,0 +1,13 @@
+# Port scan 127.0.0.1 — 2026-11-17T20:17:24Z
+- 22: closed/filtered
+- 80: closed/filtered
+- 443: closed/filtered
+- 3000: OPEN
+- 3001: OPEN
+- 5555: OPEN
+- 6379: OPEN
+- 6333: OPEN
+- 6334: OPEN
+- 8000: OPEN
+- 8001: OPEN
+- 4200: closed/filtered

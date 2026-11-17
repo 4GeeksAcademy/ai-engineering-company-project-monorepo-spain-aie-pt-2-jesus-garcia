@@ -1,0 +1,38 @@
+# Overlay de producción/endurecido.
+#
+# Uso:
+#   sudo docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
+#
+# Requisitos en el host Linux:
+#   - Los bind mounts de datos deben pertenecer al UID/GID configurado:
+#       sudo chown -R "${TRACKFLOW_UID:-10001}:${TRACKFLOW_GID:-10001}" data
+#   - Si usas volúmenes creados antes de este cambio, recréalos una vez:
+#       docker compose down
+#       docker volume rm <proyecto>_task-uploads <proyecto>_ui-next-website <proyecto>_ui-next-backoffice
+#
+# La exposición externa queda limitada al reverse proxy (80/443) y SSH (22).
+# Los puertos internos del compose base ya están bindeados a 127.0.0.1.
+
+services:
+  services:
+    user: "${TRACKFLOW_UID:-10001}:${TRACKFLOW_GID:-10001}"
+    # Sin --reload en producción.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  worker:
+    user: "${TRACKFLOW_UID:-10001}:${TRACKFLOW_GID:-10001}"
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  flower:
+    user: "${TRACKFLOW_UID:-10001}:${TRACKFLOW_GID:-10001}"
+
+  uis:
+    user: "${TRACKFLOW_UI_UID:-1000}:${TRACKFLOW_UI_GID:-1000}"
+
+  mcp:
+    user: "${TRACKFLOW_UID:-10001}:${TRACKFLOW_GID:-10001}"

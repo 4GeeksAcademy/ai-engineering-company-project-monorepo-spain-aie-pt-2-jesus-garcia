@@ -1,0 +1,6 @@
+# Artefactos runtime de los pipelines RFP (Hito 9). No son datos fuente.
+raw/rfp/
+runtime/
+eval/rfp-traces/
+eval/rfp-proposal-traces/
+eval/rfp-approval-traces/

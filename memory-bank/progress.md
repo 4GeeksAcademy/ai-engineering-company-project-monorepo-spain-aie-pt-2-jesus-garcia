@@ -10,6 +10,13 @@
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
+| MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
+| Memoria del agente — Parte 3 | ✅ Completado | Store `agent_memory_*`, `POST /agent/chat`, propuesta/confirmación/auditoría, consolidación y 72 tests de API + 15 evals |
+| Hito 8 — Parte 2: Harness y guardrails | ✅ Completado | System prompt CX, guards de entrada/salida, autorización de pedidos, aislamiento RAG/tools, logs por categoría y `GET /agent/harness/stats`; 413 tests API + 38 evals |
+| Hito 9 — Parte 1: Recepción de RFPs | ✅ Completado | `data/pipelines/rfp_intake/` (clasificador, metadatos, orchestrator-worker-synthesizer), ticket + handoff en PostgreSQL, Celery, UI de recepción y tests |
+| Hito 9 — Parte 2: Generación y evaluación | ✅ Completado | `data/pipelines/rfp_proposal/` (generador por departamento, evaluadores paralelos de legibilidad/pertinencia/compliance, ciclo con límite), persistencia de borradores/evals, API y UI de propuesta |
+| Hito 9 — Parte 3: Aprobación humana y cierre | ✅ Completado | `data/pipelines/rfp_approval/` (interrupt por departamento con checkpointer, arbitraje fijo, traza por nodo, documento final), API/UI, migración 0008 y E2E Partes 1→3 (seeded + live) |
+| Tiempo real (Parte 1) — SSE de RFPs y alerta SLA | ✅ Completado | `GET /realtime/stream` (JWT manager, `rfp_ticket_created`, `rfp_ticket_metadata_ready`, `sla_threshold_alert`, keep-alive, replay `Last-Event-ID`), bus local/Redis, dashboard `/rfp` en vivo con backoff + snapshot/dedupe y banner de SLA en `/reporting` |
 
 ## Últimas decisiones
 
@@ -258,6 +265,73 @@ Problema en dev Docker: panic de Turbopack `Failed to write app endpoint /(auth)
 - **Backend** (`services/api/app/routes/inventory.py`): `GET /inventory/orders` pasa de `get_current_user` a `require_manager` → `role user` recibe **403**. Nuevo test `test_get_orders_with_user_role_returns_403` en `test_inventory.py`.
 - **Frontend** (`uis/backoffice/app/(protected)/inventory/page.tsx`): la sección "Órdenes registradas" solo se renderiza para `isManager`; `fetchInventoryOrders` se llama de forma condicional (evita el 403 que rompía el `Promise.all`). Test nuevo: un `role user` no ve la sección ni dispara el fetch.
 - **Docs**: `docs/SERIALIZATION_AUDIT.md` anota el endpoint como manager/admin-only.
+
+## Evaluación temporal del modelo de ventas (CV + curva de aprendizaje)
+
+Entregable de `docs/models-training-rag/evaluating-regression-model.md`.
+
+- `scripts/sales_forecast/validation.py` (nuevo) — `TimeSeriesSplit` de **6 folds × 8 meses** sobre las 72 filas efectivas del train (2018-01 → 2023-12). Cada fold valida orden cronológico, ausencia de solape, ventana expansiva y que las features de lag/rolling no cambian al truncar la serie en `train_end` / `validation_end`. También reconstruye la fila de cada mes de validación usando solo datos hasta `t−1`.
+- `scripts/evaluate_sales_forecast.py` (nuevo) — genera `data/eval/cv_results.json`, `cv_folds.csv`, `learning_curve.csv` y `learning_curve.png`. La curva usa validación fija 2023 y tamaños de entrenamiento `[24, 30, 36, 42, 48, 54, 60]`.
+- Resultados CV (media ± std, 6 folds): train MAE **16.248 ± 974 EUR**, RMSE **21.275 ± 698 EUR**, MAPE **1,68 ± 0,06 %**; validación MAE **37.716 ± 9.839 EUR**, RMSE **46.224 ± 10.293 EUR**, MAPE **3,49 ± 0,62 %**.
+- Curva de aprendizaje: al pasar de 24 a 60 meses el RMSE de validación solo baja de 64.561 a 62.815 EUR (−2,7 %) mientras el de train cae de 30.558 a 22.032 EUR (−27,9 %). Diagnóstico explícito: **overfitting por varianza**, no underfitting ni falta de datos.
+- Acción propuesta (A/B sobre los mismos folds): `min_samples_leaf` 3 → 5. RMSE de validación prácticamente igual (46.224 → 46.289 EUR, +0,1 %), desviación entre folds −17,8 % (10.293 → 8.460 EUR) y brecha MAPE 1,81 → 1,25 pp. No se cambia el modelo de producción: queda como propuesta validada en CV.
+- Tests: `tests/pipelines/test_sales_forecast_cv.py` (9 casos; orden cronológico, causalidad en fronteras, media ± std, curva, rechazo de <5 folds). `pytest tests/pipelines/test_sales_forecast_cv.py tests/pipelines/test_sales_forecast_split.py -q` → **20 passed**.
+- Informe: `data/eval/evaluation_report.md`; enlace añadido en `docs/models-training-rag/README.md` §6.1.
+
+## Hito 9 — Parte 3: Aprobación humana y cierre
+
+Flujo de aprobación por departamento con human-in-the-loop real, checkpointer
+durable y documento final automático.
+
+- Paquete `data/pipelines/rfp_approval/`:
+  - `contracts.py` — valida `rfp-proposal-v1`, construye el paquete de
+    aprobación y valida la decisión humana (acción, aprobador nombrado,
+    comentario, `interrupt_id`, `acknowledge_provisional`).
+  - `conflicts.py` — señales estructuradas y los tres triggers del BRIEFING §7.
+  - `arbitration_graph.py` — `load_proposal → detect_conflicts → arbitrate` con
+    Miguel Torres / Sofía Ramos y `reject_unresolved` al agotar rondas.
+  - `approval_graph.py` — subgrafo por departamento:
+    `prepare_approval → await_approval (interrupt) → approve | reject |
+    request_changes → regenerate_section` y re-interrupt.
+  - `finalize_graph.py` + `final_document.py` — gate de cumplimiento §5,
+    consolidación Markdown y contrato `rfp-final-v1`.
+  - `trace.py` — evento por nodo con agente, input, output, timestamp y
+    duración.
+  - `runner.py` — `start_approval_flow` / `resume_approval`, checkpointer
+    `SqliteSaver`, hilos `rfp-{ticket}:run-{n}[:{department}]` y trazas JSON.
+- `request_changes` regenera **solo esa sección** reutilizando
+  `build_section_graph` de la Parte 2; los demás departamentos conservan su
+  estado y aprobaciones. `reject` deja la sección rechazada y el ticket en
+  `needs_human_review` sin documento final.
+- Límites: `RFP_PROPOSAL_MAX_ITERATIONS` (Parte 2) y
+  `RFP_APPROVAL_MAX_ROUNDS` (arbitraje + revisiones humanas, por defecto 2).
+- Persistencia (`0008_rfp_approval.sql`): `rfp_node_trace`,
+  `rfp_arbitration`, `rfp_final_document` y columnas de aprobación en
+  `rfp_ticket`/`rfp_department_section`; estado `terminado` en el check.
+- API (`services/api/app/routes/rfp.py`): `POST /approvals/start`,
+  `GET /approvals`, `POST /approvals/{department}`,
+  `GET /final-document`, `GET /final-document/download`, `GET /trace`.
+  El arranque es automático al terminar la Parte 2
+  (`RFP_APPROVAL_AUTOSTART=1`) y también manual para recuperación.
+- UI (`uis/backoffice`): `ApprovalPanel` (paquete mínimo, aprobar/rechazar/
+  solicitar cambios, provisional), `FinalDocumentPanel` (Markdown + descarga +
+  aprobadores) y `TraceTimeline` (Partes 1–3 con input/output desplegables).
+  El detalle del ticket hace polling mientras `approval_status` es
+  `encolado`/`resuming`.
+- Traza Partes 1–2 enriquecida: `_event` añade `agent` y `timestamp`; la Parte 2
+  incluye los eventos del subgrafo de sección y los persiste en su traza JSON.
+- Tests: `tests/pipelines/test_rfp_approval_graph.py` (5),
+  `test_rfp_approval_validation.py` (6), `test_rfp_arbitration.py` (5),
+  `test_rfp_approval_limits.py` (1), `test_rfp_approval_trace.py` (2),
+  `test_rfp_e2e.py` (1); `services/api/tests/test_rfp_approval_api.py` (7);
+  Vitest `ApprovalPanel` (3) y `FinalDocumentPanel` (2). Suites: **91 pipeline
+  RFP**, **API completa en verde**, **96 Vitest**.
+- E2E: `scripts/rfp_e2e.py` (seeded y `--live`). Ejecución real con
+  `trackflow-request-1.pdf`: Parte 1 → Parte 2 → aprobaciones (reverse primero,
+  warehouse después) → `terminado`; documento `rfp-final-v1` EUR con 2
+  secciones, 11.963 caracteres y traza de 28 eventos (partes 1, 2 y 3).
+- Docs: `docs/workflows/RFP_APPROVAL_DESIGN.md` y
+  `docs/workflows/RFP_APPROVAL_HANDOFF.md`.
 
 ## Siguientes pasos
 
@@ -942,3 +1016,689 @@ sobre `data/raw/trackflow_sales.csv` (120 meses consolidados, 2016-01 → 2025-1
 - `docs/models-training-rag/artifacts/metrics.json` y `predictions_test.csv`.
 - `tests/pipelines/test_sales_forecast_split.py` — 11 tests (split 8/2, sin solape, causalidad, reproducibilidad y sanidad de métricas): **11 passed**.
 - `npm run typecheck` raíz OK. La suite completa `tests/pipelines` no colecciona por falta de `sqlalchemy` en el `.venv` raíz (dependencia preexistente del pipeline semanal, ajena a este cambio).
+
+## RAG y base de conocimiento — MILESTONE 7
+
+Implementación del asistente comercial sobre los cuatro documentos de
+`docs/company-knowledge-base/` (SLA, devoluciones, transportistas y tarifas de
+almacenamiento).
+
+### Infraestructura
+- `docker-compose.yml` — servicio `qdrant` (`qdrant/qdrant:v1.20.1`, puertos
+  `6333/6334`, volumen `qdrant-data`, healthcheck TCP), `services` depende de
+  él y monta `./data` y `./docs/company-knowledge-base`. `env_file` incluye
+  `services/api/.env` mediante `load_dotenv()` dentro del contenedor.
+- `services/api/requirements.txt` y `pyproject.toml` — `qdrant-client>=1.20,<2`,
+  `httpx`, `python-dotenv`.
+
+### Indexación (`data/process/`)
+- `rag_config.py` — colección `trackflow_knowledge`, modelos por defecto
+  (`pplx-embed-v1-0.6b` para embeddings, `deepseek-v4-flash` para generación),
+  1024 dimensiones, `RAG_MIN_SCORE=0.35`, rutas y tamaños de chunk. Carga
+  `services/api/.env` con prioridad sobre el `.env` raíz. `join_url()`,
+  `normalize_llm_base_url()` y `build_api_url()` toleran base con/sin `/`, `/v1`
+  o `/litellm` y construyen `{base}/v1/{embeddings|chat/completions}` con una
+  sola barra; `build_model_url()` concatena base + modelo.
+- `rag_index.py` — chunking híbrido por encabezado + bloques semánticos; 14
+  chunks (SLA 3, devoluciones 5, transportistas 3, almacenamiento 3), mínimo 3
+  por documento. `embed()`/`embed_batch()` con normalización L2, soporte de
+  `base64_int8` y lotes de 32. `setup()` borra/recrea la colección
+  (clean-and-reload) y usa UUID5 deterministas. CLI con `--dry-run` y
+  `--no-recreate`.
+
+### Recuperación y generación (`data/pipelines/rag.py`)
+- `retrieve(query, *, k=5, min_score)` — embed + Qdrant `query_points` con
+  `score_threshold`, filtro local y retorno de payloads (nunca objetos SDK).
+- `generate_answer(question, context)` — prompt de asistente comercial con voz
+  de vendedor, reglas de negocio (Black Friday/Rebajas, devoluciones
+  internacionales manuales, descuentos con aprobación de Miguel Torres) y
+  mensaje honesto sin contexto.
+- `query(question)` — composición literal de `retrieve()` + `generate_answer()`.
+
+### API y UI
+- `POST /knowledge/query` autenticado (`app/routes/knowledge.py`), body
+  `{"question": ...}`, response `{"answer": ...}`; errores 502/503 sin filtrar
+  detalles internos. Router incluido en `app/main.py`.
+- Backoffice: página `/knowledge` (“Asistente comercial”), sugerencias, estados
+  de carga/error/respuesta; `lib/knowledge-api.ts`, rewrite
+  `/api/knowledge/:path*` y entrada en el sidebar.
+
+### Evaluación y documentación
+- `data/eval/test-queries.json` — 12 preguntas que cubren los 4 documentos,
+  incluida Black Friday/Rebajas, devoluciones internacionales y descuentos.
+- `data/eval/evaluate_retrieval.py` — Recall@3 con acierto por
+  `source_document` + fragmento de texto; falla si < 80%. Modo `--in-memory`
+  para evaluar sin Docker (indexa en Qdrant en memoria).
+- Resultado real con embeddings de 4Geeks: **Recall@3 12/12 = 100%** con
+  `min_score=0.35`; artefacto en `data/eval/rag-retrieval-results.json`.
+- `docs/rag/rag-design.md` — flujo, chunking, embeddings, umbral,
+  idempotencia, API/UI y comandos.
+- Tests: `tests/pipelines/test_rag.py` (19 passed, stubs de Qdrant y LLM,
+  incluidos tests de construcción de URLs), `services/api/tests/test_knowledge.py`
+  (5 passed) y suite completa de la API (232 passed). Backoffice: 87 tests
+  Vitest, `npm run typecheck`, lint y build OK.
+
+### Pendiente
+- El daemon de Docker no estaba arrancado al validar; `docker compose config`
+  sí pasa. Queda pendiente levantar `qdrant` y probar el indexing contra el
+  servicio real (el flujo completo ya se validó con Qdrant en memoria).
+- `services/api/.env` ya tiene `LLM_BASE_URL=https://llm.4geeks.ai` y
+  `LLM_API_KEY`; la base tolera `/`, `/v1` y `/litellm`.
+
+## Agente RAG con LangGraph — MILESTONE 8
+
+El RAG del MILESTONE 7 se expone ahora como un grafo explícito y trazable. Los
+nodos reutilizan `retrieve()` y `generate_answer()` de `data/pipelines/rag.py`;
+ningún nodo invoca `query()`, así que la recuperación y la generación siguen
+siendo pasos separados.
+
+### Grafo (`services/api/app/agent/`)
+- `state.py` — `AgentState` (`TypedDict`, 6 campos): `question`, `context`,
+  `answer`, `status`, `error`, `run_id`. Sin historial de conversación: cada
+  corrida es stateless y el RAG solo usa la pregunta y el contexto.
+- `nodes.py` — `receive_question`, `retrieve`, `generate`, `no_context` y
+  `fail`, con inyección de dependencias para tests. Un nodo vacío evita
+  recuperar; sin contexto se responde con `rag.NO_CONTEXT_ANSWER` sin llamar al
+  LLM.
+- `graph.py` — aristas condicionales (`route_after_receive`,
+  `route_after_retrieve`, `route_after_generate`), validación estructural
+  (nodo huérfano, arista a nodo inexistente, nodo sin salida, estado no
+  `TypedDict`) y compilación explícita con `InMemorySaver`. El router compila
+  al importarse: un grafo inválido impide arrancar la API.
+- `tracing.py` — `TraceRecorder`/`AgentTrace`; cada corrida escribe
+  `data/eval/agent-traces/{run_id}.json` (`AGENT_TRACE_DIR` configurable) con
+  orden de nodos, salidas, fuentes recuperadas y checkpoints, más una línea en
+  `index.jsonl`.
+- `runner.py` — `run_agent()` (stream de updates + checkpoint por transición),
+  `get_run_state()` y `AgentRunError`.
+
+### Endpoint
+- `POST /agent/query` (`app/routes/agent.py`, autenticado) devuelve
+  `{"answer", "run_id"}`. No tiene lógica de negocio: invoca el grafo y mapea
+  `invalid_question → 422` y `error`/excepción → 502 con mensaje genérico.
+  `/knowledge/query` se mantiene intacto.
+- Dependencia `langgraph>=1.2.21` añadida a `services/api/requirements.txt` y
+  `services/api/pyproject.toml` e instalada en `services/api/venv`.
+
+### Evals y anclaje
+- `tests/pipelines/test_agent_evals.py` (10 passed):
+  pregunta vacía sin retrieve/generate, orden `retrieve → generate` con el
+  contexto exacto, `no_context` sin LLM, anclaje en 4 casos del BRIEFING
+  (`3 a 5 días hábiles`, `40%`, gestión manual, Miguel Torres), 3 checkpoints
+  por corrida y fallo de compilación ante nodo huérfano/estado mal tipado.
+- `tests/pipelines/fixtures/agent_traces/*.json` — traces reales grabados con
+  `scripts/record_agent_traces.py` contra Qdrant (14 chunks) y el LLM de
+  `services/api/.env`; los evals los leen sin red.
+- Verificación: `uv run pytest tests/pipelines/test_rag.py
+  tests/pipelines/test_agent_evals.py -q` → 29 passed; suite completa de la API
+  → 237 passed.
+- Diseño: `docs/rag/agent-design.md`.
+
+### Pendiente
+- Reconstruir la imagen del contenedor `api` (`docker compose build api`) para
+  que incluya `langgraph`; el venv local ya lo tiene.
+- Decidir si `data/eval/agent-traces/` se añade a `.gitignore` (runtime, no
+  versionado) — `.gitignore` está protegido y no se ha tocado.
+- Migrar el backoffice a `/agent/query` si se quiere mostrar `run_id` y enlazar
+  al trace desde la UI.
+
+## Agente RAG + tools de lectura en tiempo real — MILESTONE 8 (Parte 2)
+
+El agente deja de responder solo con la base de conocimiento: cuando la
+pregunta pide el estado de un ticket o el stock de un producto, consulta el
+servicio real. El usuario no indica la fuente; un nodo `classify` decide entre
+RAG, tool o ambos.
+
+### Tools (`services/api/app/agent/tools/`)
+- `contracts.py` — contratos Pydantic de entrada/salida:
+  `IncidentLookupInput/Output` (ticket_id o filtros; estado, categoría, origen,
+  sede, fechas) e `InventoryLookupInput/Output` (sku_id/sku_code/name_query +
+  warehouse; stock total y por almacén). Errores tipados: `invalid_input`,
+  `not_found`, `forbidden`, `timeout`, `unavailable`.
+- `incidents.py` / `inventory.py` — solo lectura, in-process. Incidencias usa
+  `app/services/incident_service.py`; inventario usa
+  `inventory_service.list_skus_with_stock` (misma capa que las rutas REST). Sin
+  datasets simulados ni escrituras.
+- `execution.py` — timeout numérico con `ThreadPoolExecutor`:
+  `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` y
+  `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS` (default `3` s). Si expira, la tool
+  devuelve `timeout` y el grafo sigue.
+- `tool_answers.py` — respuestas deterministas (sin LLM) para ticket/stock y
+  fallbacks honestos: no encontrado, timeout, servicio caído, sin permisos.
+
+### Capa de servicio compartida
+- `app/services/incident_service.py` (nuevo) — `find_incident`,
+  `list_incidents`, `to_incident`, `to_list_item`. `GET /api/incidents` y la
+  tool comparten exactamente la misma lógica.
+- `app/services/inventory_service.py` — `sku_to_read` y
+  `list_skus_with_stock`; `GET /inventory/products` y la tool comparten la
+  misma consulta y el mismo cálculo de stock.
+
+### Grafo y enrutado
+- `app/agent/router.py` (nuevo) — `RoutingDecision` y `classify_question`
+  determinista: señales de ticket/ID, SKU/producto/almacén y términos de
+  política. Rutas: `rag`, `incident`, `inventory`, `incident+rag`,
+  `inventory+rag`.
+- `nodes.py` — nuevos nodos `classify`, `tool_incident`, `tool_inventory` y
+  `answer_from_tool`; `generate` añade el resultado de la tool al contexto
+  cuando la ruta es `+rag`.
+- `graph.py` — aristas condicionales nuevas; si el ticket/stok se consulta y
+  además hay política, el orden es `tool → retrieve → generate`.
+- `state.py` — `route`, `routing`, `tool_name`, `tool_result`, `tool_status`,
+  `tool_error`, `fallback`, `tool_context_included`, `user_role`.
+- `runner.py` / `routes/agent.py` — el endpoint pasa el usuario autenticado; la
+  tool de tickets aplica el mismo `require_manager` que `GET /api/incidents`
+  (un `role=user` recibe un fallback de permisos, sin filtrar datos). Al ser
+  in-process no hay token backend-a-backend; documentado en
+  `docs/rag/agent-design.md`.
+- `tracing.py` — el trace añade `route` y `sources_used` (en orden real), y los
+  eventos de tool incluyen `tool_status`/`fallback`. La descripción libre se
+  trunca a 200 caracteres y no se persiste `user_role`.
+
+### Evals y tests
+- `tests/pipelines/test_agent_evals.py` — **23 passed**: se mantienen los
+  evals de la Parte 1 y se añaden tool de tickets (sin RAG), RAG puro (sin
+  tools), fallback por timeout, no encontrado, `incident+rag`, tool de
+  inventario, permisos y tabla parametrizada del clasificador.
+- `services/api/tests/test_agent_tools.py` — **15 tests nuevos**: lectura real de
+  TinyDB/SQLite, filtros, no encontrado, timeout, servicio no disponible, input
+  inválido y verificación de solo lectura. Junto con los 6 del contrato HTTP
+  (`tests/test_agent.py`) suman **21 passed**.
+- Suite completa de la API: **253 passed**. Evals: **23 passed**. Typecheck
+  raíz OK.
+
+### Configuración
+- `.env.example`: `AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS=3`,
+  `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS=3`, `AGENT_TRACE_DIR=`.
+- Diseño actualizado: `docs/rag/agent-design.md`.
+
+### Evidencia del PR
+- `docs/rag/traces/ticket-tool-demo.json` — corrida real con la tool de
+  tickets (`route: incident`, `sources_used: ["incident_tool"]`).
+- `docs/rag/traces/rag-policy-demo.json` — corrida real con RAG
+  (`route: rag`, `sources_used: ["rag"]`).
+- `docs/rag/traces/README.md` — explicación y comando de regeneración.
+- `docs/rag/agent-evals-output-part2.txt` — 23 evals + 21 tests de
+  tools/contrato; suite completa 253 passed.
+
+### Pendiente
+- Prueba manual E2E contra el backend real con un ticket del seed (el ejemplo
+  `482` no existe entre los 95 registros; la tool responde "no encontrado").
+- Si se quiere una persona de soporte en el prompt RAG, editar
+  `data/pipelines/rag.py` (directorio protegido; requiere confirmación).
+
+## MCP — OAuth y tools (`feature/mcp-oauth-tools`)
+
+### Dependencias (paso 5)
+- `pyproject.toml`: fuera `fastmcp` (4.2.0 arrastra `mcp>=2.3` vía
+  `fastmcp-slim[client,server]`), entra `mcp>=1.24,<2`, `mcpauth==0.2.0b1` y
+  `typing-extensions>=4.14` (`mcpauth` lo importa sin declararlo).
+- Lock regenerado: `mcp 1.30.0`, `mcpauth 0.2.0b1`; `langchain-mcp-adapters
+  0.3.1` sigue siendo compatible (pide `mcp>=1.24`).
+- `mcp 1.30.0` incluye `mcp.server.fastmcp`, así que el paquete `fastmcp`
+  independiente no hace falta.
+- `[dependency-groups] dev` con `pytest>=9.1.1`: `uv sync` podaba el pytest
+  instalado a mano y rompía el flujo documentado `uv run pytest`.
+- Verificado: `uv lock && uv sync`, imports de `FastMCP`/`MCPAuth`, 23 evals de
+  `tests/pipelines/test_agent_evals.py` y `npm run typecheck` en raíz.
+
+### Cuenta de servicio (paso 4)
+- `services/api/seed_mcp_service.py` — idempotente; crea/actualiza
+  `mcp-service@trackflow.com` con rol `manager`, perfil y sincroniza el
+  password con `MCP_SERVICE_PASSWORD`.
+- Credenciales en `.env` raíz (gitignored): `TRACKFLOW_API_URL`,
+  `TRACKFLOW_API_EMAIL`, `TRACKFLOW_API_PASSWORD`.
+- Verificado con login real (`POST /api/auth/login` → 200, role `manager`)
+  contra uvicorn temporal en :8010.
+- Ojo: `services/api/data/suppliers.json` está trackeado; el seed lo modifica.
+  No commitear ese archivo.
+
+### Servidor MCP (`mcps/trackflow-mcp/`)
+- FastMCP (`mcp.server.fastmcp`, mcp 1.30) + **mcpauth 0.2.0b1 en modo
+  resource server** (sin la auth integrada de FastMCP).
+- PRM en `/.well-known/oauth-protected-resource/mcp` (resource con `/mcp`),
+  `bearer_auth_middleware("jwt", audience/resource, required_scopes=["mcp:read"])`
+  y `/health` público.
+- Scopes: `mcp:read` (query_incidents, get_incident_summary, query_inventory) y
+  `mcp:write` (create_incident, update_incident_status, adjust_inventory_stock).
+- Tools contra la API real: `POST /api/incidents`,
+  `PATCH /api/incidents/{id}/status`, `GET /api/incidents*`,
+  `GET /inventory/products`. La cuenta de servicio es `mcp-service@trackflow.com`
+  (manager) y solo se usa desde el servidor MCP.
+- Inventario solo lectura: `adjust_inventory_stock` siempre devuelve
+  `INVENTORY_READ_ONLY` (sin llamar a la API); `query_inventory` calcula stock
+  desde las órdenes.
+- Errores diferenciados: 401 (`missing_auth_header`, `invalid_token`,
+  `invalid_issuer`, `invalid_audience`), 403 (`missing_required_scopes`),
+  tool errors (`INSUFFICIENT_SCOPE`, `VALIDATION_ERROR`, `NOT_FOUND`,
+  `INVALID_STATUS_TRANSITION`, `INVENTORY_READ_ONLY`, `BACKEND_AUTH_FAILED`,
+  `BACKEND_TIMEOUT`, `BACKEND_UNAVAILABLE`, `INTERNAL_ERROR`).
+- Log JSON por invocación (`tool`, `client_id`, `subject`, `scopes`, `outcome`,
+  `error_code`, `duration_ms`, `backend_status`, argumentos saneados).
+- `scripts/mcp_smoke.py` (discovery + flujo por tool; `--write` opcional),
+  `README.md`, `VALIDATION.md`, `docs/mcp/README.md`.
+- Tests: `mcps/trackflow-mcp/.venv/bin/pytest -q` → **35 passed** (PRM, 401/403,
+  scopes, guard de inventario, tools contra doble de API, errores HTTP y logs).
+
+### Migración del agente al MCP
+- `app/agent/tools/mcp_client.py` — `MultiServerMCPClient` +
+  `load_mcp_tools`, `transport="streamable_http"`; timeout
+  `AGENT_MCP_TIMEOUT_SECONDS=10`; `_extract_payload` soporta artifact/structured
+  content y errores `isError`.
+- `app/agent/tools/mcp_auth.py` — cliente OAuth `client_credentials`
+  (`MCP_OAUTH_*`, `audience` para Auth0 y `resource` para RFC 8707), caché,
+  refresh e invalidación.
+- **Eliminados** `app/agent/tools/incidents.py` y `inventory.py`; el agente ya no
+  tiene camino directo a TinyDB/SQLModel ni al Incidents Manager.
+- El estado y los traces conservan `incident_lookup` / `inventory_lookup` como
+  nombres lógicos; por debajo llaman a `query_incidents` / `query_inventory`.
+- Fallback: MCP caído/timeout/sin token/scope insuficiente/no encontrado →
+  `answer_from_tool` con mensaje honesto y `status="ok"`; `/agent/query` no
+  devuelve 502 por un fallo de tool.
+- Tests nuevos: `services/api/tests/test_agent_tools.py` (13) y
+  `tests/test_agent_mcp_failures.py` (8); evals 23 siguen pasando.
+- Suite API completa: **259 passed**; `npm run typecheck` OK.
+
+### Validación real (Codespaces + Auth0)
+- Client grant de `TrackfFow MCP (Test Application)` con `mcp:read` y
+  `mcp:write`; el token incluye `scope: "mcp:read mcp:write"`.
+- Puerto `8001` público en el Codespace; PRM 200 y `/mcp` sin token 401.
+- Smoke M2M contra la URL pública: `tools/list`, ticket 1, summary de 95
+  incidencias, `CLT-SNK-W-42` con 47 uds, guard de inventario
+  `INVENTORY_READ_ONLY`, creación de la incidencia 96 y transición a
+  `in_progress` por el endpoint de ciclo de vida.
+- Agente real en el Codespace: ticket 1 → «Abierto» (datos reales); stock
+  `CLT-SNK-W-42` → 47 uds. Antes del grant devolvía el fallback honesto 200.
+- Fix de discovery: las rutas no canónicas (`/.well-known/oauth-protected-resource`
+  sin `/mcp`) devuelven 404 en lugar de 401 (`2ba5395`).
+
+### Pendiente MCP
+- Validar MCPJam hosted con una sesión iniciada (la sesión guest devuelve 401
+  en su propio backend) y guardar capturas en `docs/mcp/playground/`.
+- Subir el idle timeout del Codespace antes de la demo (los procesos se
+  reinician con el Codespace).
+- No commitear `services/api/data/suppliers.json`.
+
+## Memoria persistente del agente — Parte 3 (rama `feature/agent-memory`)
+
+Store de memoria separado del RAG, con auto-evaluación en la misma llamada de
+generación, propuesta visible en la conversación, confirmación clasificada y
+auditoría completa.
+
+### Arquitectura
+- **PostgreSQL/Supabase** con tres tablas nuevas (`agent_memory_entries`,
+  `agent_memory_proposals`, `agent_memory_audit`). **Nunca** se escribe en
+  Qdrant ni en `trackflow_knowledge`; un test de regresión lo comprueba.
+- Migración aditiva `services/api/migrations/0004_agent_memory.sql`; en
+  SQLite/tests las tablas las crea `create_agent_memory_tables(engine)`.
+- Tipos: `carrier_rule` (carrier + país + zona, revisión 90 d),
+  `operational_context` (ruta/almacén + país, TTL 7 d) y `client_preference`
+  (cliente B2B, revisión 180 d). Sin memoria global.
+- Índices únicos parciales: una entrada `active` por `scope_key` y una propuesta
+  `pending` por usuario.
+
+### Flujo
+- `POST /agent/chat` (`app/routes/agent_memory.py` + `service.py`):
+  1. resuelve una propuesta pendiente con clasificador de intención
+     `approve|reject|edit|unrelated` (LLM estructurado, fallo en cerrado);
+  2. lee memoria activa y relevante (`read_memory`);
+  3. ejecuta el grafo con `memory_context`;
+  4. persiste la propuesta validada y añade la pregunta de confirmación a la
+     misma respuesta.
+- Ruta RAG: **una sola llamada** devuelve `respuesta` + `propuesta_memoria`.
+  Rutas tool/no-context: respuesta determinista; solo si el gate detecta un
+  candidato se hace una única llamada de evaluación.
+- Cita literal (`cita_origen`) obligatoria y validada contra el mensaje;
+  validación determinista de direcciones B2C/B2B, rutas internas, incidencia
+  única, contratos en negociación, credenciales e inyección.
+- Rechazo por defecto ante silencio/ambigüedad; TTL de propuesta 24 h; una
+  propuesta a la vez; edición revalidada.
+- Consolidación: caduca TTL, marca `stale` por revisión, deduplica, bloquea
+  filas legacy prohibidas y aplica tope de 200 activas. CLI
+  `python -m app.agent.memory.consolidation` y endpoint manager.
+- Administración: `GET /agent/memory`, `GET /agent/memory/proposals`,
+  `POST /agent/memory/proposals/{id}/approve`, `POST /agent/memory/{id}/retire`,
+  `POST /agent/memory/consolidate`.
+
+### Tests y evidencia
+- `services/api/tests/test_agent_memory.py` (59): scopes, validación, gate,
+  store, versionado, TTL, consolidación, retirada, intención.
+- `services/api/tests/test_agent_chat.py` (13): ciclos aprobado/rechazado/
+  editado, pregunta adicional en el mismo turno, aislamiento por usuario y
+  contrato HTTP.
+- `tests/pipelines/test_agent_memory_evals.py` (15): una sola llamada RAG,
+  gate en tool, respuesta desde memoria sin LLM, JSON inválido y cita no
+  literal. Evals existentes: 23 passed.
+- Suite API completa: **331 passed**. Typecheck raíz OK.
+- `tests/conftest.py` redirige TinyDB y SQLite a directorios temporales: la
+  suite ya no muta `services/api/data/suppliers.json` ni `test_inventory.db`
+  (artefactos trackeados).
+- Ajustes post-revisión: el silencio caduca como `rejected` con
+  `decision_label=unrelated` (nunca aprobación); `consolidate()` se ejecuta tras
+  cada escritura exitosa; y las trazas redactan PII en pregunta, respuesta,
+  memoria y descripciones de tools.
+- Evidencia reproducible: `services/api/venv/bin/python
+  scripts/demo_agent_memory.py` (aprobado, rechazado y bloqueado por dirección)
+  → `docs/memory/agent-memory-evidence.md`.
+- Diseño: `docs/memory/agent-memory-design.md`; índice en
+  `docs/memory/README.md`; enlace desde `docs/rag/agent-design.md` §14.
+
+### Pendiente
+- Aplicar `0004_agent_memory.sql` en Supabase con backup previo (procedimiento
+  de `migrations/README.md`).
+- Probar el flujo con el LLM real + Qdrant/MCP levantados (la demo usa dobles
+  deterministas).
+- UI de chat en backoffice (fuera del alcance acordado).
+- Valorar activar `AGENT_MEMORY_POLICY_APPROVER_ROLES=admin,manager` para
+  reglas de carrier en producción.
+
+## Harness y guardrails del agente de CX — Hito 8 (Parte 2)
+
+Aseguramiento del mismo agente LangGraph de CX (Valentina Cruz): RAG + tools
+MCP + memoria. El prompt comercial del MILESTONE 7 (`data/pipelines/rag.py`)
+queda intacto para `/knowledge/query`; el prompt de CX vive en `app/`.
+
+### Implementación
+- `services/api/app/agent/harness/` — `prompt.py` (system prompt con jerarquía
+  sistema/usuario, dominio, reglas US/ES, small talk con redirección y datos
+  sensibles), `scope.py`, `injection.py`, `orders.py`, `external.py`,
+  `output.py`, `observability.py`, `runtime.py` y `general.py`.
+- `run_agent()` aplica `screen_input()` antes del grafo y `validate_output()`
+  después; los bloqueos/redirecciones no invocan LLM, RAG ni tools. Las trazas
+  guardan `guard_events` sin alterar `node_order`.
+- `/agent/chat` hace un pre-chequeo de seguridad antes de resolver propuestas
+  pendientes (una inyección no puede aprobar memoria).
+- RAG y resultados de tools se aíslan en `<untrusted_content>`; las
+  instrucciones incrustadas se neutralizan antes del prompt.
+- `models.py` — `CustomerOrder`; migración `0005_customer_orders.sql` y seed
+  `seed_customer_orders.py` (1001/1002 del admin; 45821/45822 de otro cliente).
+- `GET /agent/harness/stats` (manager/admin) con contadores por acción,
+  categoría, guard y motivo, y eventos recientes redactados.
+- Log `trackflow.agent.harness` con `category` structural/content/security.
+
+### Evidencia y tests
+- `services/api/tests/test_agent_harness_{input,external,output,runtime,observability}.py`
+  y corpus `tests/fixtures/harness_corpus.json`.
+- `tests/pipelines/test_agent_evals.py` actualizado: pregunta vacía y consulta
+  fuera de dominio se resuelven en el harness sin LLM.
+- `scripts/demo_agent_harness.py` — demo determinista sin red.
+- `docs/memory/agent-harnessing-design.md` y
+  `docs/memory/agent-harnessing-evidence.md` (7 jailbreaks, pedido ajeno,
+  mezcla de políticas, inyección RAG/tool, salida filtrada y stats).
+- Verificado: `services/api` **413 passed**; evals **38 passed**;
+  `npm run typecheck` OK; seed probado sobre SQLite temporal.
+
+### Pendiente
+- Aplicar `0005_customer_orders.sql` en Supabase con backup previo y cargar el
+  seed de pedidos reales.
+- Smoke con LLM/Qdrant/MCP levantados (la suite y la demo usan dobles).
+- Valorar conectar `customer_order` al servicio real de tracking cuando exista.
+
+## MILESTONE_9 — Parte 1: Recepción de RFPs (rfp_intake)
+
+Implementado el pipeline de recepción de RFPs sobre el backend existente, sin
+segundo servicio HTTP y sin tocar el grafo CX.
+
+### Pipeline (`data/pipelines/rfp_intake/`)
+
+- `catalog.py` — catálogo cerrado de departamentos (`warehouse`/Ana Whitfield,
+  `lastmile`/Carlos Vega, `reverse`/Sofía Ramos), servicios (`warehousing`,
+  `last_mile`, `reverse_logistics`), alias ES/EN, país→moneda y preguntas
+  obligatorias por cifras ausentes.
+- `ingest.py` — PDF→Markdown con **MarkItDown** (obligatorio antes de cualquier
+  agente), metadatos del documento con `pypdf` y hash SHA-256.
+- `readability.py` — Flesch Reading Ease, Flesch-Kincaid, palabras/frases,
+  tokens estimados (`chars/4`), minutos de lectura, complejidad y coste. Se
+  documenta por qué no se usa `py-readability-metrics` (dependencia de datos
+  NLTK en runtime); fórmula equivalente y determinista.
+- `classifier.py` — agente RFP/no-RFP con guardarraíl determinista para pitches
+  de transportista; servicios desconocidos preservados en `unknown_services`.
+- `metadata.py` — agente de metadatos + normalización conservadora (país,
+  moneda, volumen `5,000`/`5.000`, deadline ISO, presupuesto literal). Nunca
+  rellena datos ausentes.
+- `orchestrator.py` — workstreams desde el catálogo; el LLM solo puede
+  enriquecer foco/keywords de departamentos ya activos. Extractos deterministas
+  por keywords/headings.
+- `worker.py` — worker por departamento con metadatos + extractos; guardarraíl
+  numérico descarta cifras no presentes en la RFP y pide confirmación; los
+  hechos canónicos (volumen/moneda/país) no se pueden sobrescribir.
+- `synthesizer.py` — handoff para Ventas con `key_aspects`, preguntas por
+  responsable, conflictos, `next_steps`, resumen y fuente.
+- `graph.py` — grafo LangGraph dedicado `rfp_intake`:
+  conversión → legibilidad → clasificación → metadatos → orquestación →
+  workers paralelos (`Send`) → synthesizer → `analisis_completo`.
+- `runner.py` — ejecución, traza JSON y marca durable de `error`.
+
+### Persistencia y API
+
+- `models.py` — `RfpTicket`, `RfpMetadata`, `RfpDepartmentSection` (SQLModel;
+  JSONB en PostgreSQL). Campos de borrador/evaluación/aprobación preparados para
+  Partes 2/3.
+- `app/services/rfp_service.py` — guardado del PDF en `data/raw/rfp/{ticket}/`,
+  creación de ticket, repositorio SQL con lock (los workers LangGraph corren en
+  paralelo y comparten sesión).
+- `app/routes/rfp.py` — `POST /rfp/tickets` (202 + Celery), listado, detalle,
+  polling de estado y `GET /rfp/handoff/{ticket_id}`. Solo admin/manager.
+- `app/tasks/rfp_intake.py` — tarea Celery `rfp_intake.process_ticket` con
+  reintentos, backoff y registro en DLQ. `worker` de Compose monta `./data`.
+- `migrations/0006_rfp_intake.sql` — DDL idempotente para Supabase (pendiente de
+  aplicar; tests usan SQLite).
+- Estados: `analizando` → `analisis_completo` | `descartado`; `error` para
+  fallo técnico terminal. No se usa `esperando_aprobación` en Parte 1.
+
+### UI (`uis/backoffice`)
+
+- `/rfp` — dropzone multi-PDF (un ticket por archivo), tarjetas de estado,
+  filtro y tabla con polling cada 3 s mientras haya tickets `analizando`.
+- `/rfp/[ticketId]` — metadatos, legibilidad/coste, razón de descarte, secciones
+  por departamento con `key_aspects`/preguntas y handoff para Ventas.
+- `lib/rfp-types.ts`, helpers en `lib/api.ts`, rewrite `/api/rfp/*`, entrada
+  “Recepción RFPs” en el sidebar. Tests Vitest del uploader y del listado.
+
+### Verificación
+
+- Tres PDFs reales de `docs/workflows/rfp-requests/` validados de forma síncrona
+  con `scripts/rfp_smoke.py` y LLM real:
+  - ModaViva → `analisis_completo`, `warehouse` + `reverse`, EUR, sin `lastmile`.
+  - Luna Cosmetics → `analisis_completo`, `warehouse` + `lastmile`, USD,
+    5.000 pedidos/mes.
+  - RapidShip → `descartado` con motivo de pitch de transportista.
+- `pytest` de pipeline: 36 passed; `tests/test_rfp_api.py`: 6 passed.
+- `uis/backoffice`: `tsc --noEmit`, ESLint y 91 tests Vitest OK.
+
+### Verificación E2E (API + Celery + UI, sin Supabase)
+
+- Stack local: uvicorn con SQLite + worker Celery sobre el Redis del compose +
+  backoffice en `:3002` proxyado a `:8002`.
+- Los 3 PDFs se subieron **por la UI** (`/rfp`); cada archivo creó su ticket y
+  la respuesta fue inmediata (202).
+- Resultado observado con polling de la UI: ModaViva y Luna
+  `analisis_completo` (EUR/USD correctos; Luna con 5.000 pedidos/mes y deadline
+  2026-08-24), RapidShip `descartado`; los tres en paralelo sin bloquearse.
+
+## Generación y evaluación de propuestas — Hito 9 (Parte 2)
+
+- Entrada: `rfp_ticket.handoff_payload` con `handoff_status=ready` (contrato
+  `rfp-intake-v1`). La Parte 2 **no reparte el PDF**: el pipeline no importa el
+  convertidor y hay un test con rutas de PDF/markdown inexistentes.
+- La Parte 1 añadió `rfp_facts` al handoff (`monthly_volume`, `sku_count`,
+  `return_volume`, `return_rate`, `deadline`, `budget_range`) para cotizar sin
+  reparsear; si falta, la Parte 2 cae a `rfp_metadata`.
+- `data/pipelines/rfp_proposal/`: generador propio por departamento
+  (`warehouse`/Ana Whitfield, `lastmile`/Carlos Vega, `reverse`/Sofía Ramos) +
+  evaluadores paralelos de legibilidad (Fernández-Huerta y
+  `py-readability-metrics` como verificación), pertinencia (key_aspects +
+  preguntas + juez LLM opcional) y compliance (motor de reglas del briefing
+  §5/§2.3/§2.1).
+- Tablas de tarifa, descuentos y SLA deterministas desde `rate_card.py` y
+  `policy.py`. Lo no publicado queda `pendiente_confirmacion` con su
+  responsable; nunca se estima. Guardarraíl numérico sobre la prosa del LLM.
+- Ciclo acotado (`RFP_PROPOSAL_MAX_ITERATIONS`, por defecto 2). Al agotarse se
+  conserva el último borrador + `EvaluationResult`, la sección queda
+  `needs_human_review` y viaja `provisional: true` al handoff de la Parte 3.
+- Estados del ticket: `generando_borrador` → `en_evaluación` →
+  `esperando_aprobación` | `needs_human_review`.
+- Persistencia: columnas nuevas en `rfp_ticket`/`rfp_department_section` y tabla
+  `rfp_section_evaluation` (histórico por iteración). Migración
+  `services/api/migrations/0007_rfp_proposal.sql`.
+- API sin servicio nuevo: `POST/GET /rfp/tickets/{id}/proposal`; el detalle del
+  ticket incluye `proposal_status` y las secciones con borrador/evaluación.
+- UI backoffice: botón «Generar/Regenerar propuesta», polling, tarjeta por
+  sección con criterios y banner de borrador provisional.
+- Tests: `tests/pipelines/test_rfp_proposal_{contract,generator,evaluators,cycle,graph}.py`
+  (incluye fallo de compliance anclado a §5.3: devoluciones en 24 h) y
+  `services/api/tests/test_rfp_proposal_api.py`. Backoffice: lint, test y build.
+- Política interna de descuentos por volumen documentada en
+  `docs/workflows/RFP_PROPOSAL_POLICY.md` (pendiente de validar por Miguel
+  Torres). Contrato del handoff a la Parte 3 en
+  `docs/workflows/RFP_PROPOSAL_HANDOFF.md`.
+
+## Tiempo real (Parte 1) — SSE de RFPs + alerta de SLA
+
+- `GET /realtime/stream` (manager+): una conexión SSE independiente por
+  pestaña, protegida con el mismo JWT del backoffice. `Content-Type:
+  text/event-stream`, `Cache-Control: no-cache, no-transform`,
+  `X-Accel-Buffering: no`, keep-alive `: keep-alive` cada 15 s y preámbulo
+  `retry: 3000`.
+- Bus de eventos en `app/realtime/broker.py`: `LocalBroker` (dev/tests) y
+  `RedisBroker` (pub/sub + buffer corto de replay). Con `REDIS_URL` definido
+  —Docker— el evento nace en el worker Celery y llega a la API; sin Redis,
+  solo funciona el proceso único. `REALTIME_BROKER=local|redis` lo fuerza.
+- Eventos nombrados y con payload de la entidad (sin sobre): `rfp_ticket_created`
+  al registrar el ticket (`status=analizando`, metadatos aún null) y
+  `rfp_ticket_metadata_ready` cuando el pipeline confirma RFP válida y guarda
+  cliente/país/servicios (mismo `ticket_id`, la UI enriquece sin duplicar).
+- `sla_threshold_alert` (< 90 % por país; Thomas Harry y Ana Whitfield) sobre el
+  read model `reporting.delivery_sla_weekly`. Endpoints
+  `GET /reporting/sla-status` y `POST /reporting/sla/evaluate` (idempotente por
+  semana/país). Semana demo: `scripts/seed_delivery_sla.py`.
+- Frontend: `lib/sse.ts` (`fetch` + `ReadableStream`, parser incremental,
+  backoff 1→30 s con jitter, `Last-Event-ID`, watchdog de inactividad 45 s y sin
+  reintento en 401/403); `useRfpRealtime` aplica snapshot-after-stream y dedupe
+  por `ticket_id`; panel `RfpLiveFeed` en `/rfp` y `SlaAlertBanner` en
+  `/reporting`.
+- Migración `services/api/migrations/0009_delivery_sla.sql`; rewrite
+  `/api/realtime/*` en `next.config.ts`.
+- Tests: `services/api/tests/test_realtime_{sse,broker,sla}.py` (wire real,
+  replay, auth, umbral 90 %) y Vitest `lib/__tests__/sse.test.ts`,
+  `hooks/__tests__/useRfpRealtime.test.tsx`, banner de SLA. Verificación manual
+  en `docs/real-time-communication/verification.md`; diseño y respuestas en
+  `docs/real-time-communication/SSE_DESIGN.md`.
+
+## Tiempo real (Parte 2) — Chat WebSocket del First-line CX agent
+
+Canal bidireccional para el agente `first_line_cx`: streaming token a token,
+interrupción a mitad de respuesta y rehidratación al reconectar. No comparte
+router, bus ni payloads con el SSE de RFPs de la Parte 1.
+
+- **Persistencia** (`app/chat/models.py` + `store.py`): `chat_sessions`
+  (`session_id`, `agent_id`, `user_id`, `client_id`, `status`
+  `active`/`interrupted`/`closed`, `created_at`) y `chat_messages`
+  (`message_id`, `role`, `text`, `status` `streaming`/`completed`/`interrupted`/
+  `failed`, `sequence`, `run_id`). El `session_id` es también el `thread_id` del
+  checkpointer. Un mensaje cerrado no se puede sobrescribir; al arrancar, los
+  `streaming` huérfanos pasan a `interrupted`.
+- **WebSocket** (`GET /chat/ws`): mismo JWT del backoffice por `?token=` o
+  primer frame `auth`; rechazo antes de eventos (4401/4403/4404). Exige
+  `session_id` (alias `thread_id`) existente y del usuario; `manager/admin`
+  pueden observar en solo lectura. REST auxiliar: `POST /chat/sessions`,
+  `GET /chat/sessions/{id}` y `GET /chat/sessions/{id}/messages`.
+- **Streaming**: `run_agent` usa `stream_mode=["updates","custom"]`; el nodo
+  `generate` pasa `get_stream_writer()` al generador y `chat_json_stream`
+  emite solo el campo `respuesta` del JSON de memoria (sin filtrar
+  `propuesta_memoria`). Las rutas deterministas se emiten en trozos al cerrar.
+- **Aborto**: `threading.Event` + `emit_lock` por generación. Orden garantizado
+  `token_chunk* → interrupt_requested → generation_interrupted`; no se publica
+  ningún token antiguo después. El parcial se conserva y el nuevo `new_input`
+  arranca otro `message_id`/`run_id` sobre el mismo hilo. No se usa
+  `interrupt()` HITL como sustituto; una caída de red no aborta.
+- **Pub/sub**: `ChatEventBus` con canal `chat.<session_id>` y
+  `GenerationRegistry` (una generación por sesión, sin duplicar llamadas al
+  agente). En memoria para un proceso; sustituible por Redis pub/sub.
+- **Reconexión**: backoff 1→30 s con jitter en `lib/chat-socket.ts`; al
+  reconectar se envía el mismo `session_id` y el servidor responde
+  `session_snapshot` con historial + `active_generation` antes de tokens
+  nuevos. Dedupe por `(message_id, sequence)`.
+- **UI** (`uis/backoffice` `/chat`): streaming en vivo con cursor, botón
+  “Detener” y “Interrumpir y enviar”, parcial con badge **Interrumpido**,
+  respuesta redirigida como mensaje nuevo, pill de conexión y “Nueva
+  conversación”. Sesión persistida en `?session=` y `localStorage`.
+- **Tests**: `tests/test_chat_{streaming,store,events,bus,ws}.py` y Vitest
+  `lib/__tests__/chat-{types,socket}.test.ts` + `app/(protected)/chat/page.test.tsx`.
+  Verificación E2E real con `scripts/chat_ws_smoke.py` (interrupción sin más
+  tokens, parcial inmutable, turno nuevo y reconexión con 4 mensajes).
+- **Docs**: `docs/real-time-communication/WEBSOCKETS_CHAT_DESIGN.md` (incluye
+  las respuestas a las 3 preguntas de diseño) y
+  `WEBSOCKETS_CHAT_VERIFICATION.md`.
+- **Verificado**: API **480 passed**, backoffice **124 Vitest**, lint/build y
+  typecheck raíz OK; `scripts/chat_ws_smoke.py` contra Docker (parcial
+  inmutable, sin tokens posteriores y reconexión con historial) y prueba real
+  en navegador del flujo interrumpir → badge **Interrumpido** → turno nuevo.
+- **Variables** (defaults, sin tocar `.env*`): `CHAT_HISTORY_LIMIT`,
+  `CHAT_PROMPT_HISTORY_MESSAGES`, `CHAT_PROMPT_HISTORY_CHARS`,
+  `CHAT_MAX_MESSAGE_CHARS`, `CHAT_AUTH_TIMEOUT_SECONDS`,
+  `CHAT_KEEPALIVE_SECONDS`, `CHAT_ABORT_WAIT_SECONDS`,
+  `CHAT_PARTIAL_PERSIST_EVERY`.
+
+## Ciberseguridad — Endurecimiento + OWASP Top 10
+
+Entregable de `docs/cybersecurity/cybersecurity-analysis.md` §7. Rama
+`feature/owasp-top10-audit`.
+
+### Auditoría
+
+- `docs/cybersecurity/owasp-top10-audit.md` — 10 categorías × 3 carriles
+  (backend, frontend, agéntico), con evidencia `archivo:línea`, estado y prueba.
+- `docs/cybersecurity/findings-register.md` — 27 hallazgos con severidad,
+  corrección y verificación.
+- `docs/cybersecurity/server-hardening.md` — runbook de usuario ops, SSH,
+  permisos, firewall, Docker y secretos.
+- `docs/cybersecurity/evidence/` — capturas antes/después y comandos de
+  reproducción.
+
+### Endurecimiento del servidor (scripts / infra)
+
+- `scripts/security/hardening/` — `10-ops-user.sh` (`trackflow-ops`, key-only,
+  sudoers mínimo), `20-ssh-hardening.sh` + `sshd_trackflow.conf`
+  (`PermitRootLogin no`, `PasswordAuthentication no`, `AllowUsers trackflow-ops`),
+  `30-firewall.sh` (UFW 22/80/443 + reglas `DOCKER-USER`), `40-folder-permissions.sh`
+  (`/srv/trackflow/{app,logs,data}` 750, `secrets` 700, `.env` 600),
+  `50-verify-baseline.sh` y `test-hardening.sh` (valida `sshd -t` en Debian).
+- `docker-compose.yml` — todos los puertos a `127.0.0.1`; Redis sin publicar;
+  `no-new-privileges` + `cap_drop: ALL`.
+- `docker-compose.hardened.yml` — overlay de producción no-root, API/worker
+  `read_only` y sin `--reload`.
+- Dockerfiles — `USER appuser` (UID 10001) en API/worker/flower/MCP y
+  `USER node` en frontends.
+
+### Correcciones críticas
+
+- **A01:** `GET /telemetry/report`, `GET /inventory/products`, `GET /agent/memory`
+  y `/knowledge/query` pasan a `require_manager`; gate de rol en la tool de
+  inventario del agente; filtro de `client_preference` en memoria; RAG con
+  audiencia (`app/agent/rag_policy.py`: `user` solo SLA/devoluciones);
+  `client_id` del chat solo manager/admin; registro público desactivado en
+  producción.
+- **A02:** `SECRET_KEY` obligatoria y fuerte en producción
+  (`app/core/config.py`); `.env` a 600; ejemplos sin `admin123`.
+- **A05:** CORS desde `ALLOWED_ORIGINS`; cabeceras de seguridad en API y ambos
+  Next (`next.config.ts`); `/docs` desactivado en producción.
+- **A06:** `python-jose` → `PyJWT`; Next `16.4.6` + `npm audit fix`;
+  `pip-audit` y `npm audit --omit=dev` sin vulnerabilidades.
+- **A07:** rate limit en memoria (`app/core/rate_limit.py`) en login, forgot,
+  reset, cambio de contraseña, registro, agente y telemetría.
+- **A03:** límite de 10 MB para el CSV de incidencias.
+- **Agente:** scopes MCP de solo lectura (`mcp:write` filtrado salvo override).
+
+### Tests y verificación
+
+- `services/api/tests/test_security_hardening.py` (23 casos) + suites previas.
+- API: **504 passed**; backoffice **124 Vitest**; typecheck raíz, lint y build
+  de ambos frontends OK.
+- `scripts/security/authz_matrix.py` — antes/después:
+  telemetry anónimo 200→401, inventario `user` 200→403, memoria `user` 200→403,
+  `client_id` ajeno 201→403.
+- Docker reconstruido: `services`/`worker`/`flower` UID 10001, `uis` UID 1000;
+  `:8000`, `:3000`, `:3001` responden 200; puertos internos en loopback.
+- Pendiente de host real: ejecutar `50-verify-baseline.sh` y capturar
+  `server-baseline.md`; rotar secretos reales y fijar imágenes por digest.

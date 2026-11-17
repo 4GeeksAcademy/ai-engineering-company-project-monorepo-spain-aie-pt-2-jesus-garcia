@@ -1,0 +1,41 @@
+14:    ports:
+15-      - "6379:6379"
+16-    volumes:
+17-      - redis-data:/data
+18-    healthcheck:
+--
+30:    ports:
+31-      - "6333:6333"
+32-      - "6334:6334"
+33-    volumes:
+34-      - qdrant-data:/qdrant/storage
+--
+49:    ports:
+50-      - "3000:3000"
+51-      - "3001:3001"
+52-    environment:
+53-      BACKEND_URL: http://services:8000
+--
+75:    ports:
+76-      - "8000:8000"
+77-    env_file: .env
+78-    environment:
+79-      PREFECT_API_URL: http://prefect-server:4200/api
+--
+106:    ports:
+107-      - "8001:8001"
+108-    env_file:
+109-      - .env
+110-      - ./mcps/trackflow-mcp/.env
+--
+144:    ports:
+145-      - "5555:5555"
+146-    env_file: .env
+147-    environment:
+148-      PYTHONPATH: /app:/
+--
+190:    ports:
+191-      - "4200:4200"
+192-    environment:
+193-      PREFECT_API_DATABASE_CONNECTION_URL: sqlite+aiosqlite:////data/prefect.db
+194-      PREFECT_SERVER_ANALYTICS_ENABLED: "false"

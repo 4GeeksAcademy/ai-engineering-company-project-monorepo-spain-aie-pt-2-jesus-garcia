@@ -1,0 +1,25 @@
+## Sintaxis de scripts
+- ✅ scripts/security/hardening/10-ops-user.sh
+- ✅ scripts/security/hardening/20-ssh-hardening.sh
+- ✅ scripts/security/hardening/30-firewall.sh
+- ✅ scripts/security/hardening/40-folder-permissions.sh
+- ✅ scripts/security/hardening/50-verify-baseline.sh
+- ✅ scripts/security/hardening/test-hardening.sh
+- ✅ scripts/security/check-secret-permissions.sh
+- ✅ scripts/security/port-scan.sh
+
+## sshd -t (contenedor)
+debconf: delaying package configuration, since apt-utils is not installed
+- ✅ configuración sshd válida
+
+## UFW: puertos permitidos
+- ✅ solo 22 (ops), 80 y 443
+
+## Compose: puertos publicados solo en loopback
+- ✅ todos los puertos usan 127.0.0.1
+
+## Dockerfiles: usuario no-root
+- ✅ services: USER appuser
+- ✅ uis: USER node
+
+✅ Hardening validado.

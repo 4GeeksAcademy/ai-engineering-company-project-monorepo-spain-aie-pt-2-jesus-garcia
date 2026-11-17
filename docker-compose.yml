@@ -11,8 +11,7 @@ services:
         "--appendonly",
         "yes",
       ]
-    ports:
-      - "6379:6379"
+    # Solo accesible desde la red interna de Compose: el host no lo necesita.
     volumes:
       - redis-data:/data
     healthcheck:
@@ -23,11 +22,32 @@ services:
     restart: unless-stopped
     networks: [monorepo-dev]
 
+  # Base de datos vectorial del RAG (MILESTONE 7). La colección
+  # `trackflow_knowledge` se crea desde `data/process/rag_index.py`.
+  qdrant:
+    image: qdrant/qdrant:v1.20.1
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
   uis:
     build: ./uis
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
     environment:
       BACKEND_URL: http://services:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
@@ -44,26 +64,68 @@ services:
       - ui-node-backoffice:/uis/backoffice/node_modules
       - ui-next-website:/uis/website/.next
       - ui-next-backoffice:/uis/backoffice/.next
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks: [monorepo-dev]
 
+  # `services/api/.env` (bind-mounted en /app) se carga con load_dotenv()
+  # dentro del contenedor; por eso no se usa como env_file y no sobreescribe
+  # DATABASE_URL/SECRET_KEY del .env raíz.
   services:
     build: ./services
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file: .env
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
       PYTHONPATH: /app:/
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       INCIDENT_UPLOAD_DIR: /uploads
+      # En la red de Compose el host es el servicio `qdrant`, no localhost.
+      QDRANT_URL: http://qdrant:6333
+      # El agente consume las tools desde el MCP Server dentro de la red Compose.
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8001/mcp}
     volumes:
       - ./services/api:/app
       - ./services/reporting:/services/reporting
       - ./services/__init__.py:/services/__init__.py
+      - ./data:/app/data
+      - ./docs/company-knowledge-base:/app/docs/company-knowledge-base:ro
       - task-uploads:/uploads
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks: [monorepo-dev]
+
+  # MCP Server (FastMCP + mcpauth). Expone /mcp y el Protected Resource
+  # Metadata; el agente lo consume con langchain-mcp-adapters.
+  mcp:
+    build:
+      context: ./mcps/trackflow-mcp
+    ports:
+      - "127.0.0.1:8001:8001"
+    env_file:
+      - .env
+      - ./mcps/trackflow-mcp/.env
+    environment:
+      # En la red Compose la API se resuelve por nombre de servicio.
+      TRACKFLOW_API_BASE_URL: ${TRACKFLOW_API_BASE_URL_DOCKER:-http://services:8000}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      - services
+    restart: unless-stopped
     networks: [monorepo-dev]
 
   # Worker Celery: proceso independiente del servidor FastAPI.
@@ -79,7 +141,12 @@ services:
       - ./services/api:/app
       - ./services/reporting:/services/reporting
       - ./services/__init__.py:/services/__init__.py
+      - ./data:/app/data
       - task-uploads:/uploads
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       redis:
         condition: service_healthy
@@ -91,7 +158,7 @@ services:
     build: ./services
     command: celery -A celery_app flower --port=5555
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     env_file: .env
     environment:
       PYTHONPATH: /app:/
@@ -100,6 +167,12 @@ services:
       - ./services/api:/app
       - ./services/reporting:/services/reporting
       - ./services/__init__.py:/services/__init__.py
+      - ./data:/app/data
+      - ./docs/company-knowledge-base:/app/docs/company-knowledge-base:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       redis:
         condition: service_healthy
@@ -128,6 +201,10 @@ services:
       - ./pipelines:/app/pipelines
       - ./data/pipelines:/app/data/pipelines
       - ./data/raw:/app/data/raw
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
     networks: [monorepo-dev]
 
@@ -137,7 +214,7 @@ services:
     profiles: ["prefect"]
     command: prefect server start --host 0.0.0.0
     ports:
-      - "4200:4200"
+      - "127.0.0.1:4200:4200"
     environment:
       PREFECT_API_DATABASE_CONNECTION_URL: sqlite+aiosqlite:////data/prefect.db
       PREFECT_SERVER_ANALYTICS_ENABLED: "false"
@@ -215,4 +292,5 @@ volumes:
   ui-next-backoffice:
   prefect-data:
   redis-data:
+  qdrant-data:
   task-uploads:

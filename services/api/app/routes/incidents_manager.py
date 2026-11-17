@@ -18,19 +18,12 @@ from models import (
 )
 from app.core.dependencies import require_manager
 from app.core.cache import cache, filter_cache_key
+from app.services import incident_service
 
 router = APIRouter(prefix="/api", tags=["incident-manager"])
 
 INCIDENTS_TTL = 30  # segundos
 INCIDENTS_PREFIX = "incidents:"
-
-
-def _find_incident(table, incident_id):
-    target_id = int(incident_id) if incident_id.isdigit() else incident_id
-    for doc in table.all():
-        if doc.doc_id == target_id:
-            return doc
-    return None
 
 
 def _validate_create(data: dict) -> None:
@@ -106,13 +99,6 @@ def _list_key(status, origin, branch, category) -> str:
     )
 
 
-def _description_excerpt(description: str, limit: int = 120) -> str:
-    description = str(description or "").strip()
-    if len(description) <= limit:
-        return description
-    return description[:limit].rstrip() + "…"
-
-
 @router.get(
     "/incidents",
     response_model=list[IncidentListItem],
@@ -133,27 +119,16 @@ def list_incidents(
     db = get_tinydb()
     table = db.table("incidents")
 
-    results = []
-    for doc in table.all():
-        if status and doc.get("status") != status:
-            continue
-        if origin and doc.get("origin") != origin:
-            continue
-        if branch and doc.get("branch") != branch:
-            continue
-        if category and doc.get("category") != category:
-            continue
-        results.append(
-            IncidentListItem(
-                id=str(doc.doc_id),
-                title=doc.get("title", ""),
-                description_excerpt=_description_excerpt(doc.get("description", "")),
-                origin=doc.get("origin", ""),
-                branch=doc.get("branch", ""),
-                category=doc.get("category", ""),
-                status=doc.get("status", ""),
-            )
+    results = [
+        incident_service.to_list_item(doc)
+        for doc in incident_service.list_incidents(
+            table,
+            status=status,
+            origin=origin,
+            branch=branch,
+            category=category,
         )
+    ]
 
     db.close()
     cache.set(key, results, ttl=INCIDENTS_TTL)
@@ -174,13 +149,13 @@ def get_incident(incident_id: str, _=Depends(require_manager)) -> Incident:
     db = get_tinydb()
     table = db.table("incidents")
 
-    doc = _find_incident(table, incident_id)
+    doc = incident_service.find_incident(table, incident_id)
     if doc is None:
         db.close()
         raise HTTPException(status_code=404, detail=f"Incidencia {incident_id} no encontrada.")
 
     db.close()
-    result = Incident(id=str(doc.doc_id), **doc)
+    result = incident_service.to_incident(doc)
     cache.set(key, result, ttl=INCIDENTS_TTL)
     return result
 
@@ -233,7 +208,7 @@ def update_incident_status(
     db = get_tinydb()
     table = db.table("incidents")
 
-    doc = _find_incident(table, incident_id)
+    doc = incident_service.find_incident(table, incident_id)
     if doc is None:
         db.close()
         raise HTTPException(status_code=404, detail=f"Incidencia {incident_id} no encontrada.")

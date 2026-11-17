@@ -1,0 +1,7 @@
+# Baseline (antes del fix) — pip-audit -r services/api/requirements.txt
+Found 3 known vulnerabilities in 2 packages
+Name        Version ID              Fix Versions
+----------  ------- --------------- ------------
+python-jose 3.5.0   PYSEC-2026-4298
+ecdsa       0.19.2  PYSEC-2026-1325
+ecdsa       0.19.2  PYSEC-2026-1325
