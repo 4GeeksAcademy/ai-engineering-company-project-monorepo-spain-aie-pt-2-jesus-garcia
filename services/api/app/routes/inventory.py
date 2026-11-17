@@ -16,7 +16,7 @@ from schemas import (
     StockExitRead,
 )
 from app.core.cache import cache
-from app.core.dependencies import get_current_user, require_manager
+from app.core.dependencies import require_manager
 from app.services.inventory_service import (
     create_discrepancy,
     create_inbound,
@@ -37,7 +37,7 @@ INVENTORY_PREFIX = "inventory:"
     summary="Listar productos con stock actual por almacén",
 )
 def list_products(
-    _=Depends(get_current_user),
+    _=Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> list[SKURead]:
     key = f"{INVENTORY_PREFIX}products"
@@ -56,7 +56,7 @@ def list_products(
 )
 def get_product(
     product_id: int,
-    _=Depends(get_current_user),
+    _=Depends(require_manager),
     session: Session = Depends(get_db),
 ) -> SKURead:
     key = f"{INVENTORY_PREFIX}product:{product_id}"

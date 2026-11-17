@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from models import User, UserCreate, UserRole, UserUpdate
+from app.core.config import public_registration_enabled
 from app.core.dependencies import get_current_user, invalidate_user_cache
+from app.core.rate_limit import enforce_rate_limit
 from app.services.user_service import (
     delete_user,
     get_user,
@@ -14,7 +16,18 @@ router = APIRouter(prefix="/api", tags=["users"])
 
 
 @router.post("/users", response_model=User, status_code=201)
-def create_user_account(payload: UserCreate):
+def create_user_account(payload: UserCreate, request: Request):
+    if not public_registration_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="El registro público está deshabilitado.",
+        )
+    enforce_rate_limit(
+        request,
+        bucket="users:register",
+        limit=5,
+        window_seconds=3600,
+    )
     return register_user(
         payload.email,
         payload.password,

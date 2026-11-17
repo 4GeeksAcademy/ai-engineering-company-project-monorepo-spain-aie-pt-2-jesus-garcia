@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.agent.graph import get_agent_graph
 from app.agent.runner import AgentRunError, run_agent
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import enforce_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,16 @@ class AgentQueryResponse(BaseModel):
 )
 def agent_query(
     payload: AgentQueryRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> AgentQueryResponse:
+    enforce_rate_limit(
+        request,
+        bucket="agent:query",
+        limit=60,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
     try:
         result = run_agent(payload.question, user=current_user)
     except AgentRunError as exc:

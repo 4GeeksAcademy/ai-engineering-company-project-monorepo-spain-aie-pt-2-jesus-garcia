@@ -640,6 +640,7 @@ def read_memory(
     *,
     limit: int | None = None,
     max_chars: int | None = None,
+    allowed_memory_types: set[str] | None = None,
 ) -> list[dict]:
     """Devuelve un bloque acotado y relevante de memoria activa.
 
@@ -660,6 +661,11 @@ def read_memory(
 
     scored: list[tuple[float, AgentMemoryEntry]] = []
     for entry in entries:
+        if (
+            allowed_memory_types is not None
+            and entry.memory_type not in allowed_memory_types
+        ):
+            continue
         if _is_past(entry.expires_at, now) or _is_past(entry.review_at, now):
             continue
         if contains_forbidden(entry.fact, memory_type=entry.memory_type):

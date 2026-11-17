@@ -115,6 +115,14 @@ def chat(
 
     user_id = _user_id(user)
     role = _user_role(user)
+    # La memoria de preferencias de cliente es dato B2B: un usuario final no
+    # debe recibir preferencias de otra marca aunque haya solapamiento de
+    # tokens con su pregunta.
+    allowed_memory_types = (
+        None
+        if role in ("admin", "manager")
+        else {"carrier_rule", "operational_context"}
+    )
     memory = ChatMemory()
     question = text
     memory_context: list[dict] = []
@@ -177,7 +185,13 @@ def chat(
                 question = text
 
         memory_context = (
-            read_memory(db, question) if db is not None else []
+            read_memory(
+                db,
+                question,
+                allowed_memory_types=allowed_memory_types,
+            )
+            if db is not None
+            else []
         )
 
     try:

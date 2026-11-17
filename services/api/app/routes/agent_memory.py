@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.agent.memory.schemas import (
@@ -18,6 +18,7 @@ from app.agent.memory.schemas import (
     MemoryResolutionView,
 )
 from app.agent.memory.service import chat
+from app.core.rate_limit import enforce_rate_limit
 from app.agent.memory.store import (
     consolidate,
     list_entries,
@@ -102,8 +103,16 @@ class ConsolidateResponse(BaseModel):
 )
 def agent_chat(
     payload: AgentChatRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> AgentChatResponse:
+    enforce_rate_limit(
+        request,
+        bucket="agent:chat",
+        limit=60,
+        window_seconds=60,
+        identifier=str(current_user.get("id") or ""),
+    )
     result = chat(
         payload.message,
         user=current_user,
@@ -137,10 +146,10 @@ def agent_chat(
 @router.get(
     "/memory",
     response_model=MemoryListResponse,
-    summary="Consultar la memoria activa del agente",
+    summary="Consultar la memoria activa del agente (manager/admin)",
 )
 def agent_memory_list(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_manager),
 ) -> MemoryListResponse:
     with memory_session() as session:
         entries = list_entries(session)

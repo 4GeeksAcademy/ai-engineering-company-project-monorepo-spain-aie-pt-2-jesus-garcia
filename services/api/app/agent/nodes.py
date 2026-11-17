@@ -29,6 +29,7 @@ from .memory.generation import (
     memory_notes,
 )
 from .memory.schemas import EvaluationOutcome, GenerationOutcome
+from .rag_policy import filter_context_for_role
 from .router import RoutingDecision, classify_question
 from .state import AgentState
 from .streaming import GenerationAborted, current_abort, streaming_enabled
@@ -188,6 +189,7 @@ def make_retrieve_node(retriever: Retriever | None = None):
             run_id=state.get("run_id"),
             session_id=state.get("session_id"),
         )
+        isolated = filter_context_for_role(isolated, state.get("user_role"))
         return {"context": isolated, "status": "ok", "error": None}
 
     return retrieve_node
@@ -292,6 +294,23 @@ def make_tool_inventory_node(lookup: InventoryLookup | None = None):
     def tool_inventory_node(state: AgentState) -> dict:
         if state.get("status") == "error":
             return {}
+
+        role = str(state.get("user_role") or "")
+        if role not in ("admin", "manager"):
+            # El inventario es dato operativo B2B: un usuario final no puede
+            # consultar stock ni el client_id de otras marcas.
+            return _tool_state(
+                tool_name=INVENTORY_TOOL_NAME,
+                data={
+                    "ok": False,
+                    "found": False,
+                    "items": [],
+                    "error": "forbidden",
+                    "message": (
+                        "No tengo permisos para consultar inventario con tu rol."
+                    ),
+                },
+            )
 
         routing = state.get("routing") or {}
         try:

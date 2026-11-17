@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import require_manager
 from data.pipelines.rag import query
 from data.process.rag_config import RagConfigurationError
 
@@ -37,7 +37,7 @@ class KnowledgeQueryResponse(BaseModel):
 )
 def knowledge_query(
     payload: KnowledgeQueryRequest,
-    _=Depends(get_current_user),
+    _=Depends(require_manager),
 ) -> KnowledgeQueryResponse:
     try:
         answer = query(payload.question)

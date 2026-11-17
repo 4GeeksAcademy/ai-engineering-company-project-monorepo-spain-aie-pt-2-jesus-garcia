@@ -137,7 +137,7 @@ def load_settings() -> Settings:
         port=int(_raw("MCP_PORT", "8001")),
         allowed_hosts=allowed_hosts,
         allowed_origins=_csv("MCP_ALLOWED_ORIGINS"),
-        cors_origins=_csv("MCP_CORS_ORIGINS", "*") or ["*"],
+        cors_origins=_csv("MCP_CORS_ORIGINS"),
         disable_dns_rebinding_protection=_bool(
             "MCP_DISABLE_DNS_REBINDING_PROTECTION", False
         ),

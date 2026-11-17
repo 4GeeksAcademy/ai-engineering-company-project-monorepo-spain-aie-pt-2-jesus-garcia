@@ -27,6 +27,7 @@ from models import HealthResponse
 from app.agent.memory.models import create_agent_memory_tables
 from app.chat.models import create_chat_tables
 from app.chat.store import reconcile_streaming_messages
+from app.core.config import allowed_origins, is_production, validate_security_config
 from app.telemetry.outbox import create_outbox_table
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
@@ -52,13 +53,12 @@ logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s:%(name)s:%(message)s"
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:3000,http://localhost:3001"
-
 TELEMETRY_ENDPOINT = os.getenv("TELEMETRY_ENDPOINT")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_security_config()
     if engine is not None:
         SQLModel.metadata.create_all(engine)
         create_agent_memory_tables(engine)
@@ -77,22 +77,44 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    production = is_production()
     app = FastAPI(
         title="TrackFlow API",
         description="API para gestión de proveedores y análisis de incidentes.",
         version="0.2.0",
         lifespan=lifespan,
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else "/openapi.json",
     )
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[origin.strip() for origin in ALLOWED_ORIGINS.split(",")],
+        allow_origins=allowed_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     logger = logging.getLogger("api.timing")
+
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        response.headers.setdefault(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        if production:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        return response
 
     @app.middleware("http")
     async def timing_middleware(request: Request, call_next):

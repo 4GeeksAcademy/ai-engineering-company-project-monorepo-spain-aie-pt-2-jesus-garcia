@@ -11,7 +11,7 @@ tinydb
 sqlmodel
 psycopg2-binary
 passlib[bcrypt]
-python-jose[cryptography]
+PyJWT>=2.10,<3
 resend
 celery[redis]
 flower

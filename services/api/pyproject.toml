@@ -17,7 +17,7 @@ dependencies = [
     "psycopg2-binary",
     "passlib[bcrypt]",
     "bcrypt",
-    "python-jose[cryptography]",
+    "PyJWT>=2.10,<3",
     "resend",
     "celery[redis]",
     "flower",

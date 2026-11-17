@@ -1639,3 +1639,66 @@ router, bus ni payloads con el SSE de RFPs de la Parte 1.
   `CHAT_MAX_MESSAGE_CHARS`, `CHAT_AUTH_TIMEOUT_SECONDS`,
   `CHAT_KEEPALIVE_SECONDS`, `CHAT_ABORT_WAIT_SECONDS`,
   `CHAT_PARTIAL_PERSIST_EVERY`.
+
+## Ciberseguridad — Endurecimiento + OWASP Top 10
+
+Entregable de `docs/cybersecurity/cybersecurity-analysis.md` §7. Rama
+`feature/owasp-top10-audit`.
+
+### Auditoría
+
+- `docs/cybersecurity/owasp-top10-audit.md` — 10 categorías × 3 carriles
+  (backend, frontend, agéntico), con evidencia `archivo:línea`, estado y prueba.
+- `docs/cybersecurity/findings-register.md` — 27 hallazgos con severidad,
+  corrección y verificación.
+- `docs/cybersecurity/server-hardening.md` — runbook de usuario ops, SSH,
+  permisos, firewall, Docker y secretos.
+- `docs/cybersecurity/evidence/` — capturas antes/después y comandos de
+  reproducción.
+
+### Endurecimiento del servidor (scripts / infra)
+
+- `scripts/security/hardening/` — `10-ops-user.sh` (`trackflow-ops`, key-only,
+  sudoers mínimo), `20-ssh-hardening.sh` + `sshd_trackflow.conf`
+  (`PermitRootLogin no`, `PasswordAuthentication no`, `AllowUsers trackflow-ops`),
+  `30-firewall.sh` (UFW 22/80/443 + reglas `DOCKER-USER`), `40-folder-permissions.sh`
+  (`/srv/trackflow/{app,logs,data}` 750, `secrets` 700, `.env` 600),
+  `50-verify-baseline.sh` y `test-hardening.sh` (valida `sshd -t` en Debian).
+- `docker-compose.yml` — todos los puertos a `127.0.0.1`; Redis sin publicar;
+  `no-new-privileges` + `cap_drop: ALL`.
+- `docker-compose.hardened.yml` — overlay de producción no-root, API/worker
+  `read_only` y sin `--reload`.
+- Dockerfiles — `USER appuser` (UID 10001) en API/worker/flower/MCP y
+  `USER node` en frontends.
+
+### Correcciones críticas
+
+- **A01:** `GET /telemetry/report`, `GET /inventory/products`, `GET /agent/memory`
+  y `/knowledge/query` pasan a `require_manager`; gate de rol en la tool de
+  inventario del agente; filtro de `client_preference` en memoria; RAG con
+  audiencia (`app/agent/rag_policy.py`: `user` solo SLA/devoluciones);
+  `client_id` del chat solo manager/admin; registro público desactivado en
+  producción.
+- **A02:** `SECRET_KEY` obligatoria y fuerte en producción
+  (`app/core/config.py`); `.env` a 600; ejemplos sin `admin123`.
+- **A05:** CORS desde `ALLOWED_ORIGINS`; cabeceras de seguridad en API y ambos
+  Next (`next.config.ts`); `/docs` desactivado en producción.
+- **A06:** `python-jose` → `PyJWT`; Next `16.4.6` + `npm audit fix`;
+  `pip-audit` y `npm audit --omit=dev` sin vulnerabilidades.
+- **A07:** rate limit en memoria (`app/core/rate_limit.py`) en login, forgot,
+  reset, cambio de contraseña, registro, agente y telemetría.
+- **A03:** límite de 10 MB para el CSV de incidencias.
+- **Agente:** scopes MCP de solo lectura (`mcp:write` filtrado salvo override).
+
+### Tests y verificación
+
+- `services/api/tests/test_security_hardening.py` (23 casos) + suites previas.
+- API: **504 passed**; backoffice **124 Vitest**; typecheck raíz, lint y build
+  de ambos frontends OK.
+- `scripts/security/authz_matrix.py` — antes/después:
+  telemetry anónimo 200→401, inventario `user` 200→403, memoria `user` 200→403,
+  `client_id` ajeno 201→403.
+- Docker reconstruido: `services`/`worker`/`flower` UID 10001, `uis` UID 1000;
+  `:8000`, `:3000`, `:3001` responden 200; puertos internos en loopback.
+- Pendiente de host real: ejecutar `50-verify-baseline.sh` y capturar
+  `server-baseline.md`; rotar secretos reales y fijar imágenes por digest.

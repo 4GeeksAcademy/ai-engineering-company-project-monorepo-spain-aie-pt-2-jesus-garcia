@@ -353,7 +353,7 @@ def test_memory_read_is_available_to_any_authenticated_user(
     client, auth_headers, user_headers
 ):
     assert client.get("/agent/memory", headers=auth_headers).status_code == 200
-    assert client.get("/agent/memory", headers=user_headers).status_code == 200
+    assert client.get("/agent/memory", headers=user_headers).status_code == 403
 
 
 def test_audit_and_consolidation_require_manager(

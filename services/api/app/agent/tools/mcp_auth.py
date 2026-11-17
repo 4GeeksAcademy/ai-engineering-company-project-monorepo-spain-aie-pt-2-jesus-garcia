@@ -31,6 +31,26 @@ def _csv(value: str) -> list[str]:
     return [item.strip() for item in value.replace(",", " ").split() if item.strip()]
 
 
+def _agent_safe_scopes(scopes: list[str]) -> list[str]:
+    """El agente nunca debe pedir scopes de escritura.
+
+    El MCP Server es de solo lectura para inventario y expone escritura de
+    incidencias. El agente CX no necesita ``mcp:write``; si el entorno lo
+    configura, se elimina y se deja constancia para evitar *excessive agency*.
+    """
+
+    allow_write = (os.getenv("AGENT_MCP_ALLOW_WRITE") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if allow_write:
+        return scopes
+    safe = [scope for scope in scopes if scope != "mcp:write"]
+    return safe or ["mcp:read"]
+
+
 @dataclass(frozen=True)
 class MCPSettings:
     server_url: str = DEFAULT_MCP_SERVER_URL
@@ -73,7 +93,9 @@ class MCPSettings:
             client_secret=raw("MCP_OAUTH_CLIENT_SECRET"),
             audience=raw("MCP_OAUTH_AUDIENCE"),
             resource=raw("MCP_OAUTH_RESOURCE"),
-            scopes=_csv(raw("MCP_OAUTH_SCOPES", "mcp:read")),
+            scopes=_agent_safe_scopes(
+                _csv(raw("MCP_OAUTH_SCOPES", "mcp:read"))
+            ),
             static_token=raw("MCP_AGENT_BEARER_TOKEN"),
             grant_type=raw("MCP_OAUTH_GRANT_TYPE", "client_credentials"),
             refresh_token=raw("MCP_OAUTH_REFRESH_TOKEN"),

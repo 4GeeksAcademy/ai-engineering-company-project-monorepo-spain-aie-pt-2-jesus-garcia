@@ -75,13 +75,14 @@ def _metric(name: str) -> list[dict]:
         )
 
 
-def _report(client) -> dict:
+def _report(client, auth_headers) -> dict:
     response = client.get(
         "/telemetry/report",
         params={
             "start_date": "2026-06-14T00:00:00Z",
             "end_date": "2026-06-16T00:00:00Z",
         },
+        headers=auth_headers,
     )
     assert response.status_code == 200
     return response.json()
@@ -223,8 +224,8 @@ class TestAnalysisMetrics:
 
 
 class TestReportEndpoint:
-    def test_response_has_period_and_five_metrics(self, client, seeded_events):
-        body = _report(client)
+    def test_response_has_period_and_five_metrics(self, client, auth_headers, seeded_events):
+        body = _report(client, auth_headers)
 
         assert body["period"] == {
             "from": "2026-06-14T00:00:00Z",
@@ -233,8 +234,8 @@ class TestReportEndpoint:
         assert set(body["metrics"]) == set(analysis.REPORT_METRIC_KEYS)
         assert body["metrics"]["error_rate_by_day"][0]["date"] == "2026-06-14"
 
-    def test_default_period_is_last_seven_days(self, client):
-        body = client.get("/telemetry/report").json()
+    def test_default_period_is_last_seven_days(self, client, auth_headers):
+        body = client.get("/telemetry/report", headers=auth_headers).json()
 
         start = datetime.fromisoformat(
             body["period"]["from"].replace("Z", "+00:00")
@@ -244,9 +245,10 @@ class TestReportEndpoint:
         assert end - start == timedelta(days=7)
         assert set(body["metrics"]) == set(analysis.REPORT_METRIC_KEYS)
 
-    def test_end_date_is_exclusive(self, client, seeded_events):
+    def test_end_date_is_exclusive(self, client, auth_headers, seeded_events):
         body = client.get(
             "/telemetry/report",
+            headers=auth_headers,
             params={
                 "start_date": "2026-06-14T00:00:00Z",
                 "end_date": "2026-06-15T00:00:00Z",
@@ -256,9 +258,10 @@ class TestReportEndpoint:
         dates = {row["date"] for row in body["metrics"]["events_per_day"]}
         assert dates == {"2026-06-14"}
 
-    def test_invalid_period_returns_400(self, client):
+    def test_invalid_period_returns_400(self, client, auth_headers):
         response = client.get(
             "/telemetry/report",
+            headers=auth_headers,
             params={
                 "start_date": "2026-06-16T00:00:00Z",
                 "end_date": "2026-06-14T00:00:00Z",
@@ -268,7 +271,7 @@ class TestReportEndpoint:
         assert response.status_code == 400
         assert response.json()["detail"] == "start_date must be before end_date"
 
-    def test_repeated_report_is_served_from_cache(self, client, seeded_events, monkeypatch):
+    def test_repeated_report_is_served_from_cache(self, client, auth_headers, seeded_events, monkeypatch):
         calls = {"count": 0}
         original = analysis.build_metrics
 
@@ -282,13 +285,13 @@ class TestReportEndpoint:
             "end_date": "2026-06-16T00:00:00Z",
         }
 
-        first = client.get("/telemetry/report", params=params).json()
-        second = client.get("/telemetry/report", params=params).json()
+        first = client.get("/telemetry/report", params=params, headers=auth_headers).json()
+        second = client.get("/telemetry/report", params=params, headers=auth_headers).json()
 
         assert calls["count"] == 1
         assert first == second
 
-    def test_report_selects_with_event_type_in_and_timestamp_range(self, client, seeded_events):
+    def test_report_selects_with_event_type_in_and_timestamp_range(self, client, auth_headers, seeded_events):
         statements: list[str] = []
 
         def capture(conn, cursor, statement, parameters, context, executemany):
@@ -297,7 +300,7 @@ class TestReportEndpoint:
 
         event.listen(engine, "before_cursor_execute", capture)
         try:
-            _report(client)
+            _report(client, auth_headers)
         finally:
             event.remove(engine, "before_cursor_execute", capture)
 

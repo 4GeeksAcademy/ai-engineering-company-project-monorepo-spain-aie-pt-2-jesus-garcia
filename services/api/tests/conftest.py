@@ -4,9 +4,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ["SECRET_KEY"] = os.environ.get("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdef")
 # El bus SSE de tests es siempre local: nunca debe tocar un Redis real.
 os.environ["REALTIME_BROKER"] = "local"
+# El rate limit se prueba explícitamente en su propia suite; en el resto de
+# tests se desactiva para que no interfiera con fixtures que repiten login.
+os.environ["RATE_LIMIT_ENABLED"] = "0"
 _TEST_DIR = Path(tempfile.mkdtemp(prefix="trackflow-tests-"))
 _TEST_DB = _TEST_DIR / "test_inventory.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
@@ -47,6 +50,15 @@ EMPTY_CSV = ""
 INVALID_HEADER_CSV = """foo,bar,baz
 1,2,3
 """
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    from app.core.rate_limit import reset_rate_limits
+
+    reset_rate_limits()
+    yield
+    reset_rate_limits()
 
 
 @pytest.fixture(autouse=True)

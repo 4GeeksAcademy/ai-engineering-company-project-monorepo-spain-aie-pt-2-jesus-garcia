@@ -53,6 +53,14 @@ def create_chat_session(
     service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionView:
     try:
+        if payload is not None and payload.client_id:
+            if current_user.get("role") not in ("admin", "manager"):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "No puedes asociar la sesión a una marca cliente."
+                    ),
+                )
         return service.create_session(
             user=current_user,
             client_id=payload.client_id if payload is not None else None,
