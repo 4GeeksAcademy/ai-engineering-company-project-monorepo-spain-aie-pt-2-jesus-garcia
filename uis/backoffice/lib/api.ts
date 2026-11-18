@@ -17,14 +17,22 @@ import type {
   TelemetryReport,
   PipelineRunLatest,
   PipelineRunTriggerResponse,
+  SlaEvaluationResponse,
+  SlaStatus,
   WeeklyPerformanceReport,
 } from "./types";
 import type {
+  RfpApprovalDecision,
+  RfpApprovalResumeResponse,
+  RfpApprovalStartResponse,
+  RfpApprovals,
+  RfpFinalDocument,
   RfpProposal,
   RfpProposalStartResponse,
   RfpTicketDetail,
   RfpTicketListItem,
   RfpTicketStatus,
+  RfpTrace,
   RfpUploadResponse,
 } from "./rfp-types";
 
@@ -388,6 +396,23 @@ export async function triggerPipelineRun(
   });
 }
 
+export async function fetchSlaStatus(
+  token?: string | null,
+): Promise<SlaStatus> {
+  return request<SlaStatus>("/api/reporting/sla-status", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function evaluateSla(
+  token?: string | null,
+): Promise<SlaEvaluationResponse> {
+  return request<SlaEvaluationResponse>("/api/reporting/sla/evaluate", {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Recepción de RFPs (Hito 9, Parte 1)
 // ---------------------------------------------------------------------------
@@ -458,6 +483,77 @@ export async function fetchRfpProposal(
 ): Promise<RfpProposal> {
   return request<RfpProposal>(
     `/api/rfp/tickets/${encodeURIComponent(ticketId)}/proposal`,
+    { headers: authHeaders(token) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Aprobación humana y cierre (Hito 9, Parte 3)
+// ---------------------------------------------------------------------------
+
+export async function fetchRfpApprovals(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpApprovals> {
+  return request<RfpApprovals>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/approvals`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function startRfpApprovals(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpApprovalStartResponse> {
+  return request<RfpApprovalStartResponse>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/approvals/start`,
+    { method: "POST", headers: authHeaders(token) },
+  );
+}
+
+export async function submitRfpApproval(
+  ticketId: string,
+  departmentId: string,
+  decision: RfpApprovalDecision,
+  token?: string | null,
+): Promise<RfpApprovalResumeResponse> {
+  return request<RfpApprovalResumeResponse>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/approvals/${encodeURIComponent(departmentId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(token) },
+      body: JSON.stringify(decision),
+    },
+  );
+}
+
+export async function fetchRfpFinalDocument(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpFinalDocument> {
+  return request<RfpFinalDocument>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/final-document`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function downloadRfpFinalDocument(
+  ticketId: string,
+  token?: string | null,
+): Promise<Blob> {
+  return request<Blob>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/final-document/download`,
+    { headers: authHeaders(token) },
+    "blob",
+  );
+}
+
+export async function fetchRfpTrace(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpTrace> {
+  return request<RfpTrace>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/trace`,
     { headers: authHeaders(token) },
   );
 }

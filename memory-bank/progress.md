@@ -15,6 +15,8 @@
 | Hito 8 — Parte 2: Harness y guardrails | ✅ Completado | System prompt CX, guards de entrada/salida, autorización de pedidos, aislamiento RAG/tools, logs por categoría y `GET /agent/harness/stats`; 413 tests API + 38 evals |
 | Hito 9 — Parte 1: Recepción de RFPs | ✅ Completado | `data/pipelines/rfp_intake/` (clasificador, metadatos, orchestrator-worker-synthesizer), ticket + handoff en PostgreSQL, Celery, UI de recepción y tests |
 | Hito 9 — Parte 2: Generación y evaluación | ✅ Completado | `data/pipelines/rfp_proposal/` (generador por departamento, evaluadores paralelos de legibilidad/pertinencia/compliance, ciclo con límite), persistencia de borradores/evals, API y UI de propuesta |
+| Hito 9 — Parte 3: Aprobación humana y cierre | ✅ Completado | `data/pipelines/rfp_approval/` (interrupt por departamento con checkpointer, arbitraje fijo, traza por nodo, documento final), API/UI, migración 0008 y E2E Partes 1→3 (seeded + live) |
+| Tiempo real (Parte 1) — SSE de RFPs y alerta SLA | ✅ Completado | `GET /realtime/stream` (JWT manager, `rfp_ticket_created`, `rfp_ticket_metadata_ready`, `sla_threshold_alert`, keep-alive, replay `Last-Event-ID`), bus local/Redis, dashboard `/rfp` en vivo con backoff + snapshot/dedupe y banner de SLA en `/reporting` |
 
 ## Últimas decisiones
 
@@ -275,6 +277,61 @@ Entregable de `docs/models-training-rag/evaluating-regression-model.md`.
 - Acción propuesta (A/B sobre los mismos folds): `min_samples_leaf` 3 → 5. RMSE de validación prácticamente igual (46.224 → 46.289 EUR, +0,1 %), desviación entre folds −17,8 % (10.293 → 8.460 EUR) y brecha MAPE 1,81 → 1,25 pp. No se cambia el modelo de producción: queda como propuesta validada en CV.
 - Tests: `tests/pipelines/test_sales_forecast_cv.py` (9 casos; orden cronológico, causalidad en fronteras, media ± std, curva, rechazo de <5 folds). `pytest tests/pipelines/test_sales_forecast_cv.py tests/pipelines/test_sales_forecast_split.py -q` → **20 passed**.
 - Informe: `data/eval/evaluation_report.md`; enlace añadido en `docs/models-training-rag/README.md` §6.1.
+
+## Hito 9 — Parte 3: Aprobación humana y cierre
+
+Flujo de aprobación por departamento con human-in-the-loop real, checkpointer
+durable y documento final automático.
+
+- Paquete `data/pipelines/rfp_approval/`:
+  - `contracts.py` — valida `rfp-proposal-v1`, construye el paquete de
+    aprobación y valida la decisión humana (acción, aprobador nombrado,
+    comentario, `interrupt_id`, `acknowledge_provisional`).
+  - `conflicts.py` — señales estructuradas y los tres triggers del BRIEFING §7.
+  - `arbitration_graph.py` — `load_proposal → detect_conflicts → arbitrate` con
+    Miguel Torres / Sofía Ramos y `reject_unresolved` al agotar rondas.
+  - `approval_graph.py` — subgrafo por departamento:
+    `prepare_approval → await_approval (interrupt) → approve | reject |
+    request_changes → regenerate_section` y re-interrupt.
+  - `finalize_graph.py` + `final_document.py` — gate de cumplimiento §5,
+    consolidación Markdown y contrato `rfp-final-v1`.
+  - `trace.py` — evento por nodo con agente, input, output, timestamp y
+    duración.
+  - `runner.py` — `start_approval_flow` / `resume_approval`, checkpointer
+    `SqliteSaver`, hilos `rfp-{ticket}:run-{n}[:{department}]` y trazas JSON.
+- `request_changes` regenera **solo esa sección** reutilizando
+  `build_section_graph` de la Parte 2; los demás departamentos conservan su
+  estado y aprobaciones. `reject` deja la sección rechazada y el ticket en
+  `needs_human_review` sin documento final.
+- Límites: `RFP_PROPOSAL_MAX_ITERATIONS` (Parte 2) y
+  `RFP_APPROVAL_MAX_ROUNDS` (arbitraje + revisiones humanas, por defecto 2).
+- Persistencia (`0008_rfp_approval.sql`): `rfp_node_trace`,
+  `rfp_arbitration`, `rfp_final_document` y columnas de aprobación en
+  `rfp_ticket`/`rfp_department_section`; estado `terminado` en el check.
+- API (`services/api/app/routes/rfp.py`): `POST /approvals/start`,
+  `GET /approvals`, `POST /approvals/{department}`,
+  `GET /final-document`, `GET /final-document/download`, `GET /trace`.
+  El arranque es automático al terminar la Parte 2
+  (`RFP_APPROVAL_AUTOSTART=1`) y también manual para recuperación.
+- UI (`uis/backoffice`): `ApprovalPanel` (paquete mínimo, aprobar/rechazar/
+  solicitar cambios, provisional), `FinalDocumentPanel` (Markdown + descarga +
+  aprobadores) y `TraceTimeline` (Partes 1–3 con input/output desplegables).
+  El detalle del ticket hace polling mientras `approval_status` es
+  `encolado`/`resuming`.
+- Traza Partes 1–2 enriquecida: `_event` añade `agent` y `timestamp`; la Parte 2
+  incluye los eventos del subgrafo de sección y los persiste en su traza JSON.
+- Tests: `tests/pipelines/test_rfp_approval_graph.py` (5),
+  `test_rfp_approval_validation.py` (6), `test_rfp_arbitration.py` (5),
+  `test_rfp_approval_limits.py` (1), `test_rfp_approval_trace.py` (2),
+  `test_rfp_e2e.py` (1); `services/api/tests/test_rfp_approval_api.py` (7);
+  Vitest `ApprovalPanel` (3) y `FinalDocumentPanel` (2). Suites: **91 pipeline
+  RFP**, **API completa en verde**, **96 Vitest**.
+- E2E: `scripts/rfp_e2e.py` (seeded y `--live`). Ejecución real con
+  `trackflow-request-1.pdf`: Parte 1 → Parte 2 → aprobaciones (reverse primero,
+  warehouse después) → `terminado`; documento `rfp-final-v1` EUR con 2
+  secciones, 11.963 caracteres y traza de 28 eventos (partes 1, 2 y 3).
+- Docs: `docs/workflows/RFP_APPROVAL_DESIGN.md` y
+  `docs/workflows/RFP_APPROVAL_HANDOFF.md`.
 
 ## Siguientes pasos
 
@@ -1495,3 +1552,35 @@ segundo servicio HTTP y sin tocar el grafo CX.
   `docs/workflows/RFP_PROPOSAL_POLICY.md` (pendiente de validar por Miguel
   Torres). Contrato del handoff a la Parte 3 en
   `docs/workflows/RFP_PROPOSAL_HANDOFF.md`.
+
+## Tiempo real (Parte 1) — SSE de RFPs + alerta de SLA
+
+- `GET /realtime/stream` (manager+): una conexión SSE independiente por
+  pestaña, protegida con el mismo JWT del backoffice. `Content-Type:
+  text/event-stream`, `Cache-Control: no-cache, no-transform`,
+  `X-Accel-Buffering: no`, keep-alive `: keep-alive` cada 15 s y preámbulo
+  `retry: 3000`.
+- Bus de eventos en `app/realtime/broker.py`: `LocalBroker` (dev/tests) y
+  `RedisBroker` (pub/sub + buffer corto de replay). Con `REDIS_URL` definido
+  —Docker— el evento nace en el worker Celery y llega a la API; sin Redis,
+  solo funciona el proceso único. `REALTIME_BROKER=local|redis` lo fuerza.
+- Eventos nombrados y con payload de la entidad (sin sobre): `rfp_ticket_created`
+  al registrar el ticket (`status=analizando`, metadatos aún null) y
+  `rfp_ticket_metadata_ready` cuando el pipeline confirma RFP válida y guarda
+  cliente/país/servicios (mismo `ticket_id`, la UI enriquece sin duplicar).
+- `sla_threshold_alert` (< 90 % por país; Thomas Harry y Ana Whitfield) sobre el
+  read model `reporting.delivery_sla_weekly`. Endpoints
+  `GET /reporting/sla-status` y `POST /reporting/sla/evaluate` (idempotente por
+  semana/país). Semana demo: `scripts/seed_delivery_sla.py`.
+- Frontend: `lib/sse.ts` (`fetch` + `ReadableStream`, parser incremental,
+  backoff 1→30 s con jitter, `Last-Event-ID`, watchdog de inactividad 45 s y sin
+  reintento en 401/403); `useRfpRealtime` aplica snapshot-after-stream y dedupe
+  por `ticket_id`; panel `RfpLiveFeed` en `/rfp` y `SlaAlertBanner` en
+  `/reporting`.
+- Migración `services/api/migrations/0009_delivery_sla.sql`; rewrite
+  `/api/realtime/*` en `next.config.ts`.
+- Tests: `services/api/tests/test_realtime_{sse,broker,sla}.py` (wire real,
+  replay, auth, umbral 90 %) y Vitest `lib/__tests__/sse.test.ts`,
+  `hooks/__tests__/useRfpRealtime.test.tsx`, banner de SLA. Verificación manual
+  en `docs/real-time-communication/verification.md`; diseño y respuestas en
+  `docs/real-time-communication/SSE_DESIGN.md`.

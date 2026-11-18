@@ -40,7 +40,30 @@ REQUIRED_HANDOFF_STATUS = "ready"
 
 
 def _event(stage: str, **extra) -> dict:
-    return {"stage": stage, **extra}
+    from datetime import datetime, timezone
+
+    agent = extra.pop("agent", None)
+    if agent is None:
+        if stage == "department":
+            agent = f"generator:{extra.get('department_id') or 'departamento'}"
+        elif stage in {"generate", "collect", "exhausted"}:
+            agent = (
+                f"generator:{extra.get('department_id') or 'departamento'}"
+                if stage == "generate"
+                else f"evaluator:{extra.get('department_id') or 'departamento'}"
+            )
+        elif stage == "load_handoff":
+            agent = "proposal_orchestrator"
+        elif stage == "finalize_proposal":
+            agent = "proposal_orchestrator"
+        else:
+            agent = "proposal_orchestrator"
+    return {
+        "stage": stage,
+        "agent": agent,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **extra,
+    }
 
 
 def build_proposal_graph(
@@ -140,16 +163,18 @@ def build_proposal_graph(
         }
         if status == SECTION_NEEDS_REVIEW:
             section["review_reason"] = evaluation.get("feedback_for_generator")
+        section_events = list(section_state.get("events") or [])
         return {
             "sections": {department_id: section},
             "events": [
+                *section_events,
                 _event(
                     "department",
                     department_id=department_id,
                     status=status,
                     iterations=section.get("iteration_count"),
                     overall_pass=evaluation.get("overall_pass"),
-                )
+                ),
             ],
         }
 

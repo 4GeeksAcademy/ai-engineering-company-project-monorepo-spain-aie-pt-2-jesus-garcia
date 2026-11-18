@@ -18,6 +18,25 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock("@/hooks/useRfpRealtime", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/hooks/useRfpRealtime")>();
+  return {
+    ...actual,
+    useRfpRealtime: () =>
+      ({
+        status: "open",
+        attempt: 0,
+        nextRetryMs: null,
+        reconnected: false,
+        liveTickets: new Map(),
+        notifications: [],
+        dismiss: vi.fn(),
+        clear: vi.fn(),
+      }) as ReturnType<typeof actual.useRfpRealtime>,
+  };
+});
+
 const mockUseAuth = vi.mocked(useAuth);
 const mockFetchTickets = vi.mocked(api.fetchRfpTickets);
 
@@ -88,7 +107,7 @@ describe("Recepción de RFPs — listado", () => {
     expect(screen.getByText("Pitch de transportista.")).toBeInTheDocument();
   });
 
-  it("oculta la recepción a un usuario sin rol manager", () => {
+  it("oculta la recepción a un usuario sin rol manager", async () => {
     mockUseAuth.mockReturnValue({
       token: "test-token",
       user: {
@@ -113,5 +132,6 @@ describe("Recepción de RFPs — listado", () => {
       screen.getByText(/Solo un administrador o manager/),
     ).toBeInTheDocument();
     expect(mockFetchTickets).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockFetchTickets).not.toHaveBeenCalled());
   });
 });

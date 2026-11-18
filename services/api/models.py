@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Index,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     func,
@@ -551,6 +552,13 @@ RFP_STATUS_DRAFTING = "generando_borrador"
 RFP_STATUS_EVALUATING = "en_evaluación"
 RFP_STATUS_NEEDS_REVIEW = "needs_human_review"
 RFP_STATUS_AWAITING_APPROVAL = "esperando_aprobación"
+RFP_STATUS_FINISHED = "terminado"
+
+RFP_APPROVAL_PENDING = "pending_approval"
+RFP_APPROVAL_APPROVED = "approved"
+RFP_APPROVAL_REJECTED = "rejected"
+RFP_APPROVAL_CHANGES = "changes_requested"
+RFP_APPROVAL_RUNNING = "resuming"
 
 RFP_SECTION_GENERATING = "generando"
 RFP_SECTION_EVALUATING = "en_evaluación"
@@ -570,6 +578,7 @@ class RfpTicketStatus(StrEnum):
     en_evaluación = RFP_STATUS_EVALUATING
     needs_human_review = RFP_STATUS_NEEDS_REVIEW
     esperando_aprobación = RFP_STATUS_AWAITING_APPROVAL
+    terminado = RFP_STATUS_FINISHED
 
 
 class RfpTicket(SQLModel, table=True):
@@ -623,6 +632,18 @@ class RfpTicket(SQLModel, table=True):
     )
     proposal_task_id: str | None = ORMField(default=None, max_length=64)
     proposal_error: str | None = ORMField(default=None, max_length=2000)
+    # Hito 9, Parte 3 — aprobación humana y cierre.
+    approval_status: str | None = ORMField(default=None, max_length=40)
+    approval_thread_id: str | None = ORMField(default=None, max_length=120)
+    approval_run: int = ORMField(default=0)
+    approval_task_id: str | None = ORMField(default=None, max_length=64)
+    approval_started_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    approval_completed_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    approval_error: str | None = ORMField(default=None, max_length=2000)
     created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -776,6 +797,20 @@ class RfpDepartmentSection(SQLModel, table=True):
     needs_human_review: bool = ORMField(default=False)
     review_reason: str | None = ORMField(default=None)
     last_feedback: str | None = ORMField(default=None)
+    # Hito 9, Parte 3 — decisión humana y paquete de aprobación.
+    approval_comment: str | None = ORMField(default=None, max_length=4000)
+    approval_decided_at: datetime | None = ORMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    approval_round: int = ORMField(default=0)
+    approval_interrupt_id: str | None = ORMField(default=None, max_length=64)
+    approval_packet: dict | None = ORMField(
+        default=None,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=True,
+        ),
+    )
     created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -839,6 +874,128 @@ class RfpSectionEvaluation(SQLModel, table=True):
         ),
     )
     feedback: str | None = ORMField(default=None)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpNodeTrace(SQLModel, table=True):
+    """Traza por ejecución de nodo: agente, input, output y timestamp."""
+
+    __tablename__ = "rfp_node_trace"
+    __table_args__ = (
+        Index("ix_rfp_node_trace_ticket_sequence", "ticket_id", "sequence"),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    event_id: str = ORMField(index=True, unique=True, max_length=36)
+    thread_id: str = ORMField(max_length=120)
+    part: int = ORMField(default=3)
+    sequence: int = ORMField(default=0)
+    node: str = ORMField(max_length=80)
+    agent: str | None = ORMField(default=None, max_length=120)
+    department_id: str | None = ORMField(default=None, max_length=20)
+    input: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    output: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    occurred_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    duration_ms: int | None = ORMField(default=None)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpArbitration(SQLModel, table=True):
+    """Decisión del nodo de arbitraje con el árbitro fijo del BRIEFING."""
+
+    __tablename__ = "rfp_arbitration"
+    __table_args__ = (
+        Index("ix_rfp_arbitration_ticket_round", "ticket_id", "round"),
+    )
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, max_length=36
+    )
+    round: int = ORMField(default=1)
+    trigger_id: str = ORMField(max_length=40)
+    arbitrator: str | None = ORMField(default=None, max_length=120)
+    rule: str | None = ORMField(default=None)
+    affected_sections: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    resolution: dict = ORMField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'{}'"),
+        ),
+    )
+    resolved: bool = ORMField(default=False)
+    created_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RfpFinalDocument(SQLModel, table=True):
+    """Documento final consolidado de las secciones aprobadas."""
+
+    __tablename__ = "rfp_final_document"
+
+    id: int | None = ORMField(default=None, primary_key=True)
+    ticket_id: str = ORMField(
+        foreign_key="rfp_ticket.id", index=True, unique=True, max_length=36
+    )
+    contract_version: str = ORMField(default="rfp-final-v1", max_length=40)
+    currency: str | None = ORMField(default=None, max_length=3)
+    sections: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    approved_by: list = ORMField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(JSONB, "postgresql"),
+            nullable=False,
+            server_default=text("'[]'"),
+        ),
+    )
+    markdown: str = ORMField(
+        default="",
+        sa_column=Column(Text, nullable=False, server_default=text("''")),
+    )
+    document_path: str | None = ORMField(default=None, max_length=1024)
+    generated_at: datetime = ORMField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     created_at: datetime = ORMField(
         default_factory=lambda: datetime.now(timezone.utc)
     )

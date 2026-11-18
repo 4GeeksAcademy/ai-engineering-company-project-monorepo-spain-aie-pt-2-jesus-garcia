@@ -47,3 +47,49 @@ class PipelineRunTriggerResponse(BaseModel):
     run_id: str
     flow_run_id: str | None = None
     status: str = "scheduled"
+
+
+# --- Alerta de umbral de negocio: SLA de entrega por país -------------------
+
+
+class SlaRecipient(BaseModel):
+    name: str
+    role: str
+
+
+class DeliverySlaCountry(BaseModel):
+    country: str
+    warehouse: str
+    on_time_pct: float | None = None
+    total_shipments: int = 0
+    on_time_shipments: int = 0
+    breached: bool = False
+    recipients: list[SlaRecipient] = Field(default_factory=list)
+
+
+class DeliverySlaStatus(BaseModel):
+    week_start: date
+    threshold_pct: float = 90.0
+    breached: bool = False
+    countries: list[DeliverySlaCountry] = Field(default_factory=list)
+    computed_at: datetime | None = None
+
+
+class SlaAlert(BaseModel):
+    alert_id: str
+    metric: str
+    country: str
+    warehouse: str | None = None
+    week_start: date
+    threshold_pct: float
+    on_time_pct: float | None = None
+    total_shipments: int
+    on_time_shipments: int
+    breached: bool
+    recipients: list[SlaRecipient] = Field(default_factory=list)
+    detected_at: str | None = None
+
+
+class SlaEvaluationResponse(BaseModel):
+    status: DeliverySlaStatus
+    published: list[SlaAlert] = Field(default_factory=list)

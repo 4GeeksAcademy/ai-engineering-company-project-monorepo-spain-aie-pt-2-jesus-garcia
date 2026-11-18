@@ -40,7 +40,9 @@ from .routes.agent import router as agent_router
 from .routes.agent_harness import router as agent_harness_router
 from .routes.agent_memory import router as agent_memory_router
 from .routes.rfp import router as rfp_router
+from .routes.realtime import router as realtime_router
 from services.reporting.router import router as reporting_router
+from services.reporting.sla import ensure_sla_table
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(levelname)s:%(name)s:%(message)s")
@@ -58,6 +60,10 @@ async def lifespan(app: FastAPI):
         SQLModel.metadata.create_all(engine)
         create_agent_memory_tables(engine)
         create_outbox_table(engine)
+        try:
+            ensure_sla_table(engine)
+        except Exception:  # pragma: no cover - el read model no debe tumbar el API
+            logger.exception("No se pudo preparar la tabla de SLA de reporting.")
     logger.info("Telemetry endpoint configured: %s", TELEMETRY_ENDPOINT or "<unset>")
     yield
 
@@ -105,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_harness_router)
     app.include_router(agent_memory_router)
     app.include_router(rfp_router)
+    app.include_router(realtime_router)
     app.include_router(reporting_router)
 
     @app.exception_handler(Exception)

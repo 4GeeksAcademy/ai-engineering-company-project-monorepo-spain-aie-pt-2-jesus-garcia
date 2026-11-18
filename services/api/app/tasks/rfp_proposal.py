@@ -86,6 +86,34 @@ def generate_proposal(self, ticket_id: str) -> dict:
         ticket_id,
         result.get("status"),
     )
+    approval_summary: dict | None = None
+    if os.getenv("RFP_APPROVAL_AUTOSTART", "1") != "0":
+        try:
+            from ..services.rfp_approval_service import (
+                SqlRfpApprovalRepository,
+                start_approvals,
+            )
+
+            with Session(engine) as session:
+                approval_summary = start_approvals(session, ticket_id)
+        except Exception as exc:  # pragma: no cover - no tumbar la Parte 2
+            logger.exception(
+                "No se pudo iniciar la aprobación del ticket %s: %s",
+                ticket_id,
+                exc,
+            )
+            try:
+                with Session(engine) as session:
+                    repo = SqlRfpApprovalRepository(session)
+                    repo.fail(
+                        ticket_id,
+                        stage="inicio_aprobacion",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+            except Exception:
+                logger.exception(
+                    "No se pudo registrar approval_error del ticket %s", ticket_id
+                )
     return {
         "ticket_id": ticket_id,
         "status": result.get("status"),
@@ -94,4 +122,6 @@ def generate_proposal(self, ticket_id: str) -> dict:
             "needs_human_review_sections"
         )
         or [],
+        "approval_pending": len((approval_summary or {}).get("pending") or []),
+        "approval_status": (approval_summary or {}).get("approval_status"),
     }

@@ -9,8 +9,10 @@ import {
   type RfpStatus,
 } from "@/lib/rfp-types";
 import { useAsyncData } from "@/hooks/useAsyncData";
+import { mergeRfpTickets, useRfpRealtime } from "@/hooks/useRfpRealtime";
 import { useAuth } from "@/contexts/AuthContext";
 import { RfpStatusBadge } from "@/components/rfp/RfpStatusBadge";
+import { RfpLiveFeed } from "@/components/rfp/RfpLiveFeed";
 import { RfpUploader } from "@/components/rfp/RfpUploader";
 
 const FILTERS: Array<{ value: "" | RfpStatus; label: string }> = [
@@ -21,6 +23,7 @@ const FILTERS: Array<{ value: "" | RfpStatus; label: string }> = [
   { value: "en_evaluación", label: "En evaluación" },
   { value: "needs_human_review", label: "Revisión humana" },
   { value: "esperando_aprobación", label: "Esperando aprobación" },
+  { value: "terminado", label: "Terminado" },
   { value: "descartado", label: "Descartado" },
   { value: "error", label: "Error" },
 ];
@@ -32,6 +35,7 @@ const COUNT_STATUSES: RfpStatus[] = [
   "en_evaluación",
   "needs_human_review",
   "esperando_aprobación",
+  "terminado",
   "descartado",
   "error",
 ];
@@ -50,14 +54,39 @@ export default function RfpPage() {
     friendlyError,
   );
 
+  // Stream SSE independiente por pestaña; la carga inicial y la recuperación
+  // tras una caída se resuelven con el snapshot REST + dedupe por ticket_id.
+  const realtime = useRfpRealtime({
+    enabled: isManager,
+    token,
+    snapshot: data,
+    reload,
+  });
+
+  const merged = useMemo(
+    () => mergeRfpTickets(data ?? [], realtime.liveTickets),
+    [data, realtime.liveTickets],
+  );
+
+  const tickets = useMemo(
+    () =>
+      filter ? merged.filter((ticket) => ticket.status === filter) : merged,
+    [merged, filter],
+  );
+
+  const recentIds = useMemo(
+    () => new Set(realtime.notifications.map((item) => item.ticketId)),
+    [realtime.notifications],
+  );
+
   const pending = useMemo(
     () =>
-      (data ?? []).some((ticket) =>
+      tickets.some((ticket) =>
         ["analizando", "generando_borrador", "en_evaluación"].includes(
           ticket.status,
         ),
       ),
-    [data],
+    [tickets],
   );
 
   useEffect(() => {
@@ -68,11 +97,11 @@ export default function RfpPage() {
 
   const counts = useMemo(() => {
     const base: Record<string, number> = {};
-    for (const ticket of data ?? []) {
+    for (const ticket of tickets) {
       base[ticket.status] = (base[ticket.status] ?? 0) + 1;
     }
     return base;
-  }, [data]);
+  }, [tickets]);
 
   if (!isManager) {
     return (
@@ -95,6 +124,15 @@ export default function RfpPage() {
       </header>
 
       <RfpUploader onUploaded={reload} />
+
+      <RfpLiveFeed
+        notifications={realtime.notifications}
+        status={realtime.status}
+        attempt={realtime.attempt}
+        nextRetryMs={realtime.nextRetryMs}
+        onDismiss={realtime.dismiss}
+        onClear={realtime.clear}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {COUNT_STATUSES.map((status) => (
@@ -134,11 +172,11 @@ export default function RfpPage() {
           </label>
         </div>
 
-        {loading && !data ? (
+        {loading && tickets.length === 0 ? (
           <p className="px-5 py-8 text-sm text-slate-400">Cargando tickets…</p>
         ) : error ? (
           <p className="px-5 py-8 text-sm text-rose-300">{error}</p>
-        ) : (data ?? []).length === 0 ? (
+        ) : tickets.length === 0 ? (
           <p className="px-5 py-8 text-sm text-slate-400">
             Todavía no hay RFPs recibidas.
           </p>
@@ -156,10 +194,14 @@ export default function RfpPage() {
                 </tr>
               </thead>
               <tbody>
-                {(data ?? []).map((ticket) => (
+                {tickets.map((ticket) => (
                   <tr
                     key={ticket.ticket_id}
-                    className="border-b border-white/5 last:border-0 hover:bg-white/5"
+                    className={`border-b border-white/5 last:border-0 hover:bg-white/5 ${
+                      recentIds.has(ticket.ticket_id)
+                        ? "bg-cyan-500/5 ring-1 ring-inset ring-cyan-400/30"
+                        : ""
+                    }`}
                   >
                     <td className="px-5 py-3">
                       <Link

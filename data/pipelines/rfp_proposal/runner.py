@@ -133,7 +133,7 @@ def run_proposal_generation(
             "state": {
                 key: value
                 for key, value in result.items()
-                if key not in {"events"}
+                if key not in {"proposal_handoff"}
             },
         },
     )
