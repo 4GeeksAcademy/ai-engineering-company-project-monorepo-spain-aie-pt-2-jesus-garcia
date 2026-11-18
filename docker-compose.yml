@@ -23,6 +23,27 @@ services:
     restart: unless-stopped
     networks: [monorepo-dev]
 
+  # Base de datos vectorial del RAG (MILESTONE 7). La colección
+  # `trackflow_knowledge` se crea desde `data/process/rag_index.py`.
+  qdrant:
+    image: qdrant/qdrant:v1.20.1
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [monorepo-dev]
+
   uis:
     build: ./uis
     ports:
@@ -46,6 +67,9 @@ services:
       - ui-next-backoffice:/uis/backoffice/.next
     networks: [monorepo-dev]
 
+  # `services/api/.env` (bind-mounted en /app) se carga con load_dotenv()
+  # dentro del contenedor; por eso no se usa como env_file y no sobreescribe
+  # DATABASE_URL/SECRET_KEY del .env raíz.
   services:
     build: ./services
     ports:
@@ -56,13 +80,19 @@ services:
       PYTHONPATH: /app:/
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       INCIDENT_UPLOAD_DIR: /uploads
+      # En la red de Compose el host es el servicio `qdrant`, no localhost.
+      QDRANT_URL: http://qdrant:6333
     volumes:
       - ./services/api:/app
       - ./services/reporting:/services/reporting
       - ./services/__init__.py:/services/__init__.py
+      - ./data:/app/data
+      - ./docs/company-knowledge-base:/app/docs/company-knowledge-base:ro
       - task-uploads:/uploads
     depends_on:
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     networks: [monorepo-dev]
 
@@ -215,4 +245,5 @@ volumes:
   ui-next-backoffice:
   prefect-data:
   redis-data:
+  qdrant-data:
   task-uploads:
