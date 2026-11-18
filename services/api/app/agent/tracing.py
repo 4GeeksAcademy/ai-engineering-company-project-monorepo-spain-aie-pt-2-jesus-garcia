@@ -46,11 +46,14 @@ def summarize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     """Resume el estado para el trace sin perder el contexto recuperado.
 
     El contexto se guarda completo (documento, sección y texto) porque es lo
-    que permite auditar el anclaje de la respuesta. El resto de campos se
-    copian tal cual: son pocos y no contienen información sensible.
+    que permite auditar el anclaje de la respuesta. El resultado de una tool
+    se conserva, pero se trunca la descripción libre para no volcar textos
+    largos con posibles datos personales. El rol del usuario no se traza.
     """
     summary: dict[str, Any] = {}
     for key, value in (payload or {}).items():
+        if key == "user_role":
+            continue
         if key == "context":
             items = value if isinstance(value, list) else []
             summary["context_count"] = len(items)
@@ -65,8 +68,34 @@ def summarize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
                 if isinstance(item, dict)
             ]
             continue
+        if key == "tool_result":
+            summary["tool_result"] = _summarize_tool_result(value)
+            continue
         summary[key] = value
     return summary
+
+
+def _summarize_tool_result(value: Any, *, description_limit: int = 200) -> Any:
+    if not isinstance(value, dict):
+        return value
+    result = dict(value)
+    incidents = result.get("incidents")
+    if isinstance(incidents, list):
+        result["incidents"] = [
+            _truncate_tool_record(item, description_limit)
+            if isinstance(item, dict)
+            else item
+            for item in incidents
+        ]
+    return result
+
+
+def _truncate_tool_record(item: dict, limit: int) -> dict:
+    record = dict(item)
+    description = record.get("description")
+    if isinstance(description, str) and len(description) > limit:
+        record["description"] = description[:limit].rstrip() + "…"
+    return record
 
 
 @dataclass
@@ -171,6 +200,36 @@ class AgentTrace:
             if source.get("text") is not None
         ]
 
+    @property
+    def route(self) -> str:
+        """Ruta decidida por el clasificador (``rag``, ``incident``, etc.)."""
+        for event in self.events:
+            if event.node != "classify":
+                continue
+            route = event.output.get("route")
+            if route:
+                return str(route)
+            routing = event.output.get("routing")
+            if isinstance(routing, dict) and routing.get("route"):
+                return str(routing["route"])
+        return ""
+
+    @property
+    def sources_used(self) -> list[str]:
+        """Fuentes usadas, en el orden real en que se ejecutaron los nodos."""
+        labels = {
+            "retrieve": "rag",
+            "generate": "rag",
+            "tool_incident": "incident_tool",
+            "tool_inventory": "inventory_tool",
+        }
+        used: list[str] = []
+        for event in self.events:
+            label = labels.get(event.node)
+            if label and label not in used:
+                used.append(label)
+        return used
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
@@ -182,6 +241,8 @@ class AgentTrace:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_ms": self.duration_ms,
+            "route": self.route,
+            "sources_used": self.sources_used,
             "node_order": self.node_order,
             "events": [event.to_dict() for event in self.events],
             "checkpoints": [record.to_dict() for record in self.checkpoints],

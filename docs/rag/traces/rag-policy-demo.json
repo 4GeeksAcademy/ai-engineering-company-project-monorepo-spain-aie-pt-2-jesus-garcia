@@ -1,0 +1,263 @@
+{
+  "run_id": "rag-policy-demo",
+  "thread_id": "rag-policy-demo",
+  "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+  "status": "ok",
+  "answer": "Según el documento **sla-delivery**, sección **SLA de Entrega**, el SLA para un envío estándar dentro del mismo país es de **3 a 5 días hábiles**. Este compromiso aplica para Estados Unidos (Los Ángeles) y España (Zaragoza). Recuerda que durante fechas de alta demanda declaradas (Black Friday, Navidad, Rebajas de enero) los tiempos pueden extenderse hasta un 40% adicional, y debes comunicarlo proactivamente a los clientes.",
+  "error": null,
+  "started_at": "2026-11-13T17:12:34.625+00:00",
+  "finished_at": "2026-11-13T17:12:37.747+00:00",
+  "duration_ms": 3122.75,
+  "route": "rag",
+  "sources_used": [
+    "rag"
+  ],
+  "node_order": [
+    "receive_question",
+    "classify",
+    "retrieve",
+    "generate"
+  ],
+  "events": [
+    {
+      "seq": 0,
+      "node": "receive_question",
+      "at": "2026-11-13T17:12:34.625+00:00",
+      "elapsed_ms": 0.82,
+      "checkpoint_id": "1f1df856-b226-6e4c-8001-53345bc50625",
+      "next_nodes": [
+        "classify"
+      ],
+      "output": {
+        "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 1,
+      "node": "classify",
+      "at": "2026-11-13T17:12:34.626+00:00",
+      "elapsed_ms": 0.52,
+      "checkpoint_id": "1f1df856-b228-6198-8002-3f78ee3f50a7",
+      "next_nodes": [
+        "retrieve"
+      ],
+      "output": {
+        "route": "rag",
+        "routing": {
+          "route": "rag",
+          "ticket_id": null,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "Sin señales de ticket ni inventario; se consulta la base de conocimiento.",
+          "source": "rules"
+        },
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 2,
+      "node": "retrieve",
+      "at": "2026-11-13T17:12:35.917+00:00",
+      "elapsed_ms": 1290.52,
+      "checkpoint_id": "1f1df856-be76-6800-8003-530f355f6ef5",
+      "next_nodes": [
+        "generate"
+      ],
+      "output": {
+        "context_count": 4,
+        "sources": [
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 1,
+            "text": "El SLA comprometido contractualmente es un 90% de entregas a tiempo por mes, medido por país. Si un país cae por debajo del 90% durante dos meses consecutivos, el cliente tiene derecho a una compensación del 5% sobre la tarifa mensual de ese país, según el contrato estándar."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 0,
+            "text": "TrackFlow gestiona la última milla en Estados Unidos (Los Ángeles) y España (Zaragoza). Los compromisos de entrega varían según el tipo de servicio contratado por la marca cliente:\n\n- Envío estándar: 3 a 5 días hábiles dentro del mismo país.\n- Envío express: 24 a 48 horas dentro del mismo país (disponible solo en zonas metropolitanas de Los Ángeles y área de Zaragoza-Madrid).\n- Envío internacional (entre Estados Unidos y España): 7 a 12 días hábiles, sujeto a aduana; TrackFlow no controla los tiempos de retención aduanera."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 2,
+            "text": "TrackFlow no garantiza SLA de entrega los días de alta demanda declarados (Black Friday, Navidad, Rebajas de enero en España) — durante esas fechas los tiempos pueden extenderse hasta un 40% adicional, y esto debe comunicarse proactivamente a los clientes con anticipación."
+          },
+          {
+            "source_document": "carrier-coverage",
+            "section": "Cobertura de Transportistas",
+            "chunk_index": 0,
+            "text": "TrackFlow trabaja con transportistas distintos según el país:\n\nEstados Unidos (Los Ángeles): UPS, FedEx y DHL.\n\n- UPS: cobertura nacional completa, mejor tarifa para paquetes pesados (mayores a 5 kg).\n- FedEx: mejor tiempo de entrega en envíos express dentro de California.\n- DHL: única opción con cobertura confiable para envíos internacionales desde Los Ángeles."
+          }
+        ],
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 3,
+      "node": "generate",
+      "at": "2026-11-13T17:12:37.745+00:00",
+      "elapsed_ms": 1828.38,
+      "checkpoint_id": "1f1df856-cfe4-6556-8004-0e0828cf6a80",
+      "next_nodes": [],
+      "output": {
+        "answer": "Según el documento **sla-delivery**, sección **SLA de Entrega**, el SLA para un envío estándar dentro del mismo país es de **3 a 5 días hábiles**. Este compromiso aplica para Estados Unidos (Los Ángeles) y España (Zaragoza). Recuerda que durante fechas de alta demanda declaradas (Black Friday, Navidad, Rebajas de enero) los tiempos pueden extenderse hasta un 40% adicional, y debes comunicarlo proactivamente a los clientes.",
+        "status": "ok",
+        "error": null,
+        "tool_context_included": false
+      }
+    }
+  ],
+  "checkpoints": [
+    {
+      "step": 0,
+      "checkpoint_id": "1f1df856-b226-6e4c-8001-53345bc50625",
+      "next_nodes": [
+        "classify"
+      ],
+      "values": {
+        "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+        "status": "ok",
+        "error": null,
+        "run_id": "rag-policy-demo"
+      },
+      "created_at": "2026-11-13T17:12:34.625897+00:00"
+    },
+    {
+      "step": 1,
+      "checkpoint_id": "1f1df856-b228-6198-8002-3f78ee3f50a7",
+      "next_nodes": [
+        "retrieve"
+      ],
+      "values": {
+        "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+        "status": "ok",
+        "error": null,
+        "run_id": "rag-policy-demo",
+        "route": "rag",
+        "routing": {
+          "route": "rag",
+          "ticket_id": null,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "Sin señales de ticket ni inventario; se consulta la base de conocimiento.",
+          "source": "rules"
+        }
+      },
+      "created_at": "2026-11-13T17:12:34.626388+00:00"
+    },
+    {
+      "step": 2,
+      "checkpoint_id": "1f1df856-be76-6800-8003-530f355f6ef5",
+      "next_nodes": [
+        "generate"
+      ],
+      "values": {
+        "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+        "context_count": 4,
+        "sources": [
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 1,
+            "text": "El SLA comprometido contractualmente es un 90% de entregas a tiempo por mes, medido por país. Si un país cae por debajo del 90% durante dos meses consecutivos, el cliente tiene derecho a una compensación del 5% sobre la tarifa mensual de ese país, según el contrato estándar."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 0,
+            "text": "TrackFlow gestiona la última milla en Estados Unidos (Los Ángeles) y España (Zaragoza). Los compromisos de entrega varían según el tipo de servicio contratado por la marca cliente:\n\n- Envío estándar: 3 a 5 días hábiles dentro del mismo país.\n- Envío express: 24 a 48 horas dentro del mismo país (disponible solo en zonas metropolitanas de Los Ángeles y área de Zaragoza-Madrid).\n- Envío internacional (entre Estados Unidos y España): 7 a 12 días hábiles, sujeto a aduana; TrackFlow no controla los tiempos de retención aduanera."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 2,
+            "text": "TrackFlow no garantiza SLA de entrega los días de alta demanda declarados (Black Friday, Navidad, Rebajas de enero en España) — durante esas fechas los tiempos pueden extenderse hasta un 40% adicional, y esto debe comunicarse proactivamente a los clientes con anticipación."
+          },
+          {
+            "source_document": "carrier-coverage",
+            "section": "Cobertura de Transportistas",
+            "chunk_index": 0,
+            "text": "TrackFlow trabaja con transportistas distintos según el país:\n\nEstados Unidos (Los Ángeles): UPS, FedEx y DHL.\n\n- UPS: cobertura nacional completa, mejor tarifa para paquetes pesados (mayores a 5 kg).\n- FedEx: mejor tiempo de entrega en envíos express dentro de California.\n- DHL: única opción con cobertura confiable para envíos internacionales desde Los Ángeles."
+          }
+        ],
+        "status": "ok",
+        "error": null,
+        "run_id": "rag-policy-demo",
+        "route": "rag",
+        "routing": {
+          "route": "rag",
+          "ticket_id": null,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "Sin señales de ticket ni inventario; se consulta la base de conocimiento.",
+          "source": "rules"
+        }
+      },
+      "created_at": "2026-11-13T17:12:35.916785+00:00"
+    },
+    {
+      "step": 3,
+      "checkpoint_id": "1f1df856-cfe4-6556-8004-0e0828cf6a80",
+      "next_nodes": [],
+      "values": {
+        "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+        "context_count": 4,
+        "sources": [
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 1,
+            "text": "El SLA comprometido contractualmente es un 90% de entregas a tiempo por mes, medido por país. Si un país cae por debajo del 90% durante dos meses consecutivos, el cliente tiene derecho a una compensación del 5% sobre la tarifa mensual de ese país, según el contrato estándar."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 0,
+            "text": "TrackFlow gestiona la última milla en Estados Unidos (Los Ángeles) y España (Zaragoza). Los compromisos de entrega varían según el tipo de servicio contratado por la marca cliente:\n\n- Envío estándar: 3 a 5 días hábiles dentro del mismo país.\n- Envío express: 24 a 48 horas dentro del mismo país (disponible solo en zonas metropolitanas de Los Ángeles y área de Zaragoza-Madrid).\n- Envío internacional (entre Estados Unidos y España): 7 a 12 días hábiles, sujeto a aduana; TrackFlow no controla los tiempos de retención aduanera."
+          },
+          {
+            "source_document": "sla-delivery",
+            "section": "SLA de Entrega",
+            "chunk_index": 2,
+            "text": "TrackFlow no garantiza SLA de entrega los días de alta demanda declarados (Black Friday, Navidad, Rebajas de enero en España) — durante esas fechas los tiempos pueden extenderse hasta un 40% adicional, y esto debe comunicarse proactivamente a los clientes con anticipación."
+          },
+          {
+            "source_document": "carrier-coverage",
+            "section": "Cobertura de Transportistas",
+            "chunk_index": 0,
+            "text": "TrackFlow trabaja con transportistas distintos según el país:\n\nEstados Unidos (Los Ángeles): UPS, FedEx y DHL.\n\n- UPS: cobertura nacional completa, mejor tarifa para paquetes pesados (mayores a 5 kg).\n- FedEx: mejor tiempo de entrega en envíos express dentro de California.\n- DHL: única opción con cobertura confiable para envíos internacionales desde Los Ángeles."
+          }
+        ],
+        "answer": "Según el documento **sla-delivery**, sección **SLA de Entrega**, el SLA para un envío estándar dentro del mismo país es de **3 a 5 días hábiles**. Este compromiso aplica para Estados Unidos (Los Ángeles) y España (Zaragoza). Recuerda que durante fechas de alta demanda declaradas (Black Friday, Navidad, Rebajas de enero) los tiempos pueden extenderse hasta un 40% adicional, y debes comunicarlo proactivamente a los clientes.",
+        "status": "ok",
+        "error": null,
+        "run_id": "rag-policy-demo",
+        "route": "rag",
+        "routing": {
+          "route": "rag",
+          "ticket_id": null,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "Sin señales de ticket ni inventario; se consulta la base de conocimiento.",
+          "source": "rules"
+        },
+        "tool_context_included": false
+      },
+      "created_at": "2026-11-13T17:12:37.744325+00:00"
+    }
+  ]
+}

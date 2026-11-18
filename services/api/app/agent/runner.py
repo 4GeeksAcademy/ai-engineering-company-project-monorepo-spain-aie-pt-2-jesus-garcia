@@ -40,12 +40,17 @@ def run_agent(
     graph: Any | None = None,
     trace_dir: str | Path | None = None,
     thread_id: str | None = None,
+    user: dict | None = None,
 ) -> AgentResult:
     """Invoca el grafo, registra cada transición y escribe el trace en disco.
 
     ``thread_id`` es también el ``run_id``: el checkpointer guarda un snapshot
     por superstep y permite inspeccionar o retomar la corrida con
     ``graph.get_state`` / ``graph.get_state_history``.
+
+    ``user`` es el usuario autenticado por el endpoint. Solo se propaga su rol
+    al estado (nunca el token ni datos personales) para que la tool de tickets
+    aplique la misma autorización que ``GET /api/incidents``.
     """
     compiled = graph or get_agent_graph()
     run_id = thread_id or str(uuid.uuid4())
@@ -57,9 +62,13 @@ def run_agent(
     )
     config = {"configurable": {"thread_id": run_id}}
 
+    initial_state: dict[str, Any] = {"question": question, "run_id": run_id}
+    if user and user.get("role"):
+        initial_state["user_role"] = str(user["role"])
+
     try:
         for chunk in compiled.stream(
-            {"question": question, "run_id": run_id},
+            initial_state,
             config=config,
             stream_mode="updates",
         ):

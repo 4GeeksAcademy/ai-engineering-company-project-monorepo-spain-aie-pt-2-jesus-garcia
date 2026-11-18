@@ -52,10 +52,10 @@ class AgentQueryResponse(BaseModel):
 )
 def agent_query(
     payload: AgentQueryRequest,
-    _=Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> AgentQueryResponse:
     try:
-        result = run_agent(payload.question)
+        result = run_agent(payload.question, user=current_user)
     except AgentRunError as exc:
         logger.error("La corrida del agente falló: %s", exc)
         raise HTTPException(

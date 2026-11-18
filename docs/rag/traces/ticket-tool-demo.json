@@ -1,0 +1,251 @@
+{
+  "run_id": "ticket-tool-demo",
+  "thread_id": "ticket-tool-demo",
+  "question": "¿En qué estado está el ticket 1?",
+  "status": "ok",
+  "answer": "El ticket 1 está en estado «En curso» (in_progress).\n- Título: Paquete extraviado en aduana\n- Categoría: Paquete perdido (lost_parcel)\n- Origen: Cliente (customer)\n- Sede: Almacén de Zaragoza (zaragoza_warehouse)\n- Creado: 2026-11-10T09:00:00+00:00\n- Actualizado: 2026-11-12T15:30:00+00:00",
+  "error": null,
+  "started_at": "2026-11-13T17:12:34.600+00:00",
+  "finished_at": "2026-11-13T17:12:34.624+00:00",
+  "duration_ms": 23.58,
+  "route": "incident",
+  "sources_used": [
+    "incident_tool"
+  ],
+  "node_order": [
+    "receive_question",
+    "classify",
+    "tool_incident",
+    "answer_from_tool"
+  ],
+  "events": [
+    {
+      "seq": 0,
+      "node": "receive_question",
+      "at": "2026-11-13T17:12:34.603+00:00",
+      "elapsed_ms": 2.77,
+      "checkpoint_id": "1f1df856-b1ef-6d2a-8001-e41af43b4456",
+      "next_nodes": [
+        "classify"
+      ],
+      "output": {
+        "question": "¿En qué estado está el ticket 1?",
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 1,
+      "node": "classify",
+      "at": "2026-11-13T17:12:34.605+00:00",
+      "elapsed_ms": 1.75,
+      "checkpoint_id": "1f1df856-b1f4-6172-8002-e86dc8af6864",
+      "next_nodes": [
+        "tool_incident"
+      ],
+      "output": {
+        "route": "incident",
+        "routing": {
+          "route": "incident",
+          "ticket_id": 1,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "término de ticket; ticket_id=1",
+          "source": "rules"
+        },
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 2,
+      "node": "tool_incident",
+      "at": "2026-11-13T17:12:34.623+00:00",
+      "elapsed_ms": 17.84,
+      "checkpoint_id": "1f1df856-b21f-6930-8003-c887bb59272c",
+      "next_nodes": [
+        "answer_from_tool"
+      ],
+      "output": {
+        "tool_name": "incident_lookup",
+        "tool_result": {
+          "ok": true,
+          "found": true,
+          "incidents": [
+            {
+              "id": "1",
+              "title": "Paquete extraviado en aduana",
+              "description": "El paquete lleva 10 días retenido en aduana.",
+              "description_excerpt": "El paquete lleva 10 días retenido en aduana.",
+              "origin": "customer",
+              "branch": "zaragoza_warehouse",
+              "category": "lost_parcel",
+              "status": "in_progress",
+              "created_at": "2026-11-10T09:00:00+00:00",
+              "updated_at": "2026-11-12T15:30:00+00:00"
+            }
+          ],
+          "error": null,
+          "message": ""
+        },
+        "tool_status": "ok",
+        "tool_error": null,
+        "fallback": false
+      }
+    },
+    {
+      "seq": 3,
+      "node": "answer_from_tool",
+      "at": "2026-11-13T17:12:34.623+00:00",
+      "elapsed_ms": 0.47,
+      "checkpoint_id": "1f1df856-b220-62fe-8004-f6abc02c347d",
+      "next_nodes": [],
+      "output": {
+        "answer": "El ticket 1 está en estado «En curso» (in_progress).\n- Título: Paquete extraviado en aduana\n- Categoría: Paquete perdido (lost_parcel)\n- Origen: Cliente (customer)\n- Sede: Almacén de Zaragoza (zaragoza_warehouse)\n- Creado: 2026-11-10T09:00:00+00:00\n- Actualizado: 2026-11-12T15:30:00+00:00",
+        "status": "ok",
+        "fallback": false,
+        "error": null
+      }
+    }
+  ],
+  "checkpoints": [
+    {
+      "step": 0,
+      "checkpoint_id": "1f1df856-b1ef-6d2a-8001-e41af43b4456",
+      "next_nodes": [
+        "classify"
+      ],
+      "values": {
+        "question": "¿En qué estado está el ticket 1?",
+        "status": "ok",
+        "error": null,
+        "run_id": "ticket-tool-demo"
+      },
+      "created_at": "2026-11-13T17:12:34.603339+00:00"
+    },
+    {
+      "step": 1,
+      "checkpoint_id": "1f1df856-b1f4-6172-8002-e86dc8af6864",
+      "next_nodes": [
+        "tool_incident"
+      ],
+      "values": {
+        "question": "¿En qué estado está el ticket 1?",
+        "status": "ok",
+        "error": null,
+        "run_id": "ticket-tool-demo",
+        "route": "incident",
+        "routing": {
+          "route": "incident",
+          "ticket_id": 1,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "término de ticket; ticket_id=1",
+          "source": "rules"
+        }
+      },
+      "created_at": "2026-11-13T17:12:34.605086+00:00"
+    },
+    {
+      "step": 2,
+      "checkpoint_id": "1f1df856-b21f-6930-8003-c887bb59272c",
+      "next_nodes": [
+        "answer_from_tool"
+      ],
+      "values": {
+        "question": "¿En qué estado está el ticket 1?",
+        "status": "ok",
+        "error": null,
+        "run_id": "ticket-tool-demo",
+        "route": "incident",
+        "routing": {
+          "route": "incident",
+          "ticket_id": 1,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "término de ticket; ticket_id=1",
+          "source": "rules"
+        },
+        "tool_name": "incident_lookup",
+        "tool_result": {
+          "ok": true,
+          "found": true,
+          "incidents": [
+            {
+              "id": "1",
+              "title": "Paquete extraviado en aduana",
+              "description": "El paquete lleva 10 días retenido en aduana.",
+              "description_excerpt": "El paquete lleva 10 días retenido en aduana.",
+              "origin": "customer",
+              "branch": "zaragoza_warehouse",
+              "category": "lost_parcel",
+              "status": "in_progress",
+              "created_at": "2026-11-10T09:00:00+00:00",
+              "updated_at": "2026-11-12T15:30:00+00:00"
+            }
+          ],
+          "error": null,
+          "message": ""
+        },
+        "tool_status": "ok",
+        "tool_error": null,
+        "fallback": false
+      },
+      "created_at": "2026-11-13T17:12:34.622893+00:00"
+    },
+    {
+      "step": 3,
+      "checkpoint_id": "1f1df856-b220-62fe-8004-f6abc02c347d",
+      "next_nodes": [],
+      "values": {
+        "question": "¿En qué estado está el ticket 1?",
+        "answer": "El ticket 1 está en estado «En curso» (in_progress).\n- Título: Paquete extraviado en aduana\n- Categoría: Paquete perdido (lost_parcel)\n- Origen: Cliente (customer)\n- Sede: Almacén de Zaragoza (zaragoza_warehouse)\n- Creado: 2026-11-10T09:00:00+00:00\n- Actualizado: 2026-11-12T15:30:00+00:00",
+        "status": "ok",
+        "error": null,
+        "run_id": "ticket-tool-demo",
+        "route": "incident",
+        "routing": {
+          "route": "incident",
+          "ticket_id": 1,
+          "sku_code": null,
+          "product_name": null,
+          "warehouse": null,
+          "filters": {},
+          "reason": "término de ticket; ticket_id=1",
+          "source": "rules"
+        },
+        "tool_name": "incident_lookup",
+        "tool_result": {
+          "ok": true,
+          "found": true,
+          "incidents": [
+            {
+              "id": "1",
+              "title": "Paquete extraviado en aduana",
+              "description": "El paquete lleva 10 días retenido en aduana.",
+              "description_excerpt": "El paquete lleva 10 días retenido en aduana.",
+              "origin": "customer",
+              "branch": "zaragoza_warehouse",
+              "category": "lost_parcel",
+              "status": "in_progress",
+              "created_at": "2026-11-10T09:00:00+00:00",
+              "updated_at": "2026-11-12T15:30:00+00:00"
+            }
+          ],
+          "error": null,
+          "message": ""
+        },
+        "tool_status": "ok",
+        "tool_error": null,
+        "fallback": false
+      },
+      "created_at": "2026-11-13T17:12:34.623148+00:00"
+    }
+  ]
+}

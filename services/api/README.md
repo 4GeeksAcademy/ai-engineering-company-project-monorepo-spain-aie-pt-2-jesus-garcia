@@ -118,8 +118,20 @@ una traza por corrida en `data/eval/agent-traces/` (`AGENT_TRACE_DIR`).
 
 Códigos: `200` respuesta correcta o “sin información suficiente”, `422`
 pregunta vacía, `502` fallo interno (mensaje genérico, sin stack trace).
-`/knowledge/query` se mantiene por compatibilidad. Diseño:
-`docs/rag/agent-design.md`; evals: `tests/pipelines/test_agent_evals.py`.
+`/knowledge/query` se mantiene por compatibilidad.
+
+El grafo incluye un nodo `classify` que decide automáticamente entre la base de
+conocimiento, el gestor de incidencias (`incident_lookup`) y el inventario
+(`inventory_lookup`), o una combinación de tool + RAG. Las tools son de solo
+lectura, leen de la misma capa de servicio que `GET /api/incidents` y
+`GET /inventory/products`, y tienen timeout numérico
+(`AGENT_INCIDENT_TOOL_TIMEOUT_SECONDS` / `AGENT_INVENTORY_TOOL_TIMEOUT_SECONDS`,
+3 s por defecto) con fallback honesto. La traza incluye `route`,
+`sources_used` y el orden exacto de nodos.
+
+Diseño: `docs/rag/agent-design.md`; evals:
+`tests/pipelines/test_agent_evals.py`; tests de tools:
+`tests/test_agent_tools.py`.
 
 ## Errores HTTP
 
