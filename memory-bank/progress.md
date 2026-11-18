@@ -1775,3 +1775,28 @@ Verificación: `npm test` en backoffice **124 passed**, lint y build OK,
 typecheck raíz OK. Comprobado en el navegador: `/api/telemetry/report` responde
 **200** y el dashboard muestra 150 eventos, 6.7 % de tasa de error y 55.6 % de
 fallos de login en el periodo por defecto.
+
+## Fix — Flash del formulario de login tras el loader (uis/backoffice)
+
+Al iniciar sesión se veía el formulario de login otra vez entre el final de la
+animación del `Loader` y la llegada del dashboard: el overlay se desvanecía y
+`router.push("/")` todavía tenía la transición de ruta en curso, así que la
+página de login quedaba visible durante ese hueco.
+
+- `components/Loader.tsx` — nuevo prop `exit?: "auto" | "hold"`. En `"hold"`
+  (modo por defecto `"auto"`, sin cambios para el resto de usos) la cortinilla
+  se despliega, se avisa con `onComplete` y el overlay **se queda opaco** hasta
+  que el componente se desmonta; red de seguridad a los 6 s por si la
+  navegación no llega. `onComplete` se dispara una sola vez (ref).
+- `components/auth/LoginForm.tsx` y `RegisterForm.tsx` — se navega con
+  `router.replace("/")` en un `useEffect` solo cuando el login ha ido bien
+  **y** la animación ha terminado, y el loader no se desmonta antes. Además
+  arregla el caso en que el login tardaba más que la animación: antes no se
+  navegaba nunca.
+- Los errores de credenciales siguen cerrando el overlay y mostrando el aviso.
+
+Verificación: typecheck raíz, `npm run lint` y `npm run build` en backoffice OK.
+Medido en el navegador (Docker, `localhost:3001`) con un muestreo por frame:
+`login visible → overlay → dashboard` sin ningún frame intermedio con el
+formulario visible; login fallido cierra el overlay y muestra "Credenciales
+inválidas".

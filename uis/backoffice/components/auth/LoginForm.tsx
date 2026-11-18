@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader } from "@/components/Loader";
 import { ApiRequestError } from "@/lib/api";
@@ -16,17 +16,29 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [animationDone, setAnimationDone] = useState(false);
+
+  // Solo navegamos cuando el login ha ido bien y la animación ya ha
+  // terminado: el loader se mantiene tapando la pantalla hasta que la
+  // navegación al dashboard se completa, así no reaparece el formulario.
+  useEffect(() => {
+    if (authenticated && animationDone) {
+      router.replace("/");
+    }
+  }, [authenticated, animationDone, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setAuthenticated(false);
+    setAnimationDone(false);
     setLoading(true);
     setShowLoader(true);
 
     try {
       await login(email, password);
-      setSuccess(true);
+      setAuthenticated(true);
     } catch (err) {
       setShowLoader(false);
       setLoading(false);
@@ -43,12 +55,7 @@ export function LoginForm() {
   return (
     <>
       {showLoader && (
-        <Loader
-          onComplete={() => {
-            setShowLoader(false);
-            if (success) router.push("/");
-          }}
-        />
+        <Loader exit="hold" onComplete={() => setAnimationDone(true)} />
       )}
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div>
