@@ -106,6 +106,21 @@ el pipeline (`pipelines/weekly_performance`). Requiere rol `manager`/`admin`.
 `PREFECT_API_URL` (por defecto `http://localhost:4200/api`) apunta al servidor
 Prefect self-hosted o a Prefect Cloud.
 
+## Agente RAG (LangGraph)
+
+Grafo en `app/agent/` que reutiliza `retrieve()` y `generate_answer()` del
+pipeline RAG (`data/pipelines/rag.py`). Compila al importar el router y escribe
+una traza por corrida en `data/eval/agent-traces/` (`AGENT_TRACE_DIR`).
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/agent/query` | `{"question": "..."}` → `{"answer", "run_id"}` |
+
+Códigos: `200` respuesta correcta o “sin información suficiente”, `422`
+pregunta vacía, `502` fallo interno (mensaje genérico, sin stack trace).
+`/knowledge/query` se mantiene por compatibilidad. Diseño:
+`docs/rag/agent-design.md`; evals: `tests/pipelines/test_agent_evals.py`.
+
 ## Errores HTTP
 
 | Código | Situación |

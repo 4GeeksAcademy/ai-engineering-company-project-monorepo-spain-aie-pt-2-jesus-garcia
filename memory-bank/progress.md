@@ -10,6 +10,7 @@
 | MILESTONE_4 — AI Engineering Tech · Infraestructura | ✅ Completado | AGENTS.md, memory-bank, .agents/rules, .agents/skills |
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
+| MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query` |
 
 ## Últimas decisiones
 
@@ -1022,3 +1023,60 @@ almacenamiento).
   servicio real (el flujo completo ya se validó con Qdrant en memoria).
 - `services/api/.env` ya tiene `LLM_BASE_URL=https://llm.4geeks.ai` y
   `LLM_API_KEY`; la base tolera `/`, `/v1` y `/litellm`.
+
+## Agente RAG con LangGraph — MILESTONE 8
+
+El RAG del MILESTONE 7 se expone ahora como un grafo explícito y trazable. Los
+nodos reutilizan `retrieve()` y `generate_answer()` de `data/pipelines/rag.py`;
+ningún nodo invoca `query()`, así que la recuperación y la generación siguen
+siendo pasos separados.
+
+### Grafo (`services/api/app/agent/`)
+- `state.py` — `AgentState` (`TypedDict`, 6 campos): `question`, `context`,
+  `answer`, `status`, `error`, `run_id`. Sin historial de conversación: cada
+  corrida es stateless y el RAG solo usa la pregunta y el contexto.
+- `nodes.py` — `receive_question`, `retrieve`, `generate`, `no_context` y
+  `fail`, con inyección de dependencias para tests. Un nodo vacío evita
+  recuperar; sin contexto se responde con `rag.NO_CONTEXT_ANSWER` sin llamar al
+  LLM.
+- `graph.py` — aristas condicionales (`route_after_receive`,
+  `route_after_retrieve`, `route_after_generate`), validación estructural
+  (nodo huérfano, arista a nodo inexistente, nodo sin salida, estado no
+  `TypedDict`) y compilación explícita con `InMemorySaver`. El router compila
+  al importarse: un grafo inválido impide arrancar la API.
+- `tracing.py` — `TraceRecorder`/`AgentTrace`; cada corrida escribe
+  `data/eval/agent-traces/{run_id}.json` (`AGENT_TRACE_DIR` configurable) con
+  orden de nodos, salidas, fuentes recuperadas y checkpoints, más una línea en
+  `index.jsonl`.
+- `runner.py` — `run_agent()` (stream de updates + checkpoint por transición),
+  `get_run_state()` y `AgentRunError`.
+
+### Endpoint
+- `POST /agent/query` (`app/routes/agent.py`, autenticado) devuelve
+  `{"answer", "run_id"}`. No tiene lógica de negocio: invoca el grafo y mapea
+  `invalid_question → 422` y `error`/excepción → 502 con mensaje genérico.
+  `/knowledge/query` se mantiene intacto.
+- Dependencia `langgraph>=1.2.21` añadida a `services/api/requirements.txt` y
+  `services/api/pyproject.toml` e instalada en `services/api/venv`.
+
+### Evals y anclaje
+- `tests/pipelines/test_agent_evals.py` (10 passed):
+  pregunta vacía sin retrieve/generate, orden `retrieve → generate` con el
+  contexto exacto, `no_context` sin LLM, anclaje en 4 casos del BRIEFING
+  (`3 a 5 días hábiles`, `40%`, gestión manual, Miguel Torres), 3 checkpoints
+  por corrida y fallo de compilación ante nodo huérfano/estado mal tipado.
+- `tests/pipelines/fixtures/agent_traces/*.json` — traces reales grabados con
+  `scripts/record_agent_traces.py` contra Qdrant (14 chunks) y el LLM de
+  `services/api/.env`; los evals los leen sin red.
+- Verificación: `uv run pytest tests/pipelines/test_rag.py
+  tests/pipelines/test_agent_evals.py -q` → 29 passed; suite completa de la API
+  → 237 passed.
+- Diseño: `docs/rag/agent-design.md`.
+
+### Pendiente
+- Reconstruir la imagen del contenedor `api` (`docker compose build api`) para
+  que incluya `langgraph`; el venv local ya lo tiene.
+- Decidir si `data/eval/agent-traces/` se añade a `.gitignore` (runtime, no
+  versionado) — `.gitignore` está protegido y no se ha tocado.
+- Migrar el backoffice a `/agent/query` si se quiere mostrar `run_id` y enlazar
+  al trace desde la UI.
