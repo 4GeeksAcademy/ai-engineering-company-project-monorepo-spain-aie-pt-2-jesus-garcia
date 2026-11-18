@@ -19,7 +19,6 @@ from typing import Any
 import pytest
 from langgraph.graph import END, START, StateGraph
 
-from data.pipelines import rag
 from services.api.app.agent.graph import (
     AgentGraphConfigurationError,
     compile_agent_graph,
@@ -129,13 +128,13 @@ def test_blank_question_routes_to_fail_without_retrieval_or_generation(tmp_path)
         tmp_path, "   ", retriever=forbidden, generator=forbidden
     )
 
-    assert result.status == "invalid_question"
-    assert trace.node_order == ["receive_question", "fail"]
+    assert result.status == "blocked"
+    assert trace.node_order == []
     assert trace.retrieved_sources == []
     assert trace.route == ""
     assert trace.sources_used == []
-    assert "retrieve" not in trace.node_order
-    assert "generate" not in trace.node_order
+    assert trace.guard_events[0]["guard"] == "structural_guard"
+    assert trace.guard_events[0]["category"] == "structural"
 
 
 def test_retrieve_runs_before_generate_and_passes_its_own_context(tmp_path):
@@ -183,27 +182,23 @@ def test_retrieve_runs_before_generate_and_passes_its_own_context(tmp_path):
     assert trace.answer == "El envío estándar tarda de 3 a 5 días hábiles."
 
 
-def test_empty_retrieval_routes_to_honest_answer_without_llm(tmp_path):
+def test_out_of_domain_question_redirects_without_llm(tmp_path):
     result, trace, _ = run_traced(
         tmp_path,
         "¿Cuánto cuesta el alquiler de un avión privado?",
-        retriever=lambda question: [],
+        retriever=forbidden,
         generator=forbidden,
     )
 
-    assert result.status == "no_context"
-    assert trace.route == "rag"
-    assert trace.sources_used == ["rag"]
-    assert trace.node_order == [
-        "receive_question",
-        "classify",
-        "retrieve",
-        "no_context",
-    ]
-    assert "generate" not in trace.node_order
+    assert result.status == "ok"
+    assert trace.route == ""
+    assert trace.sources_used == []
+    assert trace.node_order == []
     assert trace.retrieved_sources == []
-    assert "No tengo información suficiente" in trace.answer
-    assert trace.answer == rag.NO_CONTEXT_ANSWER
+    assert "fuera de mi ámbito" in trace.answer
+    assert trace.guard_events[0]["guard"] == "scope_guard"
+    assert trace.guard_events[0]["category"] == "content"
+    assert trace.guard_events[0]["action"] == "redirected"
 
 
 @pytest.mark.parametrize(

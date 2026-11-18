@@ -9,6 +9,7 @@ honestos cuando no pueden confirmar un dato.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 
@@ -16,6 +17,8 @@ from pydantic import ValidationError
 
 from data.pipelines import rag
 
+from .harness.external import isolate_context
+from .harness.observability import CATEGORY_SECURITY, GuardrailEvent, metrics
 from .memory.evaluation import evaluate_interaction
 from .memory.gate import is_memory_candidate
 from .memory.generation import (
@@ -56,6 +59,15 @@ Classifier = Callable[[str], RoutingDecision]
 MemoryGenerator = Callable[[str, list[dict], list[dict]], GenerationOutcome]
 MemoryEvaluator = Callable[..., EvaluationOutcome]
 MemoryGate = Callable[[str], bool]
+
+
+def _supports_policy_correction(generator: Callable[..., object]) -> bool:
+    """True si el generador inyectado acepta la corrección de país."""
+
+    try:
+        return "policy_correction" in inspect.signature(generator).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _proposal_dict(outcome) -> dict | None:
@@ -146,7 +158,12 @@ def make_retrieve_node(retriever: Retriever | None = None):
             logger.exception("Fallo al recuperar contexto para la pregunta")
             return {"context": [], "status": "error", "error": SAFE_ERROR_MESSAGE}
 
-        return {"context": list(context), "status": "ok", "error": None}
+        isolated = isolate_context(
+            list(context),
+            run_id=state.get("run_id"),
+            session_id=state.get("session_id"),
+        )
+        return {"context": isolated, "status": "ok", "error": None}
 
     return retrieve_node
 
@@ -360,9 +377,22 @@ def make_generate_node(
             state.get("tool_result") or {},
         )
         if tool_context is not None:
+            if tool_context.get("neutralized"):
+                metrics.record(
+                    GuardrailEvent(
+                        guard="external_content_guard",
+                        category=CATEGORY_SECURITY,
+                        action="sanitized",
+                        reason="instruction_in_tool_result",
+                        run_id=state.get("run_id"),
+                        session_id=state.get("session_id"),
+                        snippet="resultado de tool con instrucciones neutralizadas",
+                    )
+                )
             context.append(tool_context)
 
         memory_context = list(state.get("memory_context") or [])
+        policy_correction = state.get("policy_correction")
         try:
             if generator is not None:
                 answer = generator(question, context)
@@ -374,7 +404,15 @@ def make_generate_node(
                 outcome = GenerationOutcome(answer=answer.strip())
             else:
                 generate = memory_generator or generate_with_memory
-                outcome = generate(question, context, memory_context)
+                if policy_correction and _supports_policy_correction(generate):
+                    outcome = generate(
+                        question,
+                        context,
+                        memory_context,
+                        policy_correction=policy_correction,
+                    )
+                else:
+                    outcome = generate(question, context, memory_context)
                 if not isinstance(outcome, GenerationOutcome):
                     outcome = GenerationOutcome.model_validate(outcome)
         except Exception:  # noqa: BLE001 - se reporta como fallo controlado

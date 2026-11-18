@@ -82,6 +82,29 @@ Rollback:
 drop table if exists public.dead_letter_tasks;
 ```
 
+## 0005_customer_orders.sql
+
+- Tabla `public.customer_order`: propietario y país mínimo de un pedido para
+  que el guard del agente rechace consultas de tracking de otra sesión.
+- `order_ref` único; índices por `order_ref` y `owner_email`; `country`
+  restringido a `US`/`ES`.
+- No sustituye al futuro servicio de tracking: es la fuente de autorización
+  que usa `app/agent/harness/orders.py`.
+
+Seed de demo:
+
+```bash
+cd services/api && source venv/bin/activate
+python seed_customer_orders.py --dry-run
+python seed_customer_orders.py
+```
+
+Rollback:
+
+```sql
+drop table if exists public.customer_order;
+```
+
 ## Aplicar en producción
 
 ```bash

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .harness.external import sanitize_external_text
+
 STATUS_LABELS = {
     "open": "Abierto",
     "in_progress": "En curso",
@@ -242,12 +244,16 @@ def format_tool_context(
     if not text.strip():
         return None
 
+    sanitized = sanitize_external_text(text, source="tool")
     return {
         "company": "trackflow",
         "source_document": source_document,
         "section": section,
         "chunk_index": 0,
-        "text": text,
+        "text": sanitized.text,
+        "untrusted": True,
+        "neutralized": sanitized.neutralized,
+        "neutralized_reasons": list(sanitized.reasons),
     }
 
 

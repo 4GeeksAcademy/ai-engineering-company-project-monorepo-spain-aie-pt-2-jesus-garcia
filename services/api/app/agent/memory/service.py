@@ -12,6 +12,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 
+from ..harness.runtime import screen_input
 from ..runner import AgentRunError, run_agent
 from . import config
 from .intent import classify_intent
@@ -89,6 +90,25 @@ def chat(
             error="La pregunta no puede estar vacía.",
         )
 
+    # El harness se ejecuta antes de resolver una propuesta pendiente: un
+    # mensaje de inyección o una tarea personal no puede interpretarse como
+    # aprobación. Los bloqueos se devuelven sin tocar la propuesta.
+    security = screen_input(
+        text,
+        user=user,
+        session_id=session,
+        security_only=True,
+    )
+    if security.action == "blocked":
+        return ChatResult(
+            session_id=session,
+            run_id=None,
+            answer=security.answer or "",
+            status="blocked",
+            error=None,
+        )
+    text = security.question
+
     user_id = _user_id(user)
     role = _user_role(user)
     memory = ChatMemory()
@@ -163,6 +183,7 @@ def chat(
             memory_context=memory_context,
             graph=graph,
             trace_dir=trace_dir,
+            session_id=session,
         )
     except AgentRunError as exc:
         logger.error("La corrida del agente falló en el chat: %s", exc)

@@ -154,6 +154,15 @@ def _clear_cache():
     cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_harness_metrics():
+    from app.agent.harness.observability import metrics
+
+    metrics.reset()
+    yield
+    metrics.reset()
+
+
 @pytest.fixture()
 def sample_csv_bytes() -> bytes:
     return SAMPLE_CSV.encode("utf-8")

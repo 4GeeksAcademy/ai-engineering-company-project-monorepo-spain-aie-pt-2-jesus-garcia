@@ -12,6 +12,7 @@
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
 | MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
 | Memoria del agente — Parte 3 | ✅ Completado | Store `agent_memory_*`, `POST /agent/chat`, propuesta/confirmación/auditoría, consolidación y 72 tests de API + 15 evals |
+| Hito 8 — Parte 2: Harness y guardrails | ✅ Completado | System prompt CX, guards de entrada/salida, autorización de pedidos, aislamiento RAG/tools, logs por categoría y `GET /agent/harness/stats`; 413 tests API + 38 evals |
 
 ## Últimas decisiones
 
@@ -1331,3 +1332,45 @@ auditoría completa.
 - UI de chat en backoffice (fuera del alcance acordado).
 - Valorar activar `AGENT_MEMORY_POLICY_APPROVER_ROLES=admin,manager` para
   reglas de carrier en producción.
+
+## Harness y guardrails del agente de CX — Hito 8 (Parte 2)
+
+Aseguramiento del mismo agente LangGraph de CX (Valentina Cruz): RAG + tools
+MCP + memoria. El prompt comercial del MILESTONE 7 (`data/pipelines/rag.py`)
+queda intacto para `/knowledge/query`; el prompt de CX vive en `app/`.
+
+### Implementación
+- `services/api/app/agent/harness/` — `prompt.py` (system prompt con jerarquía
+  sistema/usuario, dominio, reglas US/ES, small talk con redirección y datos
+  sensibles), `scope.py`, `injection.py`, `orders.py`, `external.py`,
+  `output.py`, `observability.py`, `runtime.py` y `general.py`.
+- `run_agent()` aplica `screen_input()` antes del grafo y `validate_output()`
+  después; los bloqueos/redirecciones no invocan LLM, RAG ni tools. Las trazas
+  guardan `guard_events` sin alterar `node_order`.
+- `/agent/chat` hace un pre-chequeo de seguridad antes de resolver propuestas
+  pendientes (una inyección no puede aprobar memoria).
+- RAG y resultados de tools se aíslan en `<untrusted_content>`; las
+  instrucciones incrustadas se neutralizan antes del prompt.
+- `models.py` — `CustomerOrder`; migración `0005_customer_orders.sql` y seed
+  `seed_customer_orders.py` (1001/1002 del admin; 45821/45822 de otro cliente).
+- `GET /agent/harness/stats` (manager/admin) con contadores por acción,
+  categoría, guard y motivo, y eventos recientes redactados.
+- Log `trackflow.agent.harness` con `category` structural/content/security.
+
+### Evidencia y tests
+- `services/api/tests/test_agent_harness_{input,external,output,runtime,observability}.py`
+  y corpus `tests/fixtures/harness_corpus.json`.
+- `tests/pipelines/test_agent_evals.py` actualizado: pregunta vacía y consulta
+  fuera de dominio se resuelven en el harness sin LLM.
+- `scripts/demo_agent_harness.py` — demo determinista sin red.
+- `docs/memory/agent-harnessing-design.md` y
+  `docs/memory/agent-harnessing-evidence.md` (7 jailbreaks, pedido ajeno,
+  mezcla de políticas, inyección RAG/tool, salida filtrada y stats).
+- Verificado: `services/api` **413 passed**; evals **38 passed**;
+  `npm run typecheck` OK; seed probado sobre SQLite temporal.
+
+### Pendiente
+- Aplicar `0005_customer_orders.sql` en Supabase con backup previo y cargar el
+  seed de pedidos reales.
+- Smoke con LLM/Qdrant/MCP levantados (la suite y la demo usan dobles).
+- Valorar conectar `customer_order` al servicio real de tracking cuando exista.

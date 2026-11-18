@@ -235,6 +235,7 @@ class AgentTrace:
     duration_ms: float
     events: list[TraceEvent] = field(default_factory=list)
     checkpoints: list[CheckpointRecord] = field(default_factory=list)
+    guard_events: list[dict[str, Any]] = field(default_factory=list)
     trace_path: str | None = None
 
     @property
@@ -302,6 +303,7 @@ class AgentTrace:
             "route": self.route,
             "sources_used": self.sources_used,
             "node_order": self.node_order,
+            "guard_events": self.guard_events,
             "events": [event.to_dict() for event in self.events],
             "checkpoints": [record.to_dict() for record in self.checkpoints],
         }
@@ -326,6 +328,9 @@ class AgentTrace:
             checkpoints=[
                 CheckpointRecord.from_dict(record)
                 for record in data.get("checkpoints") or []
+            ],
+            guard_events=[
+                dict(event) for event in data.get("guard_events") or []
             ],
             trace_path=trace_path,
         )
@@ -366,6 +371,7 @@ class TraceRecorder:
         self.started_at = utc_now()
         self.events: list[TraceEvent] = []
         self.checkpoints: list[CheckpointRecord] = []
+        self.guard_events: list[dict[str, Any]] = []
         self._started_perf = time.perf_counter()
         self._last_perf = self._started_perf
 
@@ -394,6 +400,15 @@ class TraceRecorder:
             self.checkpoints.append(record)
 
 
+    def record_guard_events(self, events) -> None:
+        """Adjunta eventos del harness (bloqueos, redirecciones, saneamientos)."""
+
+        for event in events or ():
+            if hasattr(event, "to_dict"):
+                self.guard_events.append(dict(event.to_dict()))
+            elif isinstance(event, dict):
+                self.guard_events.append(dict(event))
+
     def record_failure(self, message: str) -> None:
         """Deja constancia de un fallo no controlado sin filtrar el detalle."""
         event = TraceEvent(
@@ -419,6 +434,7 @@ class TraceRecorder:
             duration_ms=round((time.perf_counter() - self._started_perf) * 1000, 2),
             events=list(self.events),
             checkpoints=list(self.checkpoints),
+            guard_events=list(self.guard_events),
         )
 
     def persist(self, trace: AgentTrace) -> Path:
