@@ -123,3 +123,87 @@ class TaskStatusResponse(BaseModel):
     task_id: str
     status: str
     result: Any = None
+
+
+class RfpUploadResponse(BaseModel):
+    """Respuesta rápida (202) de la subida de una RFP."""
+
+    ticket_id: str
+    rfp_id: str
+    status: str
+    task_id: str | None = None
+
+
+class RfpTicketListItem(BaseModel):
+    ticket_id: str
+    rfp_id: str
+    status: str
+    pipeline_stage: str | None = None
+    original_filename: str
+    client_name: str | None = None
+    client_country: str | None = None
+    currency: str | None = None
+    discard_reason: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RfpMetadataRead(BaseModel):
+    client_name: str | None = None
+    client_country: str | None = None
+    currency: str | None = None
+    language: str | None = None
+    services_requested: list[str] = []
+    departments_needed: list[str] = []
+    monthly_volume: int | None = None
+    deadline: str | None = None
+    budget_range: str | None = None
+    contact: dict = {}
+    scope_notes: list[str] = []
+    unknown_services: list[str] = []
+    missing_fields: list[str] = []
+    readability_metrics: dict = {}
+    document_metadata: dict = {}
+
+
+class RfpDepartmentSectionRead(BaseModel):
+    department_id: str
+    responsible: str | None = None
+    key_aspects: list[dict] = []
+    open_questions: list[str] = []
+    assumed_facts: dict = {}
+    unsupported_claims: list[dict] = []
+    approval_status: str | None = None
+    approver: str | None = None
+
+
+class RfpTicketStatusRead(BaseModel):
+    ticket_id: str
+    rfp_id: str
+    status: str
+    pipeline_stage: str | None = None
+    discard_reason: str | None = None
+    error_message: str | None = None
+    handoff_status: str = "none"
+    updated_at: datetime
+
+
+class RfpTicketRead(BaseModel):
+    ticket_id: str
+    rfp_id: str
+    status: str
+    pipeline_stage: str | None = None
+    original_filename: str
+    raw_pdf_path: str
+    markdown_path: str | None = None
+    file_sha256: str
+    classification: dict | None = None
+    discard_reason: str | None = None
+    error_message: str | None = None
+    handoff_status: str = "none"
+    handoff: dict | None = None
+    metadata: RfpMetadataRead | None = None
+    sections: list[RfpDepartmentSectionRead] = []
+    created_at: datetime
+    updated_at: datetime

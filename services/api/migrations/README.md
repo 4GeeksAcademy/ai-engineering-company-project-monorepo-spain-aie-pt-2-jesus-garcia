@@ -177,3 +177,28 @@ python services/api/import_sku_mapping.py \
 
 Después, fijar `PIPELINE_INSTRUMENTATION_SINCE` y ejecutar el backfill de las
 semanas afectadas.
+
+## 0006_rfp_intake.sql
+
+- Tablas `public.rfp_ticket`, `public.rfp_metadata` y
+  `public.rfp_department_section` para la recepción de RFPs (Hito 9, Parte 1).
+- `rfp_ticket` es la fuente de verdad del estado: `analizando`,
+  `analisis_completo`, `descartado` y `error` (fallo técnico terminal).
+- `rfp_metadata` guarda los metadatos normalizados y las métricas de
+  legibilidad/coste; `rfp_department_section` guarda `key_aspects`,
+  preguntas abiertas y los campos de borrador/evaluación/aprobación que usarán
+  las Partes 2 y 3.
+- `rfp_ticket.handoff_payload` + `handoff_status='ready'` son el contrato de
+  enrutamiento hacia la Parte 2 (`docs/workflows/RFP_INTAKE_HANDOFF.md`).
+- Checks: estados permitidos, `handoff_status` y departamentos canónicos
+  (`warehouse`, `lastmile`, `reverse`).
+- La API crea las tablas en SQLite/tests con `SQLModel.metadata.create_all`;
+  esta migración es la vía explícita para PostgreSQL/Supabase.
+
+Rollback:
+
+```sql
+drop table if exists public.rfp_department_section;
+drop table if exists public.rfp_metadata;
+drop table if exists public.rfp_ticket;
+```

@@ -283,7 +283,7 @@ def _split_long_block(block: str, max_chars: int) -> list[str]:
     return packed
 
 
-def post_json(path: str, payload: dict) -> dict:
+def post_json(path: str, payload: dict, *, timeout: float = 90.0) -> dict:
     validate_llm_config()
     headers = {
         "Content-Type": "application/json",
@@ -298,7 +298,7 @@ def post_json(path: str, payload: dict) -> dict:
         build_model_url(LLM_BASE_URL, model),
     )
     try:
-        with httpx.Client(timeout=90.0) as client:
+        with httpx.Client(timeout=timeout) as client:
             response = client.post(
                 url,
                 headers=headers,

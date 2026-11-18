@@ -19,6 +19,12 @@ import type {
   PipelineRunTriggerResponse,
   WeeklyPerformanceReport,
 } from "./types";
+import type {
+  RfpTicketDetail,
+  RfpTicketListItem,
+  RfpTicketStatus,
+  RfpUploadResponse,
+} from "./rfp-types";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -378,4 +384,54 @@ export async function triggerPipelineRun(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data ?? {}),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Recepción de RFPs (Hito 9, Parte 1)
+// ---------------------------------------------------------------------------
+
+export async function uploadRfp(
+  file: File,
+  token?: string | null,
+): Promise<RfpUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<RfpUploadResponse>("/api/rfp/tickets", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: formData,
+  });
+}
+
+export async function fetchRfpTickets(
+  token?: string | null,
+  params?: { status?: string },
+): Promise<RfpTicketListItem[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set("status", params.status);
+  const query = searchParams.toString();
+  return request<RfpTicketListItem[]>(
+    `/api/rfp/tickets${query ? `?${query}` : ""}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function fetchRfpTicket(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpTicketDetail> {
+  return request<RfpTicketDetail>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function fetchRfpTicketStatus(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpTicketStatus> {
+  return request<RfpTicketStatus>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/status`,
+    { headers: authHeaders(token) },
+  );
 }
