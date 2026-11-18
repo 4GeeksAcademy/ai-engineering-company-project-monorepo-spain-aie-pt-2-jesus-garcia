@@ -11,6 +11,7 @@
 | MILESTONE_5 — API de inventario | 🔄 En progreso | Backend listo (BD dual TinyDB+SQL, ORM, service, router, seed, tests) — UI de inventario en backoffice completada con TDD (Vitest) |
 | Pipeline de desempeño — Plan resiliente | 🔄 En progreso | F0–F6 implementadas; G1–G4 implementados y migración aplicada en Supabase. Pendiente cargar mapeo CSV y validación E2E |
 | MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
+| Memoria del agente — Parte 3 | ✅ Completado | Store `agent_memory_*`, `POST /agent/chat`, propuesta/confirmación/auditoría, consolidación y 72 tests de API + 15 evals |
 
 ## Últimas decisiones
 
@@ -1257,3 +1258,76 @@ RAG, tool o ambos.
 - Subir el idle timeout del Codespace antes de la demo (los procesos se
   reinician con el Codespace).
 - No commitear `services/api/data/suppliers.json`.
+
+## Memoria persistente del agente — Parte 3 (rama `feature/agent-memory`)
+
+Store de memoria separado del RAG, con auto-evaluación en la misma llamada de
+generación, propuesta visible en la conversación, confirmación clasificada y
+auditoría completa.
+
+### Arquitectura
+- **PostgreSQL/Supabase** con tres tablas nuevas (`agent_memory_entries`,
+  `agent_memory_proposals`, `agent_memory_audit`). **Nunca** se escribe en
+  Qdrant ni en `trackflow_knowledge`; un test de regresión lo comprueba.
+- Migración aditiva `services/api/migrations/0004_agent_memory.sql`; en
+  SQLite/tests las tablas las crea `create_agent_memory_tables(engine)`.
+- Tipos: `carrier_rule` (carrier + país + zona, revisión 90 d),
+  `operational_context` (ruta/almacén + país, TTL 7 d) y `client_preference`
+  (cliente B2B, revisión 180 d). Sin memoria global.
+- Índices únicos parciales: una entrada `active` por `scope_key` y una propuesta
+  `pending` por usuario.
+
+### Flujo
+- `POST /agent/chat` (`app/routes/agent_memory.py` + `service.py`):
+  1. resuelve una propuesta pendiente con clasificador de intención
+     `approve|reject|edit|unrelated` (LLM estructurado, fallo en cerrado);
+  2. lee memoria activa y relevante (`read_memory`);
+  3. ejecuta el grafo con `memory_context`;
+  4. persiste la propuesta validada y añade la pregunta de confirmación a la
+     misma respuesta.
+- Ruta RAG: **una sola llamada** devuelve `respuesta` + `propuesta_memoria`.
+  Rutas tool/no-context: respuesta determinista; solo si el gate detecta un
+  candidato se hace una única llamada de evaluación.
+- Cita literal (`cita_origen`) obligatoria y validada contra el mensaje;
+  validación determinista de direcciones B2C/B2B, rutas internas, incidencia
+  única, contratos en negociación, credenciales e inyección.
+- Rechazo por defecto ante silencio/ambigüedad; TTL de propuesta 24 h; una
+  propuesta a la vez; edición revalidada.
+- Consolidación: caduca TTL, marca `stale` por revisión, deduplica, bloquea
+  filas legacy prohibidas y aplica tope de 200 activas. CLI
+  `python -m app.agent.memory.consolidation` y endpoint manager.
+- Administración: `GET /agent/memory`, `GET /agent/memory/proposals`,
+  `POST /agent/memory/proposals/{id}/approve`, `POST /agent/memory/{id}/retire`,
+  `POST /agent/memory/consolidate`.
+
+### Tests y evidencia
+- `services/api/tests/test_agent_memory.py` (59): scopes, validación, gate,
+  store, versionado, TTL, consolidación, retirada, intención.
+- `services/api/tests/test_agent_chat.py` (13): ciclos aprobado/rechazado/
+  editado, pregunta adicional en el mismo turno, aislamiento por usuario y
+  contrato HTTP.
+- `tests/pipelines/test_agent_memory_evals.py` (15): una sola llamada RAG,
+  gate en tool, respuesta desde memoria sin LLM, JSON inválido y cita no
+  literal. Evals existentes: 23 passed.
+- Suite API completa: **331 passed**. Typecheck raíz OK.
+- `tests/conftest.py` redirige TinyDB y SQLite a directorios temporales: la
+  suite ya no muta `services/api/data/suppliers.json` ni `test_inventory.db`
+  (artefactos trackeados).
+- Ajustes post-revisión: el silencio caduca como `rejected` con
+  `decision_label=unrelated` (nunca aprobación); `consolidate()` se ejecuta tras
+  cada escritura exitosa; y las trazas redactan PII en pregunta, respuesta,
+  memoria y descripciones de tools.
+- Evidencia reproducible: `services/api/venv/bin/python
+  scripts/demo_agent_memory.py` (aprobado, rechazado y bloqueado por dirección)
+  → `docs/memory/agent-memory-evidence.md`.
+- Diseño: `docs/memory/agent-memory-design.md`; índice en
+  `docs/memory/README.md`; enlace desde `docs/rag/agent-design.md` §14.
+
+### Pendiente
+- Aplicar `0004_agent_memory.sql` en Supabase con backup previo (procedimiento
+  de `migrations/README.md`).
+- Probar el flujo con el LLM real + Qdrant/MCP levantados (la demo usa dobles
+  deterministas).
+- UI de chat en backoffice (fuera del alcance acordado).
+- Valorar activar `AGENT_MEMORY_POLICY_APPROVER_ROLES=admin,manager` para
+  reglas de carrier en producción.

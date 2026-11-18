@@ -18,16 +18,21 @@ from langgraph.graph import END, START, StateGraph
 from .nodes import (
     Classifier,
     Generator,
+    MemoryEvaluator,
+    MemoryGate,
+    MemoryGenerator,
     Retriever,
-    answer_from_tool_node,
     fail_node,
+    make_answer_from_tool_node,
     make_classify_node,
     make_generate_node,
+    make_memory_eval_node,
+    make_no_context_node,
     make_retrieve_node,
     make_tool_incident_node,
     make_tool_inventory_node,
-    no_context_node,
     receive_question,
+    route_after_memory_gate,
 )
 from .state import AgentState
 from .tools import IncidentLookup, InventoryLookup
@@ -94,6 +99,9 @@ def build_agent_graph(
     classifier: Classifier | None = None,
     incident_lookup: IncidentLookup | None = None,
     inventory_lookup: InventoryLookup | None = None,
+    memory_generator: MemoryGenerator | None = None,
+    memory_evaluator: MemoryEvaluator | None = None,
+    memory_gate: MemoryGate | None = None,
 ) -> StateGraph:
     """Declara nodos y aristas condicionales sin compilar."""
     _validate_state_schema(AgentState)
@@ -104,9 +112,10 @@ def build_agent_graph(
     builder.add_node("tool_incident", make_tool_incident_node(incident_lookup))
     builder.add_node("tool_inventory", make_tool_inventory_node(inventory_lookup))
     builder.add_node("retrieve", make_retrieve_node(retriever))
-    builder.add_node("generate", make_generate_node(generator))
-    builder.add_node("answer_from_tool", answer_from_tool_node)
-    builder.add_node("no_context", no_context_node)
+    builder.add_node("generate", make_generate_node(generator, memory_generator))
+    builder.add_node("answer_from_tool", make_answer_from_tool_node(memory_gate))
+    builder.add_node("no_context", make_no_context_node(memory_gate))
+    builder.add_node("memory_eval", make_memory_eval_node(memory_evaluator))
     builder.add_node("fail", fail_node)
 
     builder.add_edge(START, "receive_question")
@@ -150,8 +159,17 @@ def build_agent_graph(
         route_after_generate,
         {"done": END, "fail": "fail"},
     )
-    builder.add_edge("answer_from_tool", END)
-    builder.add_edge("no_context", END)
+    builder.add_conditional_edges(
+        "answer_from_tool",
+        route_after_memory_gate,
+        {"memory_eval": "memory_eval", "end": END},
+    )
+    builder.add_conditional_edges(
+        "no_context",
+        route_after_memory_gate,
+        {"memory_eval": "memory_eval", "end": END},
+    )
+    builder.add_edge("memory_eval", END)
     builder.add_edge("fail", END)
     return builder
 
@@ -164,6 +182,9 @@ def compile_agent_graph(
     classifier: Classifier | None = None,
     incident_lookup: IncidentLookup | None = None,
     inventory_lookup: InventoryLookup | None = None,
+    memory_generator: MemoryGenerator | None = None,
+    memory_evaluator: MemoryEvaluator | None = None,
+    memory_gate: MemoryGate | None = None,
     checkpointer: Any | None = None,
 ) -> Any:
     """Valida y compila el grafo. Falla antes de cualquier ``invoke``."""
@@ -174,6 +195,9 @@ def compile_agent_graph(
             classifier=classifier,
             incident_lookup=incident_lookup,
             inventory_lookup=inventory_lookup,
+            memory_generator=memory_generator,
+            memory_evaluator=memory_evaluator,
+            memory_gate=memory_gate,
         )
 
     _validate_state_schema(getattr(builder, "state_schema", None))

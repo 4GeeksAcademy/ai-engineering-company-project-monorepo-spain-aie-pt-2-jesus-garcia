@@ -16,6 +16,15 @@ from pydantic import ValidationError
 
 from data.pipelines import rag
 
+from .memory.evaluation import evaluate_interaction
+from .memory.gate import is_memory_candidate
+from .memory.generation import (
+    answer_from_memory,
+    answer_uses_memory,
+    generate_with_memory,
+    memory_notes,
+)
+from .memory.schemas import EvaluationOutcome, GenerationOutcome
 from .router import RoutingDecision, classify_question
 from .state import AgentState
 from .tool_answers import (
@@ -44,6 +53,20 @@ SAFE_ERROR_MESSAGE = (
 Retriever = Callable[[str], list[dict]]
 Generator = Callable[[str, list[dict]], str]
 Classifier = Callable[[str], RoutingDecision]
+MemoryGenerator = Callable[[str, list[dict], list[dict]], GenerationOutcome]
+MemoryEvaluator = Callable[..., EvaluationOutcome]
+MemoryGate = Callable[[str], bool]
+
+
+def _proposal_dict(outcome) -> dict | None:
+    proposal = getattr(outcome, "proposal", None)
+    if proposal is None:
+        return None
+    if hasattr(proposal, "model_dump"):
+        return proposal.model_dump()
+    if isinstance(proposal, dict):
+        return dict(proposal)
+    return None
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -260,45 +283,69 @@ def make_tool_inventory_node(lookup: InventoryLookup | None = None):
     return tool_inventory_node
 
 
-def answer_from_tool_node(state: AgentState) -> dict:
+def make_answer_from_tool_node(gate: MemoryGate | None = None):
     """Responde con los datos de la tool, sin pasar por el LLM.
 
     Es la ruta principal cuando la pregunta es solo de ticket o de stock y el
     fallback honesto cuando la tool no pudo confirmar el dato. En rutas
     ``+rag`` sin contexto recuperado, añade una nota para no ocultar que la
-    base de conocimiento no aportó información adicional.
+    base de conocimiento no aportó información adicional. Si hay memoria
+    relevante, la añade de forma determinista.
     """
-    tool_name = state.get("tool_name")
-    result = state.get("tool_result") or {}
+    memory_gate = gate or is_memory_candidate
 
-    if tool_name == INVENTORY_TOOL_NAME:
-        answer = format_inventory_answer(result)
-    elif tool_name == INCIDENT_TOOL_NAME:
-        answer = format_incident_answer(result)
-    else:
-        answer = (
-            "No pude confirmar ese dato ahora mismo. Inténtalo de nuevo en "
-            "unos minutos."
-        )
+    def answer_from_tool_node(state: AgentState) -> dict:
+        tool_name = state.get("tool_name")
+        result = state.get("tool_result") or {}
 
-    route = state.get("route") or ""
-    if route.endswith("+rag") and not state.get("context"):
-        answer = (
-            f"{answer}\n\nNo encontré información adicional en la base de "
-            "conocimiento para completar la consulta."
-        )
+        if tool_name == INVENTORY_TOOL_NAME:
+            answer = format_inventory_answer(result)
+        elif tool_name == INCIDENT_TOOL_NAME:
+            answer = format_incident_answer(result)
+        else:
+            answer = (
+                "No pude confirmar ese dato ahora mismo. Inténtalo de nuevo en "
+                "unos minutos."
+            )
 
-    return {
-        "answer": answer,
-        "status": "ok",
-        "fallback": bool(state.get("fallback")),
-        "error": None,
-    }
+        route = state.get("route") or ""
+        if route.endswith("+rag") and not state.get("context"):
+            answer = (
+                f"{answer}\n\nNo encontré información adicional en la base de "
+                "conocimiento para completar la consulta."
+            )
+
+        notes = memory_notes(state.get("memory_context"))
+        if notes:
+            answer = f"{answer}\n\n{notes}"
+
+        return {
+            "answer": answer,
+            "status": "ok",
+            "fallback": bool(state.get("fallback")),
+            "error": None,
+            "memory_used": bool(notes),
+            "memory_gate_applicable": bool(
+                memory_gate(state.get("question") or "")
+            ),
+        }
+
+    return answer_from_tool_node
 
 
-def make_generate_node(generator: Generator | None = None):
-    """Construye el nodo que genera la respuesta con contexto RAG y de tools."""
-    generate = generator or rag.generate_answer
+answer_from_tool_node = make_answer_from_tool_node()
+
+
+def make_generate_node(
+    generator: Generator | None = None,
+    memory_generator: MemoryGenerator | None = None,
+):
+    """Construye el nodo que genera la respuesta con contexto RAG y de tools.
+
+    Si se inyecta ``generator`` (evals antiguas) se mantiene el contrato de dos
+    argumentos y no se propone memoria. En producción se usa el generador con
+    memoria: una sola llamada devuelve respuesta + propuesta estructurada.
+    """
 
     def generate_node(state: AgentState) -> dict:
         question = state.get("question") or ""
@@ -315,29 +362,118 @@ def make_generate_node(generator: Generator | None = None):
         if tool_context is not None:
             context.append(tool_context)
 
+        memory_context = list(state.get("memory_context") or [])
         try:
-            answer = generate(question, context)
+            if generator is not None:
+                answer = generator(question, context)
+                if not isinstance(answer, str) or not answer.strip():
+                    logger.error(
+                        "El generador devolvió una respuesta vacía o no textual."
+                    )
+                    return {"status": "error", "error": SAFE_ERROR_MESSAGE}
+                outcome = GenerationOutcome(answer=answer.strip())
+            else:
+                generate = memory_generator or generate_with_memory
+                outcome = generate(question, context, memory_context)
+                if not isinstance(outcome, GenerationOutcome):
+                    outcome = GenerationOutcome.model_validate(outcome)
         except Exception:  # noqa: BLE001 - se reporta como fallo controlado
             logger.exception("Fallo al generar la respuesta RAG")
             return {"status": "error", "error": SAFE_ERROR_MESSAGE}
 
-        if not isinstance(answer, str) or not answer.strip():
+        answer = (outcome.answer or "").strip()
+        if not answer:
             logger.error("El generador devolvió una respuesta vacía o no textual.")
             return {"status": "error", "error": SAFE_ERROR_MESSAGE}
 
         return {
-            "answer": answer.strip(),
+            "answer": answer,
             "status": "ok",
             "error": None,
             "tool_context_included": tool_context is not None,
+            "memory_proposal": _proposal_dict(outcome),
+            "memory_validation_error": outcome.validation_error,
+            "memory_used": answer_uses_memory(answer, memory_context),
         }
 
     return generate_node
 
 
-def no_context_node(state: AgentState) -> dict:
-    """Responde con honestidad cuando la recuperación no supera el umbral."""
-    return {"answer": rag.NO_CONTEXT_ANSWER, "status": "no_context", "error": None}
+def make_no_context_node(gate: MemoryGate | None = None):
+    """Responde con honestidad; si hay memoria aprobada, la usa sin LLM."""
+
+    memory_gate = gate or is_memory_candidate
+
+    def no_context_node(state: AgentState) -> dict:
+        memory_context = list(state.get("memory_context") or [])
+        applicable = bool(memory_gate(state.get("question") or ""))
+        if memory_context:
+            return {
+                "answer": answer_from_memory(memory_context),
+                "status": "ok",
+                "error": None,
+                "memory_used": True,
+                "memory_gate_applicable": applicable,
+            }
+        return {
+            "answer": rag.NO_CONTEXT_ANSWER,
+            "status": "no_context",
+            "error": None,
+            "memory_used": False,
+            "memory_gate_applicable": applicable,
+        }
+
+    return no_context_node
+
+
+no_context_node = make_no_context_node()
+
+
+def make_memory_eval_node(evaluator: MemoryEvaluator | None = None):
+    """Evalúa si una respuesta determinista debe generar una propuesta.
+
+    Es la única llamada al LLM en esta ruta. Un fallo del evaluador nunca
+    rompe la respuesta: se registra y se sigue sin propuesta.
+    """
+
+    evaluate = evaluator or evaluate_interaction
+
+    def memory_eval_node(state: AgentState) -> dict:
+        if state.get("status") == "error":
+            return {}
+        try:
+            outcome = evaluate(
+                question=state.get("question") or "",
+                answer=state.get("answer") or "",
+                tool_result=state.get("tool_result") or {},
+                memory_context=list(state.get("memory_context") or []),
+            )
+            if not isinstance(outcome, EvaluationOutcome):
+                outcome = EvaluationOutcome.model_validate(outcome)
+        except Exception:  # noqa: BLE001 - la respuesta ya está construida
+            logger.exception("Fallo al evaluar memoria en ruta determinista")
+            return {
+                "memory_proposal": None,
+                "memory_validation_error": "evaluator_error",
+            }
+
+        return {
+            "memory_proposal": _proposal_dict(outcome),
+            "memory_validation_error": outcome.validation_error,
+        }
+
+    return memory_eval_node
+
+
+memory_eval_node = make_memory_eval_node()
+
+
+def route_after_memory_gate(state: AgentState) -> str:
+    """Tras una respuesta determinista: evaluar memoria o terminar."""
+
+    if state.get("status") == "error":
+        return "end"
+    return "memory_eval" if state.get("memory_gate_applicable") else "end"
 
 
 def fail_node(state: AgentState) -> dict:
@@ -355,15 +491,23 @@ def fail_node(state: AgentState) -> dict:
 __all__ = [
     "Classifier",
     "Generator",
+    "MemoryEvaluator",
+    "MemoryGate",
+    "MemoryGenerator",
     "Retriever",
     "SAFE_ERROR_MESSAGE",
     "answer_from_tool_node",
     "fail_node",
+    "make_answer_from_tool_node",
     "make_classify_node",
     "make_generate_node",
+    "make_memory_eval_node",
+    "make_no_context_node",
     "make_retrieve_node",
     "make_tool_incident_node",
     "make_tool_inventory_node",
+    "memory_eval_node",
     "no_context_node",
     "receive_question",
+    "route_after_memory_gate",
 ]

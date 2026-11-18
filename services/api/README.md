@@ -108,17 +108,27 @@ Prefect self-hosted o a Prefect Cloud.
 
 ## Agente RAG (LangGraph)
 
-Grafo en `app/agent/` que reutiliza `retrieve()` y `generate_answer()` del
-pipeline RAG (`data/pipelines/rag.py`). Compila al importar el router y escribe
-una traza por corrida en `data/eval/agent-traces/` (`AGENT_TRACE_DIR`).
+Grafo en `app/agent/` que reutiliza `retrieve()` del pipeline RAG
+(`data/pipelines/rag.py`). La generación añade el bloque de memoria y devuelve
+respuesta + propuesta estructurada en una sola llamada
+(`app/agent/memory/generation.py`). Compila al importar el router y escribe una
+traza por corrida en `data/eval/agent-traces/` (`AGENT_TRACE_DIR`).
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| POST | `/agent/query` | `{"question": "..."}` → `{"answer", "run_id"}` |
+| POST | `/agent/query` | `{"question": "..."}` → `{"answer", "run_id"}` (stateless) |
+| POST | `/agent/chat` | `{"message", "session_id"}` → `{"answer", "run_id", "memory"}`; propuesta/confirmación |
+| GET | `/agent/memory` | Memoria activa (cualquier usuario autenticado) |
+| GET | `/agent/memory/proposals` | Auditoría de propuestas (manager/admin) |
+| POST | `/agent/memory/proposals/{proposal_id}/approve` | Aprobar/rechazar una propuesta ajena cuando el gate de roles está activo (manager/admin) |
+| POST | `/agent/memory/{entry_id}/retire` | Retirar una entrada (manager/admin) |
+| POST | `/agent/memory/consolidate` | Ejecutar consolidación (manager/admin) |
 
-Códigos: `200` respuesta correcta o “sin información suficiente”, `422`
-pregunta vacía, `502` fallo interno (mensaje genérico, sin stack trace).
-`/knowledge/query` se mantiene por compatibilidad.
+La memoria vive en tablas propias `agent_memory_*` (PostgreSQL/Supabase o
+SQLite en tests) y **nunca** en Qdrant ni en `trackflow_knowledge`. Diseño:
+`docs/memory/agent-memory-design.md`; evidencia:
+`docs/memory/agent-memory-evidence.md`; migración:
+`migrations/0004_agent_memory.sql`.
 
 El grafo incluye un nodo `classify` que decide automáticamente entre la base de
 conocimiento, el gestor de incidencias (`incident_lookup`) y el inventario

@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .memory.validation import contains_forbidden, redact_text
+
 INDEX_FILENAME = "index.jsonl"
 TRACE_DIR_ENV_VAR = "AGENT_TRACE_DIR"
 
@@ -71,8 +73,51 @@ def summarize_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
         if key == "tool_result":
             summary["tool_result"] = _summarize_tool_result(value)
             continue
+        if key == "answer" and isinstance(value, str):
+            summary["answer"] = redact_text(value)
+            continue
+        if key == "question" and isinstance(value, str):
+            summary["question"] = redact_text(value)
+            continue
+        if key == "memory_context":
+            items = value if isinstance(value, list) else []
+            summary["memory_context"] = [
+                {
+                    "id": item.get("id"),
+                    "memory_type": item.get("memory_type"),
+                    "scope_label": item.get("scope_label"),
+                    "fact": redact_text(str(item.get("fact") or ""))[:300],
+                }
+                for item in items
+                if isinstance(item, dict)
+            ]
+            summary["memory_context_count"] = len(items)
+            continue
+        if key == "memory_proposal":
+            summary["memory_proposal"] = _summarize_memory_proposal(value)
+            continue
         summary[key] = value
     return summary
+
+
+def _summarize_memory_proposal(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    fact = str(value.get("fact") or "")
+    forbidden = contains_forbidden(fact)
+    proposal = {
+        "memory_type": value.get("memory_type"),
+        "scope": value.get("scope"),
+        "fact": "[REDACTED]" if forbidden else redact_text(fact)[:600],
+        "reason": redact_text(str(value.get("reason") or ""))[:300] or None,
+        "source_quote": (
+            "[REDACTED]"
+            if forbidden
+            else redact_text(str(value.get("source_quote") or ""))[:400]
+        ),
+        "blocked": bool(forbidden),
+    }
+    return proposal
 
 
 def _summarize_tool_result(value: Any, *, description_limit: int = 200) -> Any:
@@ -93,8 +138,19 @@ def _summarize_tool_result(value: Any, *, description_limit: int = 200) -> Any:
 def _truncate_tool_record(item: dict, limit: int) -> dict:
     record = dict(item)
     description = record.get("description")
-    if isinstance(description, str) and len(description) > limit:
-        record["description"] = description[:limit].rstrip() + "…"
+    if isinstance(description, str):
+        record["description"] = redact_text(description)[:limit]
+        if len(record["description"]) >= limit:
+            record["description"] = record["description"].rstrip() + "…"
+    excerpt = record.get("description_excerpt")
+    if isinstance(excerpt, str):
+        record["description_excerpt"] = redact_text(excerpt)[:limit]
+    title = record.get("title")
+    if isinstance(title, str):
+        record["title"] = redact_text(title)[:120]
+    message = record.get("message")
+    if isinstance(message, str):
+        record["message"] = redact_text(message)[:300]
     return record
 
 
@@ -228,6 +284,8 @@ class AgentTrace:
             label = labels.get(event.node)
             if label and label not in used:
                 used.append(label)
+            if event.output.get("memory_used") and "memory" not in used:
+                used.append("memory")
         return used
 
     def to_dict(self) -> dict[str, Any]:
@@ -303,7 +361,7 @@ class TraceRecorder:
     ) -> None:
         self.run_id = run_id
         self.thread_id = thread_id
-        self.question = question
+        self.question = redact_text(question, limit=2_000)
         self.trace_dir = resolve_trace_dir(trace_dir)
         self.started_at = utc_now()
         self.events: list[TraceEvent] = []
@@ -354,7 +412,7 @@ class TraceRecorder:
             thread_id=self.thread_id,
             question=self.question,
             status=status,
-            answer=answer,
+            answer=redact_text(answer),
             error=error,
             started_at=self.started_at,
             finished_at=utc_now(),
