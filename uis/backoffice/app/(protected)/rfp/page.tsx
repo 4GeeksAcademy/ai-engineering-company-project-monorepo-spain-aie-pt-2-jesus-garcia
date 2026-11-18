@@ -17,8 +17,23 @@ const FILTERS: Array<{ value: "" | RfpStatus; label: string }> = [
   { value: "", label: "Todos" },
   { value: "analizando", label: "Analizando" },
   { value: "analisis_completo", label: "Análisis completo" },
+  { value: "generando_borrador", label: "Generando borrador" },
+  { value: "en_evaluación", label: "En evaluación" },
+  { value: "needs_human_review", label: "Revisión humana" },
+  { value: "esperando_aprobación", label: "Esperando aprobación" },
   { value: "descartado", label: "Descartado" },
   { value: "error", label: "Error" },
+];
+
+const COUNT_STATUSES: RfpStatus[] = [
+  "analizando",
+  "analisis_completo",
+  "generando_borrador",
+  "en_evaluación",
+  "needs_human_review",
+  "esperando_aprobación",
+  "descartado",
+  "error",
 ];
 
 export default function RfpPage() {
@@ -36,7 +51,12 @@ export default function RfpPage() {
   );
 
   const pending = useMemo(
-    () => (data ?? []).some((ticket) => ticket.status === "analizando"),
+    () =>
+      (data ?? []).some((ticket) =>
+        ["analizando", "generando_borrador", "en_evaluación"].includes(
+          ticket.status,
+        ),
+      ),
     [data],
   );
 
@@ -77,21 +97,19 @@ export default function RfpPage() {
       <RfpUploader onUploaded={reload} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {(["analizando", "analisis_completo", "descartado", "error"] as RfpStatus[]).map(
-          (status) => (
-            <div
-              key={status}
-              className="rounded-xl border border-white/10 bg-slate-900/60 p-4"
-            >
-              <p className="text-xs uppercase tracking-wide text-slate-400">
-                {RFP_STATUS_LABELS[status]}
-              </p>
-              <p className="mt-1 text-2xl font-bold text-white">
-                {counts[status] ?? 0}
-              </p>
-            </div>
-          ),
-        )}
+        {COUNT_STATUSES.map((status) => (
+          <div
+            key={status}
+            className="rounded-xl border border-white/10 bg-slate-900/60 p-4"
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-400">
+              {RFP_STATUS_LABELS[status]}
+            </p>
+            <p className="mt-1 text-2xl font-bold text-white">
+              {counts[status] ?? 0}
+            </p>
+          </div>
+        ))}
       </div>
 
       <section className="rounded-xl border border-white/10 bg-slate-900/60">

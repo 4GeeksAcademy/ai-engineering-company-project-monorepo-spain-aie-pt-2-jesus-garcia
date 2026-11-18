@@ -28,6 +28,9 @@ import pytest  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _rfp_trace_dir(tmp_path, monkeypatch):
-    """Las trazas del grafo RFP no deben escribir en el repo durante tests."""
+    """Las trazas de los grafos RFP no deben escribir en el repo durante tests."""
 
     monkeypatch.setenv("RFP_TRACE_DIR", str(tmp_path / "rfp-traces"))
+    monkeypatch.setenv(
+        "RFP_PROPOSAL_TRACE_DIR", str(tmp_path / "rfp-proposal-traces")
+    )

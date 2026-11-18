@@ -13,6 +13,8 @@
 | MILESTONE_8 — Agente RAG (LangGraph) | ✅ Completado | Grafo con nodos/aristas condicionales, checkpointing, traces y 10 evals; `POST /agent/query`. Parte 2: tools de tickets/inventario, routing automático, timeout/fallback y 23 evals |
 | Memoria del agente — Parte 3 | ✅ Completado | Store `agent_memory_*`, `POST /agent/chat`, propuesta/confirmación/auditoría, consolidación y 72 tests de API + 15 evals |
 | Hito 8 — Parte 2: Harness y guardrails | ✅ Completado | System prompt CX, guards de entrada/salida, autorización de pedidos, aislamiento RAG/tools, logs por categoría y `GET /agent/harness/stats`; 413 tests API + 38 evals |
+| Hito 9 — Parte 1: Recepción de RFPs | ✅ Completado | `data/pipelines/rfp_intake/` (clasificador, metadatos, orchestrator-worker-synthesizer), ticket + handoff en PostgreSQL, Celery, UI de recepción y tests |
+| Hito 9 — Parte 2: Generación y evaluación | ✅ Completado | `data/pipelines/rfp_proposal/` (generador por departamento, evaluadores paralelos de legibilidad/pertinencia/compliance, ciclo con límite), persistencia de borradores/evals, API y UI de propuesta |
 
 ## Últimas decisiones
 
@@ -1456,3 +1458,40 @@ segundo servicio HTTP y sin tocar el grafo CX.
 - Resultado observado con polling de la UI: ModaViva y Luna
   `analisis_completo` (EUR/USD correctos; Luna con 5.000 pedidos/mes y deadline
   2026-08-24), RapidShip `descartado`; los tres en paralelo sin bloquearse.
+
+## Generación y evaluación de propuestas — Hito 9 (Parte 2)
+
+- Entrada: `rfp_ticket.handoff_payload` con `handoff_status=ready` (contrato
+  `rfp-intake-v1`). La Parte 2 **no reparte el PDF**: el pipeline no importa el
+  convertidor y hay un test con rutas de PDF/markdown inexistentes.
+- La Parte 1 añadió `rfp_facts` al handoff (`monthly_volume`, `sku_count`,
+  `return_volume`, `return_rate`, `deadline`, `budget_range`) para cotizar sin
+  reparsear; si falta, la Parte 2 cae a `rfp_metadata`.
+- `data/pipelines/rfp_proposal/`: generador propio por departamento
+  (`warehouse`/Ana Whitfield, `lastmile`/Carlos Vega, `reverse`/Sofía Ramos) +
+  evaluadores paralelos de legibilidad (Fernández-Huerta y
+  `py-readability-metrics` como verificación), pertinencia (key_aspects +
+  preguntas + juez LLM opcional) y compliance (motor de reglas del briefing
+  §5/§2.3/§2.1).
+- Tablas de tarifa, descuentos y SLA deterministas desde `rate_card.py` y
+  `policy.py`. Lo no publicado queda `pendiente_confirmacion` con su
+  responsable; nunca se estima. Guardarraíl numérico sobre la prosa del LLM.
+- Ciclo acotado (`RFP_PROPOSAL_MAX_ITERATIONS`, por defecto 2). Al agotarse se
+  conserva el último borrador + `EvaluationResult`, la sección queda
+  `needs_human_review` y viaja `provisional: true` al handoff de la Parte 3.
+- Estados del ticket: `generando_borrador` → `en_evaluación` →
+  `esperando_aprobación` | `needs_human_review`.
+- Persistencia: columnas nuevas en `rfp_ticket`/`rfp_department_section` y tabla
+  `rfp_section_evaluation` (histórico por iteración). Migración
+  `services/api/migrations/0007_rfp_proposal.sql`.
+- API sin servicio nuevo: `POST/GET /rfp/tickets/{id}/proposal`; el detalle del
+  ticket incluye `proposal_status` y las secciones con borrador/evaluación.
+- UI backoffice: botón «Generar/Regenerar propuesta», polling, tarjeta por
+  sección con criterios y banner de borrador provisional.
+- Tests: `tests/pipelines/test_rfp_proposal_{contract,generator,evaluators,cycle,graph}.py`
+  (incluye fallo de compliance anclado a §5.3: devoluciones en 24 h) y
+  `services/api/tests/test_rfp_proposal_api.py`. Backoffice: lint, test y build.
+- Política interna de descuentos por volumen documentada en
+  `docs/workflows/RFP_PROPOSAL_POLICY.md` (pendiente de validar por Miguel
+  Torres). Contrato del handoff a la Parte 3 en
+  `docs/workflows/RFP_PROPOSAL_HANDOFF.md`.

@@ -349,3 +349,45 @@ Ver `AGENTS.md` en la raíz para la lista de archivos/directorios que no deben m
   polling cada 3 s mientras el ticket está `analizando`.
 - Diseño y contrato: `docs/workflows/RFP_INTAKE_DESIGN.md` y
   `docs/workflows/RFP_INTAKE_HANDOFF.md`.
+
+### Hito 9 — Parte 2: generación y evaluación de propuestas
+
+- Grafo: `data/pipelines/rfp_proposal/` (LangGraph; consume el handoff de la
+  Parte 1, no el PDF). Subgrafo generador-evaluador por departamento y
+  evaluadores en paralelo.
+- Generadores: `generators/{warehouse,lastmile,reverse}.py` (un agente por
+  departamento) + base común con guardarraíl numérico.
+- Evaluadores: `evaluators/{readability,relevance,compliance}.py`; resultado
+  estructurado en `rfp_department_section.evaluation_results` y histórico en
+  `rfp_section_evaluation`.
+- Tarifa/política deterministas: `rate_card.py` (KB publicada) y `policy.py`
+  (reglas §5). Tabla de descuentos interna:
+  `docs/workflows/RFP_PROPOSAL_POLICY.md`.
+- API (router existente): `POST /rfp/tickets/{id}/proposal` (202 + Celery;
+  409 si el handoff no está listo o hay ejecución activa) y
+  `GET /rfp/tickets/{id}/proposal`.
+- Async: Celery `rfp_proposal.generate_ticket` (mismo worker/Redis/DLQ).
+- Tablas: columnas nuevas en `rfp_ticket` (`proposal_*`) y
+  `rfp_department_section` (`draft_payload`, `generation_status`,
+  `iteration_count`, `needs_human_review`, `review_reason`, `last_feedback`);
+  tabla `rfp_section_evaluation`. Migración:
+  `services/api/migrations/0007_rfp_proposal.sql`.
+- Dependencia nueva: `py-readability-metrics` (root vía `uv add`; también en
+  `services/api/requirements.txt`). Si NLTK no tiene `punkt_tab`, el evaluador
+  cae a la fórmula Fernández-Huerta determinista.
+- Variables: `RFP_PROPOSAL_MAX_ITERATIONS` (por defecto 2),
+  `RFP_PROPOSAL_TRACE_DIR`.
+- Comandos:
+  ```bash
+  # tests del pipeline (venv raíz, con uv)
+  uv run pytest tests/pipelines/test_rfp_proposal_*.py -q
+  # API
+  cd services/api && ./venv/bin/python -m pytest tests/test_rfp_proposal_api.py -q
+  # UI
+  cd uis/backoffice && npm run lint && npm test && npm run build
+  ```
+- UI: botón «Generar/Regenerar propuesta» en `/rfp/[ticketId]`, polling cada
+  3 s durante generación/evaluación y tarjetas por sección con evaluación y
+  aviso de borrador provisional.
+- Diseño, contrato a la Parte 3: `docs/workflows/RFP_PROPOSAL_DESIGN.md`,
+  `docs/workflows/RFP_PROPOSAL_HANDOFF.md`.

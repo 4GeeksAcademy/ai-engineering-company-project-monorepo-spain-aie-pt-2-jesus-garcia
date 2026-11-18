@@ -221,6 +221,13 @@ def _section_read(section: RfpDepartmentSection) -> RfpDepartmentSectionRead:
         unsupported_claims=list(section.unsupported_claims or []),
         approval_status=section.approval_status,
         approver=section.approver,
+        draft_content=section.draft_content,
+        draft_payload=section.draft_payload,
+        evaluation_results=section.evaluation_results,
+        generation_status=section.generation_status,
+        iteration_count=section.iteration_count or 0,
+        needs_human_review=bool(section.needs_human_review),
+        review_reason=section.review_reason,
     )
 
 
@@ -258,6 +265,8 @@ def get_ticket_detail(session: Session, ticket_id: str) -> RfpTicketRead:
         error_message=ticket.error_message,
         handoff_status=ticket.handoff_status,
         handoff=ticket.handoff_payload,
+        proposal_status=ticket.proposal_status,
+        proposal_error=ticket.proposal_error,
         metadata=_metadata_read(metadata),
         sections=[_section_read(section) for section in ordered],
         created_at=ticket.created_at,
@@ -272,6 +281,7 @@ def get_ticket_status(session: Session, ticket_id: str) -> RfpTicketStatusRead:
         rfp_id=ticket.rfp_id,
         status=ticket.status,
         pipeline_stage=ticket.pipeline_stage,
+        proposal_status=ticket.proposal_status,
         discard_reason=ticket.discard_reason,
         error_message=ticket.error_message,
         handoff_status=ticket.handoff_status,

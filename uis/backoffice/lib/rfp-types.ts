@@ -1,12 +1,20 @@
 export type RfpStatus =
   | "analizando"
   | "analisis_completo"
+  | "generando_borrador"
+  | "en_evaluación"
+  | "needs_human_review"
+  | "esperando_aprobación"
   | "descartado"
   | "error";
 
 export const RFP_STATUS_LABELS: Record<RfpStatus, string> = {
   analizando: "Analizando",
   analisis_completo: "Análisis completo",
+  generando_borrador: "Generando borrador",
+  "en_evaluación": "En evaluación",
+  needs_human_review: "Revisión humana",
+  "esperando_aprobación": "Esperando aprobación",
   descartado: "Descartado",
   error: "Error",
 };
@@ -14,8 +22,39 @@ export const RFP_STATUS_LABELS: Record<RfpStatus, string> = {
 export const RFP_STATUS_STYLES: Record<RfpStatus, string> = {
   analizando: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
   analisis_completo: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  generando_borrador: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+  "en_evaluación": "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  needs_human_review: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  "esperando_aprobación": "bg-teal-500/15 text-teal-300 border-teal-500/30",
   descartado: "bg-slate-500/15 text-slate-300 border-slate-500/30",
   error: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+};
+
+export const RFP_PROPOSAL_ACTIVE_STATUSES: RfpStatus[] = [
+  "generando_borrador",
+  "en_evaluación",
+];
+
+export const RFP_POLLING_STATUSES: RfpStatus[] = [
+  "analizando",
+  "generando_borrador",
+  "en_evaluación",
+];
+
+export const SECTION_STATUS_LABELS: Record<string, string> = {
+  generando: "Generando",
+  "en_evaluación": "En evaluación",
+  evaluated_pass: "Evaluada",
+  needs_human_review: "Revisión humana",
+  pendiente: "Pendiente",
+};
+
+export const SECTION_STATUS_STYLES: Record<string, string> = {
+  generando: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+  "en_evaluación": "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  evaluated_pass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  needs_human_review: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  pendiente: "bg-slate-500/15 text-slate-300 border-slate-500/30",
 };
 
 export const DEPARTMENT_LABELS: Record<string, string> = {
@@ -65,6 +104,33 @@ export interface RfpKeyAspect {
   confidence?: "high" | "medium" | "low" | string;
 }
 
+export interface RfpEvaluationViolation {
+  rule_id: string;
+  message: string;
+  excerpt?: string;
+  required_change?: string;
+}
+
+export interface RfpEvaluationCriterion {
+  pass: boolean;
+  score?: number;
+  details?: Record<string, unknown>;
+  missing_aspects?: string[];
+  rule_ids?: string[];
+  violations?: RfpEvaluationViolation[];
+}
+
+export interface RfpEvaluationResult {
+  section_id?: string;
+  department_id?: string;
+  iteration?: number;
+  readability: RfpEvaluationCriterion;
+  relevance: RfpEvaluationCriterion;
+  compliance: RfpEvaluationCriterion;
+  overall_pass: boolean;
+  feedback_for_generator?: string;
+}
+
 export interface RfpDepartmentSection {
   department_id: string;
   responsible: string | null;
@@ -74,6 +140,13 @@ export interface RfpDepartmentSection {
   unsupported_claims: Array<Record<string, unknown>>;
   approval_status: string | null;
   approver: string | null;
+  draft_content: string | null;
+  draft_payload: Record<string, unknown> | null;
+  evaluation_results: RfpEvaluationResult | null;
+  generation_status: string | null;
+  iteration_count: number;
+  needs_human_review: boolean;
+  review_reason: string | null;
 }
 
 export interface RfpMetadata {
@@ -108,6 +181,8 @@ export interface RfpTicketDetail {
   error_message: string | null;
   handoff_status: string;
   handoff: RfpHandoff | null;
+  proposal_status: string | null;
+  proposal_error: string | null;
   metadata: RfpMetadata | null;
   sections: RfpDepartmentSection[];
   created_at: string;
@@ -161,14 +236,52 @@ export interface RfpTicketStatus {
   rfp_id: string;
   status: RfpStatus;
   pipeline_stage: string | null;
+  proposal_status: string | null;
   discard_reason: string | null;
   error_message: string | null;
   handoff_status: string;
   updated_at: string;
 }
 
+export interface RfpProposalStartResponse {
+  ticket_id: string;
+  task_id: string | null;
+  status: RfpStatus;
+}
+
+export interface RfpProposalSection {
+  section_id: string;
+  department_id: string;
+  department_label: string | null;
+  responsible: string | null;
+  status: string;
+  provisional: boolean;
+  iteration_count: number;
+  draft_content: string | null;
+  draft_payload: Record<string, unknown> | null;
+  evaluation_results: RfpEvaluationResult | null;
+  review_reason: string | null;
+  approval_status: string | null;
+  approver: string | null;
+}
+
+export interface RfpProposal {
+  ticket_id: string;
+  rfp_id: string | null;
+  status: RfpStatus;
+  generated_at: string | null;
+  client: Record<string, unknown>;
+  client_country: string | null;
+  currency: string | null;
+  services_requested: string[];
+  sections: RfpProposalSection[];
+  needs_human_review_sections: string[];
+  metrics: Record<string, number>;
+  source_handoff: Record<string, unknown>;
+}
+
 export function isTerminalRfpStatus(status: RfpStatus): boolean {
-  return status !== "analizando";
+  return !["analizando", "generando_borrador", "en_evaluación"].includes(status);
 }
 
 export function formatRfpDate(value: string | null): string {
