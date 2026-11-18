@@ -13,6 +13,7 @@ import inspect
 import logging
 from collections.abc import Callable
 
+from langgraph.config import get_stream_writer
 from pydantic import ValidationError
 
 from data.pipelines import rag
@@ -30,6 +31,7 @@ from .memory.generation import (
 from .memory.schemas import EvaluationOutcome, GenerationOutcome
 from .router import RoutingDecision, classify_question
 from .state import AgentState
+from .streaming import GenerationAborted, current_abort, streaming_enabled
 from .tool_answers import (
     format_incident_answer,
     format_inventory_answer,
@@ -68,6 +70,29 @@ def _supports_policy_correction(generator: Callable[..., object]) -> bool:
         return "policy_correction" in inspect.signature(generator).parameters
     except (TypeError, ValueError):
         return False
+
+
+def _supported_kwargs(
+    generator: Callable[..., object],
+    **kwargs: object,
+) -> dict[str, object]:
+    """Filtra kwargs para generadores inyectados con firmas antiguas."""
+
+    try:
+        signature = inspect.signature(generator)
+    except (TypeError, ValueError):
+        return {}
+    accepts_extra = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_extra:
+        return dict(kwargs)
+    return {
+        key: value
+        for key, value in kwargs.items()
+        if key in signature.parameters
+    }
 
 
 def _proposal_dict(outcome) -> dict | None:
@@ -393,6 +418,15 @@ def make_generate_node(
 
         memory_context = list(state.get("memory_context") or [])
         policy_correction = state.get("policy_correction")
+        conversation_history = list(state.get("conversation_context") or [])
+        on_token = None
+        if streaming_enabled():
+            writer = get_stream_writer()
+
+            def on_token(text: str) -> None:
+                writer({"type": "token", "text": text})
+
+        abort = current_abort()
         try:
             if generator is not None:
                 answer = generator(question, context)
@@ -404,17 +438,22 @@ def make_generate_node(
                 outcome = GenerationOutcome(answer=answer.strip())
             else:
                 generate = memory_generator or generate_with_memory
-                if policy_correction and _supports_policy_correction(generate):
-                    outcome = generate(
-                        question,
-                        context,
-                        memory_context,
+                outcome = generate(
+                    question,
+                    context,
+                    memory_context,
+                    **_supported_kwargs(
+                        generate,
                         policy_correction=policy_correction,
-                    )
-                else:
-                    outcome = generate(question, context, memory_context)
+                        conversation_history=conversation_history,
+                        on_token=on_token,
+                        abort=abort,
+                    ),
+                )
                 if not isinstance(outcome, GenerationOutcome):
                     outcome = GenerationOutcome.model_validate(outcome)
+        except GenerationAborted:
+            raise
         except Exception:  # noqa: BLE001 - se reporta como fallo controlado
             logger.exception("Fallo al generar la respuesta RAG")
             return {"status": "error", "error": SAFE_ERROR_MESSAGE}

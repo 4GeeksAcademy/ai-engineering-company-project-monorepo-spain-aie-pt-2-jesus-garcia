@@ -25,6 +25,8 @@ from sqlmodel import SQLModel
 from database import engine
 from models import HealthResponse
 from app.agent.memory.models import create_agent_memory_tables
+from app.chat.models import create_chat_tables
+from app.chat.store import reconcile_streaming_messages
 from app.telemetry.outbox import create_outbox_table
 from .routes.incidents import router as incidents_router
 from .routes.incidents_manager import router as incidents_manager_router
@@ -41,6 +43,7 @@ from .routes.agent_harness import router as agent_harness_router
 from .routes.agent_memory import router as agent_memory_router
 from .routes.rfp import router as rfp_router
 from .routes.realtime import router as realtime_router
+from .routes.chat import router as chat_router
 from services.reporting.router import router as reporting_router
 from services.reporting.sla import ensure_sla_table
 
@@ -59,11 +62,16 @@ async def lifespan(app: FastAPI):
     if engine is not None:
         SQLModel.metadata.create_all(engine)
         create_agent_memory_tables(engine)
+        create_chat_tables(engine)
         create_outbox_table(engine)
         try:
             ensure_sla_table(engine)
         except Exception:  # pragma: no cover - el read model no debe tumbar el API
             logger.exception("No se pudo preparar la tabla de SLA de reporting.")
+        try:
+            reconcile_streaming_messages()
+        except Exception:  # pragma: no cover - no impide arrancar la API
+            logger.exception("No se pudieron reconciliar mensajes de chat parciales.")
     logger.info("Telemetry endpoint configured: %s", TELEMETRY_ENDPOINT or "<unset>")
     yield
 
@@ -112,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_memory_router)
     app.include_router(rfp_router)
     app.include_router(realtime_router)
+    app.include_router(chat_router)
     app.include_router(reporting_router)
 
     @app.exception_handler(Exception)

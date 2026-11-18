@@ -49,6 +49,10 @@ const nextConfig: NextConfig = {
         destination: `${backend}/knowledge/:path*`,
       },
       {
+        source: "/api/chat/:path*",
+        destination: `${backend}/chat/:path*`,
+      },
+      {
         source: "/api/users",
         destination: `${backend}/api/users`,
       },

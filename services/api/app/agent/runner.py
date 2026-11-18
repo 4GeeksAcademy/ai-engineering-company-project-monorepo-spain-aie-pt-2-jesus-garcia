@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ from .graph import get_agent_graph
 from .harness.orders import OrderResolver
 from .harness.runtime import screen_input, validate_output
 from .nodes import SAFE_ERROR_MESSAGE
+from .streaming import GenerationAborted, TokenSink, bind_run, reset_run
 from .tracing import (
     CheckpointRecord,
     TraceRecorder,
@@ -67,16 +69,20 @@ def run_agent(
     graph: Any | None = None,
     trace_dir: str | Path | None = None,
     thread_id: str | None = None,
+    run_id: str | None = None,
     user: dict | None = None,
     memory_context: list[dict] | None = None,
     session_id: str | None = None,
     order_resolver: OrderResolver | None = None,
+    token_sink: TokenSink | None = None,
+    abort: threading.Event | None = None,
+    conversation_history: list[dict] | None = None,
 ) -> AgentResult:
     """Invoca el grafo, registra cada transición y escribe el trace en disco.
 
-    ``thread_id`` es también el ``run_id``: el checkpointer guarda un snapshot
-    por superstep y permite inspeccionar o retomar la corrida con
-    ``graph.get_state`` / ``graph.get_state_history``.
+    ``thread_id`` es el hilo persistente del checkpointer; ``run_id`` identifica
+    esta corrida concreta. En el chat son distintos: ``thread_id == session_id``
+    y cada turno recibe un ``run_id`` nuevo.
 
     ``user`` es el usuario autenticado por el endpoint. Solo se propaga su rol
     al estado (nunca el token ni datos personales) para que la tool de tickets
@@ -85,15 +91,20 @@ def run_agent(
     ``memory_context`` es el bloque acotado de memoria aprobada que el servicio
     leyó antes de la corrida. El grafo no accede a la base de datos.
 
+    ``token_sink`` activa el streaming por LangGraph (``stream_mode="custom"``):
+    cada token generado se entrega en vivo. ``abort`` detiene la generación de
+    forma cooperativa y deja la corrida como ``interrupted``.
+
     El harness se ejecuta en este borde: ``screen_input`` antes del grafo y
     ``validate_output`` después. Un bloqueo o una respuesta determinista no
     invoca el LLM, el RAG ni las tools.
     """
-    run_id = thread_id or str(uuid.uuid4())
-    trace_session = session_id or run_id
+    resolved_run_id = run_id or thread_id or str(uuid.uuid4())
+    conversation_thread = thread_id or resolved_run_id
+    trace_session = session_id or conversation_thread
     recorder = TraceRecorder(
-        run_id=run_id,
-        thread_id=run_id,
+        run_id=resolved_run_id,
+        thread_id=conversation_thread,
         question=question,
         trace_dir=trace_dir,
     )
@@ -101,7 +112,7 @@ def run_agent(
     guard = screen_input(
         question,
         user=user,
-        run_id=run_id,
+        run_id=resolved_run_id,
         session_id=trace_session,
         order_resolver=order_resolver,
     )
@@ -110,25 +121,26 @@ def run_agent(
     if guard.action == "blocked":
         return _finish_guard(
             recorder,
-            run_id=run_id,
+            run_id=resolved_run_id,
             status="blocked",
             answer=guard.answer or SAFE_ERROR_MESSAGE,
         )
     if guard.action == "redirected":
         return _finish_guard(
             recorder,
-            run_id=run_id,
+            run_id=resolved_run_id,
             status="ok",
             answer=guard.answer or SAFE_ERROR_MESSAGE,
         )
 
     compiled = graph or get_agent_graph()
-    config = {"configurable": {"thread_id": run_id}}
+    config = {"configurable": {"thread_id": conversation_thread}}
     initial_state: dict[str, Any] = {
         "question": guard.question,
-        "run_id": run_id,
+        "run_id": resolved_run_id,
         "session_id": trace_session,
         "memory_context": list(memory_context or []),
+        "conversation_context": list(conversation_history or []),
     }
     if user and user.get("role"):
         initial_state["user_role"] = str(user["role"])
@@ -136,39 +148,97 @@ def run_agent(
     if correction:
         initial_state["policy_correction"] = str(correction)
 
+    context_tokens = bind_run(abort=abort, streaming=token_sink is not None)
     try:
-        for chunk in compiled.stream(
-            initial_state,
-            config=config,
-            stream_mode="updates",
-        ):
-            if not isinstance(chunk, dict):
-                continue
-            for node, update in chunk.items():
-                if not isinstance(node, str) or node.startswith("__"):
+        try:
+            stream_mode: Any = (
+                ["updates", "custom"]
+                if token_sink is not None
+                else "updates"
+            )
+            for chunk in compiled.stream(
+                initial_state,
+                config=config,
+                stream_mode=stream_mode,
+            ):
+                if (
+                    token_sink is not None
+                    and isinstance(chunk, tuple)
+                    and len(chunk) == 2
+                ):
+                    mode, payload = chunk
+                    if mode == "custom":
+                        if (
+                            isinstance(payload, dict)
+                            and payload.get("type") == "token"
+                        ):
+                            text = payload.get("text")
+                            if isinstance(text, str) and text:
+                                token_sink(text)
+                        continue
+                    chunk = payload
+                if not isinstance(chunk, dict):
                     continue
-                recorder.record_node(
-                    node,
-                    update if isinstance(update, dict) else {},
-                )
-        final_values = dict(compiled.get_state(config).values or {})
-    except Exception as exc:  # noqa: BLE001 - se traza y se re-lanza controlado
-        logger.exception("Fallo no controlado ejecutando el grafo del agente")
-        recorder.record_failure(SAFE_ERROR_MESSAGE)
-        recorder.attach_checkpoints(
-            _checkpoint_history(compiled, config, len(recorder.events))
-        )
-        trace = recorder.finish(
-            status="error",
-            answer="",
-            error=SAFE_ERROR_MESSAGE,
-        )
-        recorder.persist(trace)
-        raise AgentRunError(SAFE_ERROR_MESSAGE) from exc
+                for node, update in chunk.items():
+                    if not isinstance(node, str) or node.startswith("__"):
+                        continue
+                    recorder.record_node(
+                        node,
+                        update if isinstance(update, dict) else {},
+                    )
+            final_values = dict(compiled.get_state(config).values or {})
+        except GenerationAborted:
+            recorder.record_abort()
+            trace = recorder.finish(
+                status="interrupted",
+                answer="",
+                error=None,
+            )
+            trace_path = recorder.persist(trace)
+            return AgentResult(
+                run_id=resolved_run_id,
+                status="interrupted",
+                answer="",
+                error=None,
+                trace_path=str(trace_path),
+                guard_events=tuple(recorder.guard_events),
+            )
+        except Exception as exc:  # noqa: BLE001 - se traza y se re-lanza controlado
+            logger.exception("Fallo no controlado ejecutando el grafo del agente")
+            recorder.record_failure(SAFE_ERROR_MESSAGE)
+            recorder.attach_checkpoints(
+                _checkpoint_history(compiled, config, len(recorder.events))
+            )
+            trace = recorder.finish(
+                status="error",
+                answer="",
+                error=SAFE_ERROR_MESSAGE,
+            )
+            recorder.persist(trace)
+            raise AgentRunError(SAFE_ERROR_MESSAGE) from exc
+    finally:
+        reset_run(context_tokens)
 
     recorder.attach_checkpoints(
         _checkpoint_history(compiled, config, len(recorder.events))
     )
+
+    if abort is not None and abort.is_set():
+        recorder.record_abort()
+        trace = recorder.finish(
+            status="interrupted",
+            answer="",
+            error=None,
+        )
+        trace_path = recorder.persist(trace)
+        return AgentResult(
+            run_id=resolved_run_id,
+            status="interrupted",
+            answer="",
+            error=None,
+            trace_path=str(trace_path),
+            guard_events=tuple(recorder.guard_events),
+        )
 
     status = str(final_values.get("status") or "error")
     answer = str(final_values.get("answer") or "")
@@ -186,7 +256,7 @@ def run_agent(
             answer,
             required_country=guard.context.get("required_country"),
             authorized_order_refs=authorized_refs,
-            run_id=run_id,
+            run_id=resolved_run_id,
             session_id=trace_session,
             question=guard.question,
         )
@@ -200,7 +270,7 @@ def run_agent(
     trace_path = recorder.persist(trace)
 
     return AgentResult(
-        run_id=run_id,
+        run_id=resolved_run_id,
         status=status,
         answer=answer,
         error=error,
