@@ -348,10 +348,13 @@ export async function createOutboundOrder(
   });
 }
 
-export async function fetchTelemetryReport(params?: {
-  start_date?: string;
-  end_date?: string;
-}): Promise<TelemetryReport> {
+export async function fetchTelemetryReport(
+  params?: {
+    start_date?: string;
+    end_date?: string;
+  },
+  token?: string | null,
+): Promise<TelemetryReport> {
   const searchParams = new URLSearchParams();
   if (params?.start_date) searchParams.set("start_date", params.start_date);
   if (params?.end_date) searchParams.set("end_date", params.end_date);
@@ -359,7 +362,7 @@ export async function fetchTelemetryReport(params?: {
   const query = searchParams.toString();
   const url = `/api/telemetry/report${query ? `?${query}` : ""}`;
 
-  return request<TelemetryReport>(url, { headers: {} });
+  return request<TelemetryReport>(url, { headers: authHeaders(token) });
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { fetchTelemetryReport, friendlyError } from "@/lib/api";
 import { computeTelemetrySummary } from "@/lib/types";
 import type { TelemetryReport } from "@/lib/types";
+import { useAuth } from "@/contexts/AuthContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { usePagination } from "@/hooks/usePagination";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -97,6 +98,7 @@ function Bar({ value, max }: { value: number; max: number }) {
 }
 
 export default function TelemetryPage() {
+  const { token } = useAuth();
   const initial = useMemo(() => defaultRange(), []);
   const [startDate, setStartDate] = useState(initial.start);
   const [endDate, setEndDate] = useState(initial.end);
@@ -104,11 +106,14 @@ export default function TelemetryPage() {
 
   const { data, loading, error, reload } = useAsyncData(
     () =>
-      fetchTelemetryReport({
-        start_date: startOfDayISO(startDate),
-        end_date: endExclusiveISO(endDate),
-      }),
-    [startDate, endDate],
+      fetchTelemetryReport(
+        {
+          start_date: startOfDayISO(startDate),
+          end_date: endExclusiveISO(endDate),
+        },
+        token,
+      ),
+    [startDate, endDate, token],
     friendlyError,
   );
 

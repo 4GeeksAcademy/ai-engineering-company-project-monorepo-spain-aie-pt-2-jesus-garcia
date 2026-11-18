@@ -1756,3 +1756,22 @@ Verificación:
   (NIST-13), alertas persistentes (NIST-12), CI de evals (NIST-15), presupuesto
   de coste (NIST-09) y los motores de carrier/devoluciones aún no construidos
   (NIST-08).
+
+## Fix — Telemetría sin token (uis/backoffice)
+
+La página `/telemetry` no enviaba el JWT: `fetchTelemetryReport` llamaba a
+`GET /api/telemetry/report` sin cabecera `Authorization`, pero el endpoint exige
+`require_manager` → **401 "Not authenticated"** y la UI mostraba "Sesión no
+autorizada" incluso con `admin@trackflow.com`.
+
+- `lib/api.ts` — `fetchTelemetryReport(params?, token?)` y `authHeaders(token)`,
+  igual que el resto de helpers protegidos.
+- `app/(protected)/telemetry/page.tsx` — `useAuth()` para el token, pasado al
+  fetch y añadido a las dependencias de `useAsyncData`.
+- `app/(protected)/telemetry/page.test.tsx` — mock de `AuthContext` (patrón de
+  `reporting/page.test.tsx`) y aserción de la llamada con `"test-token"`.
+
+Verificación: `npm test` en backoffice **124 passed**, lint y build OK,
+typecheck raíz OK. Comprobado en el navegador: `/api/telemetry/report` responde
+**200** y el dashboard muestra 150 eventos, 6.7 % de tasa de error y 55.6 % de
+fallos de login en el periodo por defecto.

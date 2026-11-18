@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TelemetryPage from "@/app/(protected)/telemetry/page";
 import * as api from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import type { TelemetryReport } from "@/lib/types";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -12,7 +13,32 @@ vi.mock("@/lib/api", async (importOriginal) => {
   };
 });
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn(),
+}));
+
 const mockFetchReport = vi.mocked(api.fetchTelemetryReport);
+const mockUseAuth = vi.mocked(useAuth);
+
+function mockAuth() {
+  mockUseAuth.mockReturnValue({
+    token: "test-token",
+    user: {
+      id: "1",
+      email: "ops@trackflow.com",
+      is_active: true,
+      role: "admin",
+      created_at: "",
+    },
+    isLoading: false,
+    isAuthenticated: true,
+    sessionError: null,
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+    retryValidation: vi.fn(),
+  } as ReturnType<typeof useAuth>);
+}
 
 const report: TelemetryReport = {
   period: {
@@ -68,6 +94,7 @@ const emptyReport: TelemetryReport = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAuth();
   mockFetchReport.mockResolvedValue(report);
 });
 
@@ -123,10 +150,13 @@ describe("TelemetryPage", () => {
     });
 
     await vi.waitFor(() => {
-      expect(mockFetchReport).toHaveBeenLastCalledWith({
-        start_date: expect.stringMatching(/T00:00:00Z$/),
-        end_date: "2026-06-21T00:00:00.000Z",
-      });
+      expect(mockFetchReport).toHaveBeenLastCalledWith(
+        {
+          start_date: expect.stringMatching(/T00:00:00Z$/),
+          end_date: "2026-06-21T00:00:00.000Z",
+        },
+        "test-token",
+      );
     });
   });
 
