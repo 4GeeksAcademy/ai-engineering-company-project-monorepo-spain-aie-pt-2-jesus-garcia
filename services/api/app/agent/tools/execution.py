@@ -1,9 +1,10 @@
 """Ejecución de tools con un timeout explícito y numérico.
 
-Las tools corren in-process, pero el timeout se aplica igualmente: si la capa
-de servicio/repositorio se queda colgada (fichero bloqueado, base de datos
-lenta), el grafo no espera indefinidamente. El valor por defecto es 3 segundos
-y puede ajustarse por entorno.
+El cliente MCP se ejecuta en un hilo con timeout: si el handshake, la tool o la
+API se quedan colgados, el grafo no espera indefinidamente y devuelve un
+fallback honesto. El timeout del camino MCP se configura con
+``AGENT_MCP_TIMEOUT_SECONDS`` (10 s); las constantes antiguas de las tools
+in-process se conservan por compatibilidad de configuración.
 """
 
 from __future__ import annotations

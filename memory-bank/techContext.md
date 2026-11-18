@@ -255,6 +255,55 @@ Las variables del backend se cargan desde `services/api/.env` (via `python-doten
 - **Modo test/real (opcional, sin dominio):** rellena `RESEND_API_KEY` con una clave de `resend.com` (Dashboard → API Keys). Con `RESEND_FROM="TrackFlow <onboarding@resend.dev>"` Resend entrega **solo a tu email verificado** en `resend.com` (limitación del modo test sin dominio). Valida el camino real end-to-end.
 - **Producción con dominio:** añadir el dominio en Resend + verificación DNS y usar `no-reply@tudominio.com`; ahí sí se puede enviar a cualquier destinatario.
 
+## MCP Server y agente (OAuth 2.1 + langchain-mcp-adapters)
+
+- Servidor: `mcps/trackflow-mcp/` (FastMCP + `mcpauth==0.2.0b1`, puerto **8001**).
+- Transporte: Streamable HTTP en `/mcp`; PRM público en
+  `/.well-known/oauth-protected-resource/mcp`; `/health` público.
+- Auth: resource server con issuer OIDC (Auth0), `audience`/`resource` =
+  `MCP_RESOURCE_URL` (incluye `/mcp`) y gate `mcp:read`; scopes finos
+  `mcp:read`/`mcp:write`.
+- Tools: `query_incidents`, `get_incident_summary`, `create_incident`,
+  `update_incident_status`, `query_inventory` y `adjust_inventory_stock`
+  (guard que siempre rechaza con `INVENTORY_READ_ONLY`).
+- API real: el MCP usa una cuenta de servicio `manager`
+  (`mcp-service@trackflow.com`, seed en `services/api/seed_mcp_service.py`).
+  Variables: `TRACKFLOW_API_BASE_URL`, `TRACKFLOW_API_EMAIL/PASSWORD` o
+  `TRACKFLOW_API_TOKEN`.
+- Agente: `services/api/app/agent/tools/mcp_client.py` +
+  `mcp_auth.py`; `MCPSettings` lee `MCP_SERVER_URL`, `MCP_OAUTH_*` y
+  `AGENT_MCP_TIMEOUT_SECONDS=10`. El agente solo recibe `mcp:read`.
+- Dependencias: `mcp>=1.24,<2` (no 2.x: rompe `langchain-mcp-adapters`),
+  `langchain-mcp-adapters>=0.3.1,<0.4`, `mcpauth==0.2.0b1` (la 0.1.1 no tiene
+  resource-server/PRM).
+
+```bash
+# Servidor MCP
+cd mcps/trackflow-mcp
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+uvicorn trackflow_mcp.server:app --host 0.0.0.0 --port 8001
+.venv/bin/pytest -q
+
+# Smoke con token M2M o bearer estático
+python scripts/mcp_smoke.py --token "$TOKEN"
+python scripts/mcp_smoke.py --write   # crea y mueve una incidencia real
+
+# API local para el MCP (SQLite, sin tocar Supabase)
+cd services/api
+DATABASE_URL=sqlite:///./dev.db venv/bin/uvicorn app.main:app --port 8002
+DATABASE_URL=sqlite:///./dev.db venv/bin/python seed_inventory.py --force
+MCP_SERVICE_PASSWORD=... venv/bin/python seed_mcp_service.py
+```
+
+- En Docker Compose el servicio `mcp` publica `8001:8001` y usa
+  `TRACKFLOW_API_BASE_URL=http://services:8000`; el agente usa
+  `MCP_SERVER_URL=http://mcp:8001/mcp`.
+- Codespaces: `gh codespace ports visibility 8001:public` y
+  `MCP_RESOURCE_URL=https://<codespace>-8001.app.github.dev/mcp`.
+- Documentación: `mcps/trackflow-mcp/README.md`,
+  `mcps/trackflow-mcp/VALIDATION.md`, `docs/mcp/README.md`.
+
 ## Convenciones de código
 
 - TypeScript estricto, sin comentarios en código

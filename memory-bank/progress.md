@@ -1165,3 +1165,95 @@ RAG, tool o ambos.
   `482` no existe entre los 95 registros; la tool responde "no encontrado").
 - Si se quiere una persona de soporte en el prompt RAG, editar
   `data/pipelines/rag.py` (directorio protegido; requiere confirmación).
+
+## MCP — OAuth y tools (`feature/mcp-oauth-tools`)
+
+### Dependencias (paso 5)
+- `pyproject.toml`: fuera `fastmcp` (4.2.0 arrastra `mcp>=2.3` vía
+  `fastmcp-slim[client,server]`), entra `mcp>=1.24,<2`, `mcpauth==0.2.0b1` y
+  `typing-extensions>=4.14` (`mcpauth` lo importa sin declararlo).
+- Lock regenerado: `mcp 1.30.0`, `mcpauth 0.2.0b1`; `langchain-mcp-adapters
+  0.3.1` sigue siendo compatible (pide `mcp>=1.24`).
+- `mcp 1.30.0` incluye `mcp.server.fastmcp`, así que el paquete `fastmcp`
+  independiente no hace falta.
+- `[dependency-groups] dev` con `pytest>=9.1.1`: `uv sync` podaba el pytest
+  instalado a mano y rompía el flujo documentado `uv run pytest`.
+- Verificado: `uv lock && uv sync`, imports de `FastMCP`/`MCPAuth`, 23 evals de
+  `tests/pipelines/test_agent_evals.py` y `npm run typecheck` en raíz.
+
+### Cuenta de servicio (paso 4)
+- `services/api/seed_mcp_service.py` — idempotente; crea/actualiza
+  `mcp-service@trackflow.com` con rol `manager`, perfil y sincroniza el
+  password con `MCP_SERVICE_PASSWORD`.
+- Credenciales en `.env` raíz (gitignored): `TRACKFLOW_API_URL`,
+  `TRACKFLOW_API_EMAIL`, `TRACKFLOW_API_PASSWORD`.
+- Verificado con login real (`POST /api/auth/login` → 200, role `manager`)
+  contra uvicorn temporal en :8010.
+- Ojo: `services/api/data/suppliers.json` está trackeado; el seed lo modifica.
+  No commitear ese archivo.
+
+### Servidor MCP (`mcps/trackflow-mcp/`)
+- FastMCP (`mcp.server.fastmcp`, mcp 1.30) + **mcpauth 0.2.0b1 en modo
+  resource server** (sin la auth integrada de FastMCP).
+- PRM en `/.well-known/oauth-protected-resource/mcp` (resource con `/mcp`),
+  `bearer_auth_middleware("jwt", audience/resource, required_scopes=["mcp:read"])`
+  y `/health` público.
+- Scopes: `mcp:read` (query_incidents, get_incident_summary, query_inventory) y
+  `mcp:write` (create_incident, update_incident_status, adjust_inventory_stock).
+- Tools contra la API real: `POST /api/incidents`,
+  `PATCH /api/incidents/{id}/status`, `GET /api/incidents*`,
+  `GET /inventory/products`. La cuenta de servicio es `mcp-service@trackflow.com`
+  (manager) y solo se usa desde el servidor MCP.
+- Inventario solo lectura: `adjust_inventory_stock` siempre devuelve
+  `INVENTORY_READ_ONLY` (sin llamar a la API); `query_inventory` calcula stock
+  desde las órdenes.
+- Errores diferenciados: 401 (`missing_auth_header`, `invalid_token`,
+  `invalid_issuer`, `invalid_audience`), 403 (`missing_required_scopes`),
+  tool errors (`INSUFFICIENT_SCOPE`, `VALIDATION_ERROR`, `NOT_FOUND`,
+  `INVALID_STATUS_TRANSITION`, `INVENTORY_READ_ONLY`, `BACKEND_AUTH_FAILED`,
+  `BACKEND_TIMEOUT`, `BACKEND_UNAVAILABLE`, `INTERNAL_ERROR`).
+- Log JSON por invocación (`tool`, `client_id`, `subject`, `scopes`, `outcome`,
+  `error_code`, `duration_ms`, `backend_status`, argumentos saneados).
+- `scripts/mcp_smoke.py` (discovery + flujo por tool; `--write` opcional),
+  `README.md`, `VALIDATION.md`, `docs/mcp/README.md`.
+- Tests: `mcps/trackflow-mcp/.venv/bin/pytest -q` → **35 passed** (PRM, 401/403,
+  scopes, guard de inventario, tools contra doble de API, errores HTTP y logs).
+
+### Migración del agente al MCP
+- `app/agent/tools/mcp_client.py` — `MultiServerMCPClient` +
+  `load_mcp_tools`, `transport="streamable_http"`; timeout
+  `AGENT_MCP_TIMEOUT_SECONDS=10`; `_extract_payload` soporta artifact/structured
+  content y errores `isError`.
+- `app/agent/tools/mcp_auth.py` — cliente OAuth `client_credentials`
+  (`MCP_OAUTH_*`, `audience` para Auth0 y `resource` para RFC 8707), caché,
+  refresh e invalidación.
+- **Eliminados** `app/agent/tools/incidents.py` y `inventory.py`; el agente ya no
+  tiene camino directo a TinyDB/SQLModel ni al Incidents Manager.
+- El estado y los traces conservan `incident_lookup` / `inventory_lookup` como
+  nombres lógicos; por debajo llaman a `query_incidents` / `query_inventory`.
+- Fallback: MCP caído/timeout/sin token/scope insuficiente/no encontrado →
+  `answer_from_tool` con mensaje honesto y `status="ok"`; `/agent/query` no
+  devuelve 502 por un fallo de tool.
+- Tests nuevos: `services/api/tests/test_agent_tools.py` (13) y
+  `tests/test_agent_mcp_failures.py` (8); evals 23 siguen pasando.
+- Suite API completa: **259 passed**; `npm run typecheck` OK.
+
+### Validación real (Codespaces + Auth0)
+- Client grant de `TrackfFow MCP (Test Application)` con `mcp:read` y
+  `mcp:write`; el token incluye `scope: "mcp:read mcp:write"`.
+- Puerto `8001` público en el Codespace; PRM 200 y `/mcp` sin token 401.
+- Smoke M2M contra la URL pública: `tools/list`, ticket 1, summary de 95
+  incidencias, `CLT-SNK-W-42` con 47 uds, guard de inventario
+  `INVENTORY_READ_ONLY`, creación de la incidencia 96 y transición a
+  `in_progress` por el endpoint de ciclo de vida.
+- Agente real en el Codespace: ticket 1 → «Abierto» (datos reales); stock
+  `CLT-SNK-W-42` → 47 uds. Antes del grant devolvía el fallback honesto 200.
+- Fix de discovery: las rutas no canónicas (`/.well-known/oauth-protected-resource`
+  sin `/mcp`) devuelven 404 en lugar de 401 (`2ba5395`).
+
+### Pendiente MCP
+- Validar MCPJam hosted con una sesión iniciada (la sesión guest devuelve 401
+  en su propio backend) y guardar capturas en `docs/mcp/playground/`.
+- Subir el idle timeout del Codespace antes de la demo (los procesos se
+  reinician con el Codespace).
+- No commitear `services/api/data/suppliers.json`.

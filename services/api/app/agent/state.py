@@ -53,7 +53,7 @@ class AgentState(TypedDict, total=False):
     """Decisión completa del clasificador (argumentos y motivo)."""
 
     tool_name: str
-    """``incident_lookup`` o ``inventory_lookup`` cuando se usó una tool."""
+    """``incident_lookup`` o ``inventory_lookup`` (tools MCP del agente)."""
 
     tool_result: dict
     """Salida tipada de la tool serializada como dict."""

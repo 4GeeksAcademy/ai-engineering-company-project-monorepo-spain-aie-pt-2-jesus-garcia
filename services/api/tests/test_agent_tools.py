@@ -1,271 +1,332 @@
-"""Tests de integración de las tools de lectura del agente.
+"""Tests del cliente MCP del agente (sin red ni servidor MCP real).
 
-Verifican que las tools leen de los servicios reales (TinyDB y SQLModel), que
-son de solo lectura, que el timeout se respeta y que los fallbacks son
-honestos. No usan datos simulados.
+Se inyecta un invocador asíncrono que simula las tools MCP. Se comprueba que el
+contrato tipado del agente se mantiene, que los errores del MCP se traducen a
+fallbacks honestos y que el camino directo a TinyDB/SQLModel ya no existe.
 """
 
 from __future__ import annotations
 
-import time
+import asyncio
+import importlib
+import json
 
+import httpx
 import pytest
-from pydantic import ValidationError
-from sqlalchemy import delete as sql_delete
-from sqlalchemy import func
-from sqlmodel import Session, delete, select
 
-from app.agent.tools.contracts import (
+from app.agent.tools import (
     IncidentLookupInput,
     InventoryLookupInput,
+    MCPAuthError,
+    MCPSettings,
+    MCPToolClient,
+    MCPTokenProvider,
+    lookup_incident,
+    lookup_inventory,
+    set_mcp_client_for_tests,
 )
-from app.agent.tools import incidents as incidents_tool
-from app.agent.tools import inventory as inventory_tool
-from app.agent.tools.incidents import lookup_incident
-from app.agent.tools.inventory import lookup_inventory
-from database import engine, get_tinydb
-from models import InventoryDiscrepancy, SKU, StockEntry, StockExit
-from app.telemetry.outbox import outbox_table
+from app.agent.tools.mcp_client import MCPToolError
 
 
-@pytest.fixture(autouse=True)
-def _clean_inventory(client):
-    """Tablas SQL limpias y creadas (el lifespan de ``client`` hace create_all)."""
-    with Session(engine) as session:
-        session.exec(delete(InventoryDiscrepancy))
-        session.exec(delete(StockExit))
-        session.exec(delete(StockEntry))
-        session.exec(delete(SKU))
-        session.execute(sql_delete(outbox_table(engine)))
-        session.commit()
-    yield
-    with Session(engine) as session:
-        session.exec(delete(InventoryDiscrepancy))
-        session.exec(delete(StockExit))
-        session.exec(delete(StockEntry))
-        session.exec(delete(SKU))
-        session.execute(sql_delete(outbox_table(engine)))
-        session.commit()
+def incident_data(**overrides):
+    data = {
+        "id": "42",
+        "title": "Paquete extraviado",
+        "description": "El paquete no aparece en tránsito.",
+        "description_excerpt": "El paquete no aparece en tránsito.",
+        "origin": "customer",
+        "branch": "la_warehouse",
+        "category": "lost_parcel",
+        "status": "in_progress",
+        "created_at": "2026-11-01T10:00:00+00:00",
+        "updated_at": "2026-11-02T10:00:00+00:00",
+    }
+    data.update(overrides)
+    return data
 
 
-def _insert_incident(**overrides) -> int:
-    db = get_tinydb()
+def inventory_data(**overrides):
+    data = {
+        "id": 1,
+        "name": "Classic White Sneaker - Size 42",
+        "sku_code": "CLT-SNK-W-42",
+        "warehouse": "los_angeles",
+        "client_id": None,
+        "min_stock": None,
+        "current_stock": 47,
+        "current_stock_by_warehouse": {"los_angeles": 47, "zaragoza": 0},
+    }
+    data.update(overrides)
+    return data
+
+
+def make_client(invokable, *, static_token: str = "test-token"):
+    settings = MCPSettings(
+        server_url="http://mcp.test/mcp",
+        static_token=static_token,
+        timeout_seconds=2,
+    )
+    return MCPToolClient(settings, invoker=invokable)
+
+
+def test_lookup_incident_maps_structured_content():
+    calls = []
+
+    async def invoke(tool, arguments):
+        calls.append((tool, arguments))
+        return {"ok": True, "found": True, "incidents": [incident_data()]}
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
     try:
-        values = {
-            "title": "Paquete extraviado",
-            "description": "El paquete no aparece en tránsito.",
-            "origin": "customer",
-            "branch": "la_warehouse",
-            "category": "lost_parcel",
-            "status": "open",
-            "created_at": "2026-11-01T10:00:00+00:00",
-            "updated_at": "2026-11-01T10:00:00+00:00",
-        }
-        values.update(overrides)
-        return db.table("incidents").insert(values)
+        result = lookup_incident(IncidentLookupInput(ticket_id=42))
     finally:
-        db.close()
+        set_mcp_client_for_tests(None)
+
+    assert result.ok is True
+    assert result.found is True
+    assert result.incidents[0].id == "42"
+    assert calls == [("query_incidents", {"incident_id": "42", "limit": 20})]
 
 
-def _seed_inventory(sku_code: str = "CLT-SNK-W-42", inbound: int = 50, outbound: int = 3) -> int:
-    with Session(engine) as session:
-        sku = SKU(
-            name="Classic White Sneaker - Size 42",
-            sku_code=sku_code,
-            warehouse="los_angeles",
-        )
-        session.add(sku)
-        session.commit()
-        session.refresh(sku)
-        session.add(
-            StockEntry(
-                sku_id=sku.id,
-                quantity=inbound,
-                warehouse="los_angeles",
-                user_uuid="test-user",
-            )
-        )
-        session.add(
-            StockExit(
-                sku_id=sku.id,
-                quantity=outbound,
-                warehouse="los_angeles",
-                user_uuid="test-user",
-            )
-        )
-        session.commit()
-        return sku.id
+def test_lookup_incident_maps_filters():
+    calls = []
 
+    async def invoke(tool, arguments):
+        calls.append((tool, arguments))
+        return {"ok": True, "found": True, "incidents": [incident_data()]}
 
-def _count_rows() -> tuple[int, int, int]:
-    with Session(engine) as session:
-        skus = session.exec(select(func.count()).select_from(SKU)).one()
-        entries = session.exec(select(func.count()).select_from(StockEntry)).one()
-        exits = session.exec(select(func.count()).select_from(StockExit)).one()
-    return int(skus), int(entries), int(exits)
-
-
-class TestIncidentLookup:
-    def test_returns_the_real_record_by_id(self):
-        incident_id = _insert_incident(status="in_progress")
-
-        result = lookup_incident(IncidentLookupInput(ticket_id=incident_id))
-
-        assert result.ok is True
-        assert result.found is True
-        assert len(result.incidents) == 1
-        incident = result.incidents[0]
-        assert incident.id == str(incident_id)
-        assert incident.status == "in_progress"
-        assert incident.category == "lost_parcel"
-        assert incident.origin == "customer"
-        assert incident.created_at == "2026-11-01T10:00:00+00:00"
-
-    def test_filters_match_the_rest_api(self):
-        _insert_incident(status="open")
-        _insert_incident(status="resolved", title="Entrega fallida")
-
-        result = lookup_incident(IncidentLookupInput(status="open"))
-
-        assert result.ok is True
-        assert result.found is True
-        assert len(result.incidents) == 1
-        assert result.incidents[0].status == "open"
-
-    def test_is_read_only(self):
-        incident_id = _insert_incident()
-        db = get_tinydb()
-        before = len(db.table("incidents").all())
-        db.close()
-
-        lookup_incident(IncidentLookupInput(ticket_id=incident_id))
-
-        db = get_tinydb()
-        after = len(db.table("incidents").all())
-        db.close()
-        assert after == before
-
-    def test_not_found_is_honest(self):
-        result = lookup_incident(IncidentLookupInput(ticket_id=999999))
-
-        assert result.ok is False
-        assert result.found is False
-        assert result.error == "not_found"
-        assert "999999" in result.message
-
-    def test_invalid_input_returns_typed_error(self):
-        result = lookup_incident({"status": "open", "ticket_id": 0})
-
-        assert result.ok is False
-        assert result.error == "invalid_input"
-        assert result.message
-
-    def test_missing_criterion_is_rejected(self):
-        with pytest.raises(ValidationError):
-            IncidentLookupInput()
-
-        result = lookup_incident({})
-        assert result.error == "invalid_input"
-
-    def test_timeout_returns_typed_error(self, monkeypatch):
-        def slow(payload):
-            time.sleep(0.2)
-
-        monkeypatch.setattr(incidents_tool, "_read_incidents", slow)
-
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
         result = lookup_incident(
-            IncidentLookupInput(ticket_id=1),
-            timeout_seconds=0.01,
+            IncidentLookupInput(status="open", branch="la_warehouse")
+        )
+    finally:
+        set_mcp_client_for_tests(None)
+
+    assert result.found is True
+    assert calls[0][1] == {
+        "limit": 20,
+        "status": "open",
+        "branch": "la_warehouse",
+    }
+
+
+def test_lookup_incident_not_found_is_honest():
+    async def invoke(tool, arguments):
+        return {
+            "ok": True,
+            "found": False,
+            "incidents": [],
+            "message": "No hay incidencias.",
+        }
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
+        result = lookup_incident(IncidentLookupInput(ticket_id=999))
+    finally:
+        set_mcp_client_for_tests(None)
+
+    assert result.ok is False
+    assert result.found is False
+    assert result.error == "not_found"
+
+
+def test_lookup_incident_maps_tool_error_codes():
+    async def invoke(tool, arguments):
+        raise RuntimeError(
+            json.dumps(
+                {
+                    "error_code": "NOT_FOUND",
+                    "message": "Incidencia 999 no encontrada.",
+                }
+            )
         )
 
-        assert result.ok is False
-        assert result.error == "timeout"
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
+        result = lookup_incident(IncidentLookupInput(ticket_id=999))
+    finally:
+        set_mcp_client_for_tests(None)
 
-    def test_unavailable_service_returns_typed_error(self, monkeypatch):
-        def boom(payload):
-            raise RuntimeError("TinyDB no disponible")
+    assert result.error == "not_found"
+    assert "no encontrada" in result.message
 
-        monkeypatch.setattr(incidents_tool, "_read_incidents", boom)
 
+def test_lookup_incident_scope_error_maps_to_forbidden():
+    async def invoke(tool, arguments):
+        raise MCPToolError("sin permisos", code="forbidden")
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
         result = lookup_incident(IncidentLookupInput(ticket_id=1))
+    finally:
+        set_mcp_client_for_tests(None)
 
-        assert result.ok is False
-        assert result.error == "unavailable"
+    assert result.error == "forbidden"
 
 
-class TestInventoryLookup:
-    def test_returns_real_stock_from_sql(self):
-        _seed_inventory()
+def test_lookup_incident_auth_error_maps_to_unavailable():
+    async def invoke(tool, arguments):
+        raise MCPAuthError("no token")
 
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
+        result = lookup_incident(IncidentLookupInput(ticket_id=1))
+    finally:
+        set_mcp_client_for_tests(None)
+
+    assert result.error == "unavailable"
+
+
+def test_lookup_incident_timeout_returns_timeout():
+    async def invoke(tool, arguments):
+        await asyncio.sleep(0.5)
+        return {"ok": True, "found": True, "incidents": [incident_data()]}
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
+        result = lookup_incident(
+            IncidentLookupInput(ticket_id=1), timeout_seconds=0.05
+        )
+    finally:
+        set_mcp_client_for_tests(None)
+
+    assert result.error == "timeout"
+    assert "no respondió a tiempo" in result.message
+
+
+def test_lookup_inventory_maps_items():
+    calls = []
+
+    async def invoke(tool, arguments):
+        calls.append((tool, arguments))
+        return {"ok": True, "found": True, "items": [inventory_data()]}
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
         result = lookup_inventory(
             InventoryLookupInput(sku_code="CLT-SNK-W-42")
         )
+    finally:
+        set_mcp_client_for_tests(None)
 
-        assert result.ok is True
-        assert result.found is True
-        assert len(result.items) == 1
-        item = result.items[0]
-        assert item.sku_code == "CLT-SNK-W-42"
-        assert item.current_stock == 47
-        assert item.current_stock_by_warehouse["los_angeles"] == 47
-        assert item.current_stock_by_warehouse["zaragoza"] == 0
+    assert result.ok is True
+    assert result.items[0].current_stock == 47
+    assert result.items[0].current_stock_by_warehouse["los_angeles"] == 47
+    assert calls == [
+        (
+            "query_inventory",
+            {"sku_code": "CLT-SNK-W-42", "limit": 20},
+        )
+    ]
 
-    def test_name_query_is_supported(self):
-        _seed_inventory()
 
-        result = lookup_inventory(
-            InventoryLookupInput(name_query="classic white")
+def test_lookup_inventory_not_found_is_honest():
+    async def invoke(tool, arguments):
+        return {
+            "ok": True,
+            "found": False,
+            "items": [],
+            "message": "No hay productos.",
+        }
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
+        result = lookup_inventory(InventoryLookupInput(sku_code="NOPE"))
+    finally:
+        set_mcp_client_for_tests(None)
+
+    assert result.ok is False
+    assert result.error == "not_found"
+
+
+def test_invalid_input_is_rejected_before_mcp():
+    calls = []
+
+    async def invoke(tool, arguments):
+        calls.append((tool, arguments))
+        return {"ok": True, "found": True, "incidents": []}
+
+    client = make_client(invoke)
+    set_mcp_client_for_tests(client)
+    try:
+        result = lookup_incident({})
+        inventory = lookup_inventory({})
+    finally:
+        set_mcp_client_for_tests(None)
+
+    assert result.error == "invalid_input"
+    assert inventory.error == "invalid_input"
+    assert calls == []
+
+
+def test_direct_tool_modules_are_gone():
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.agent.tools.incidents")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.agent.tools.inventory")
+
+
+def test_token_provider_uses_client_credentials_and_caches():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json={"access_token": "mcp-token", "expires_in": 3600},
         )
 
-        assert result.ok is True
-        assert result.items[0].sku_code == "CLT-SNK-W-42"
+    settings = MCPSettings(
+        server_url="http://mcp.test/mcp",
+        token_url="https://issuer.test/oauth/token",
+        client_id="client-id",
+        client_secret="client-secret",
+        audience="https://mcp.test/mcp",
+        scopes=["mcp:read"],
+    )
+    provider = MCPTokenProvider(
+        settings, transport=httpx.MockTransport(handler)
+    )
 
-    def test_is_read_only(self):
-        _seed_inventory()
-        before = _count_rows()
+    async def run():
+        first = await provider.get_token()
+        second = await provider.get_token()
+        return first, second
 
-        lookup_inventory(InventoryLookupInput(sku_code="CLT-SNK-W-42"))
+    assert asyncio.run(run()) == ("mcp-token", "mcp-token")
+    assert len(seen) == 1
+    body = seen[0].content.decode()
+    assert "grant_type=client_credentials" in body
+    assert "audience=https%3A%2F%2Fmcp.test%2Fmcp" in body
+    assert "scope=mcp%3Aread" in body
 
-        assert _count_rows() == before
 
-    def test_not_found_is_honest(self):
-        result = lookup_inventory(
-            InventoryLookupInput(sku_code="NO-EXISTE-999")
-        )
+def test_token_provider_failure_is_reported():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text="invalid_client")
 
-        assert result.ok is False
-        assert result.found is False
-        assert result.error == "not_found"
+    settings = MCPSettings(
+        server_url="http://mcp.test/mcp",
+        token_url="https://issuer.test/oauth/token",
+        client_id="client-id",
+        client_secret="bad",
+    )
+    provider = MCPTokenProvider(
+        settings, transport=httpx.MockTransport(handler)
+    )
 
-    def test_invalid_input_returns_typed_error(self):
-        with pytest.raises(ValidationError):
-            InventoryLookupInput()
+    async def run():
+        with pytest.raises(MCPAuthError):
+            await provider.get_token()
 
-        result = lookup_inventory({})
-        assert result.error == "invalid_input"
-
-    def test_timeout_returns_typed_error(self, monkeypatch):
-        def slow(payload):
-            time.sleep(0.2)
-
-        monkeypatch.setattr(inventory_tool, "_read_inventory", slow)
-
-        result = lookup_inventory(
-            InventoryLookupInput(sku_code="CLT-SNK-W-42"),
-            timeout_seconds=0.01,
-        )
-
-        assert result.ok is False
-        assert result.error == "timeout"
-
-    def test_missing_engine_returns_unavailable(self, monkeypatch):
-        import database
-
-        monkeypatch.setattr(database, "engine", None)
-
-        result = lookup_inventory(
-            InventoryLookupInput(sku_code="CLT-SNK-W-42")
-        )
-
-        assert result.ok is False
-        assert result.error == "unavailable"
+    asyncio.run(run())

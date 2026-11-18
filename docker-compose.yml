@@ -82,6 +82,8 @@ services:
       INCIDENT_UPLOAD_DIR: /uploads
       # En la red de Compose el host es el servicio `qdrant`, no localhost.
       QDRANT_URL: http://qdrant:6333
+      # El agente consume las tools desde el MCP Server dentro de la red Compose.
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8001/mcp}
     volumes:
       - ./services/api:/app
       - ./services/reporting:/services/reporting
@@ -94,6 +96,24 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    networks: [monorepo-dev]
+
+  # MCP Server (FastMCP + mcpauth). Expone /mcp y el Protected Resource
+  # Metadata; el agente lo consume con langchain-mcp-adapters.
+  mcp:
+    build:
+      context: ./mcps/trackflow-mcp
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+      - ./mcps/trackflow-mcp/.env
+    environment:
+      # En la red Compose la API se resuelve por nombre de servicio.
+      TRACKFLOW_API_BASE_URL: ${TRACKFLOW_API_BASE_URL_DOCKER:-http://services:8000}
+    depends_on:
+      - services
+    restart: unless-stopped
     networks: [monorepo-dev]
 
   # Worker Celery: proceso independiente del servidor FastAPI.

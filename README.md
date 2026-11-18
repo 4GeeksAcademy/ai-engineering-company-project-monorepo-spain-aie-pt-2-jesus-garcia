@@ -100,6 +100,45 @@ docker compose stop worker flower
   `CELERY_TASK_SOFT_TIME_LIMIT`, `CELERY_RETRY_BACKOFF_SECONDS`.
 - Runbook detallado: [`docs/asynchronous/CELERY.md`](docs/asynchronous/CELERY.md).
 
+## MCP Server (OAuth 2.1 + agente)
+
+El agente de soporte consulta datos operativos en vivo a través de un servidor
+MCP protegido con OAuth 2.1, en lugar de llamar directamente al Incidents
+Manager. El servidor vive en [`mcps/trackflow-mcp/`](mcps/trackflow-mcp/README.md)
+y expone:
+
+- `query_incidents`, `get_incident_summary` (`mcp:read`).
+- `create_incident`, `update_incident_status` (`mcp:write`; el estado solo por
+  `PATCH /api/incidents/{id}/status`).
+- `query_inventory` (solo lectura) y `adjust_inventory_stock` (guard que rechaza
+  siempre con `INVENTORY_READ_ONLY`).
+
+El agente carga estas tools con `langchain-mcp-adapters` y un token OAuth
+`client_credentials`; ya no existe un camino directo a TinyDB/SQLModel.
+
+```bash
+# API real (local)
+cd services/api
+DATABASE_URL=sqlite:///./dev.db venv/bin/uvicorn app.main:app --port 8002
+
+# MCP Server
+cd mcps/trackflow-mcp
+source .venv/bin/activate
+uvicorn trackflow_mcp.server:app --host 0.0.0.0 --port 8001
+
+# Discovery / smoke
+curl -s http://127.0.0.1:8001/.well-known/oauth-protected-resource/mcp | jq
+python scripts/mcp_smoke.py --token "$TOKEN"
+```
+
+- Docker: `docker compose up -d services mcp` (puerto `8001`).
+- Codespaces: `gh codespace ports visibility 8001:public` y
+  `MCP_RESOURCE_URL=https://<codespace>-8001.app.github.dev/mcp`.
+- Configuración Auth0, scopes, error codes y troubleshooting:
+  [`mcps/trackflow-mcp/README.md`](mcps/trackflow-mcp/README.md).
+- Evidencias: [`mcps/trackflow-mcp/VALIDATION.md`](mcps/trackflow-mcp/VALIDATION.md)
+  y [`docs/mcp/README.md`](docs/mcp/README.md).
+
 ## Milestones (reference)
 
 | Milestone | Focus        | Typical deliverables                        |
