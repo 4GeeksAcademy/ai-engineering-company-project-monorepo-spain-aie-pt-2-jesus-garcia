@@ -11,7 +11,11 @@ RUN mkdir -p /uis/node_modules && ln -s /uis/website/node_modules/next /uis/node
 COPY website ./website
 COPY backoffice ./backoffice
 COPY start.sh ./start.sh
-RUN chmod +x ./start.sh
+RUN chmod +x ./start.sh \
+    && mkdir -p /uis/website/.next /uis/backoffice/.next \
+    && chown -R node:node /uis/website/.next /uis/backoffice/.next
+
+USER node
 
 EXPOSE 3000 3001
 CMD ["sh", "./start.sh"]

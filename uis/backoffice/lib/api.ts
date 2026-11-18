@@ -17,8 +17,24 @@ import type {
   TelemetryReport,
   PipelineRunLatest,
   PipelineRunTriggerResponse,
+  SlaEvaluationResponse,
+  SlaStatus,
   WeeklyPerformanceReport,
 } from "./types";
+import type {
+  RfpApprovalDecision,
+  RfpApprovalResumeResponse,
+  RfpApprovalStartResponse,
+  RfpApprovals,
+  RfpFinalDocument,
+  RfpProposal,
+  RfpProposalStartResponse,
+  RfpTicketDetail,
+  RfpTicketListItem,
+  RfpTicketStatus,
+  RfpTrace,
+  RfpUploadResponse,
+} from "./rfp-types";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -104,6 +120,9 @@ export function friendlyError(err: unknown): string {
         return "El recurso ya existe o está en conflicto.";
       case 422:
         return "Los datos enviados no son válidos.";
+      case 502:
+      case 503:
+        return "El asistente no está disponible ahora mismo. Inténtalo de nuevo en unos segundos.";
       default:
         return "Ocurrió un error al procesar la solicitud. Inténtalo de nuevo.";
     }
@@ -329,10 +348,13 @@ export async function createOutboundOrder(
   });
 }
 
-export async function fetchTelemetryReport(params?: {
-  start_date?: string;
-  end_date?: string;
-}): Promise<TelemetryReport> {
+export async function fetchTelemetryReport(
+  params?: {
+    start_date?: string;
+    end_date?: string;
+  },
+  token?: string | null,
+): Promise<TelemetryReport> {
   const searchParams = new URLSearchParams();
   if (params?.start_date) searchParams.set("start_date", params.start_date);
   if (params?.end_date) searchParams.set("end_date", params.end_date);
@@ -340,7 +362,7 @@ export async function fetchTelemetryReport(params?: {
   const query = searchParams.toString();
   const url = `/api/telemetry/report${query ? `?${query}` : ""}`;
 
-  return request<TelemetryReport>(url, { headers: {} });
+  return request<TelemetryReport>(url, { headers: authHeaders(token) });
 }
 
 // ---------------------------------------------------------------------------
@@ -375,4 +397,166 @@ export async function triggerPipelineRun(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(data ?? {}),
   });
+}
+
+export async function fetchSlaStatus(
+  token?: string | null,
+): Promise<SlaStatus> {
+  return request<SlaStatus>("/api/reporting/sla-status", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function evaluateSla(
+  token?: string | null,
+): Promise<SlaEvaluationResponse> {
+  return request<SlaEvaluationResponse>("/api/reporting/sla/evaluate", {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Recepción de RFPs (Hito 9, Parte 1)
+// ---------------------------------------------------------------------------
+
+export async function uploadRfp(
+  file: File,
+  token?: string | null,
+): Promise<RfpUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<RfpUploadResponse>("/api/rfp/tickets", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: formData,
+  });
+}
+
+export async function fetchRfpTickets(
+  token?: string | null,
+  params?: { status?: string },
+): Promise<RfpTicketListItem[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set("status", params.status);
+  const query = searchParams.toString();
+  return request<RfpTicketListItem[]>(
+    `/api/rfp/tickets${query ? `?${query}` : ""}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function fetchRfpTicket(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpTicketDetail> {
+  return request<RfpTicketDetail>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function fetchRfpTicketStatus(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpTicketStatus> {
+  return request<RfpTicketStatus>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/status`,
+    { headers: authHeaders(token) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Generación de propuestas (Hito 9, Parte 2)
+// ---------------------------------------------------------------------------
+
+export async function startRfpProposal(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpProposalStartResponse> {
+  return request<RfpProposalStartResponse>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/proposal`,
+    { method: "POST", headers: authHeaders(token) },
+  );
+}
+
+export async function fetchRfpProposal(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpProposal> {
+  return request<RfpProposal>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/proposal`,
+    { headers: authHeaders(token) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Aprobación humana y cierre (Hito 9, Parte 3)
+// ---------------------------------------------------------------------------
+
+export async function fetchRfpApprovals(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpApprovals> {
+  return request<RfpApprovals>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/approvals`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function startRfpApprovals(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpApprovalStartResponse> {
+  return request<RfpApprovalStartResponse>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/approvals/start`,
+    { method: "POST", headers: authHeaders(token) },
+  );
+}
+
+export async function submitRfpApproval(
+  ticketId: string,
+  departmentId: string,
+  decision: RfpApprovalDecision,
+  token?: string | null,
+): Promise<RfpApprovalResumeResponse> {
+  return request<RfpApprovalResumeResponse>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/approvals/${encodeURIComponent(departmentId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders(token) },
+      body: JSON.stringify(decision),
+    },
+  );
+}
+
+export async function fetchRfpFinalDocument(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpFinalDocument> {
+  return request<RfpFinalDocument>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/final-document`,
+    { headers: authHeaders(token) },
+  );
+}
+
+export async function downloadRfpFinalDocument(
+  ticketId: string,
+  token?: string | null,
+): Promise<Blob> {
+  return request<Blob>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/final-document/download`,
+    { headers: authHeaders(token) },
+    "blob",
+  );
+}
+
+export async function fetchRfpTrace(
+  ticketId: string,
+  token?: string | null,
+): Promise<RfpTrace> {
+  return request<RfpTrace>(
+    `/api/rfp/tickets/${encodeURIComponent(ticketId)}/trace`,
+    { headers: authHeaders(token) },
+  );
 }

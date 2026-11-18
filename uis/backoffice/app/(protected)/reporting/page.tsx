@@ -3,17 +3,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAsyncData } from "@/hooks/useAsyncData";
+import { useRealtimeStream } from "@/hooks/useRealtimeStream";
 import {
   ApiRequestError,
+  evaluateSla,
   fetchLatestPipelineRun,
+  fetchSlaStatus,
   fetchWeeklyPerformance,
   friendlyError,
   triggerPipelineRun,
 } from "@/lib/api";
 import { computeWeeklyTotals, WAREHOUSE_LABELS } from "@/lib/types";
-import type { PipelineRunLatest, WeeklyPerformanceReport } from "@/lib/types";
+import type {
+  PipelineRunLatest,
+  WeeklyPerformanceReport,
+} from "@/lib/types";
+import {
+  SLA_THRESHOLD_ALERT,
+  parseSlaAlert,
+  type SlaThresholdAlertPayload,
+} from "@/lib/realtime-types";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { SlaAlertBanner } from "@/components/reporting/SlaAlertBanner";
 
 const inputClass =
   "rounded-lg border border-white/10 bg-slate-800 px-4 py-2 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none";
@@ -46,6 +58,44 @@ export default function ReportingPage() {
   const [triggering, setTriggering] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
+  const [slaEvaluating, setSlaEvaluating] = useState(false);
+  const [slaError, setSlaError] = useState<string | null>(null);
+  const [liveAlerts, setLiveAlerts] = useState<SlaThresholdAlertPayload[]>([]);
+
+  const {
+    data: slaStatus,
+    loading: slaLoading,
+    error: slaFetchError,
+    reload: reloadSla,
+  } = useAsyncData(
+    async () => {
+      try {
+        return await fetchSlaStatus(token);
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    [token],
+    friendlyError,
+  );
+
+  const realtime = useRealtimeStream({
+    enabled: Boolean(token),
+    token,
+    onEvent: (frame) => {
+      if (frame.event !== SLA_THRESHOLD_ALERT) return;
+      const alert = parseSlaAlert(frame.data);
+      if (!alert) return;
+      setLiveAlerts((prev) =>
+        [
+          alert,
+          ...prev.filter((item) => item.alert_id !== alert.alert_id),
+        ].slice(0, 5),
+      );
+      reloadSla();
+    },
+  });
 
   const { data, loading, error, reload } = useAsyncData(
     async () => {
@@ -100,6 +150,24 @@ export default function ReportingPage() {
     }
   }
 
+  async function handleEvaluateSla() {
+    setSlaEvaluating(true);
+    setSlaError(null);
+    try {
+      const result = await evaluateSla(token);
+      if (result.published.length > 0) {
+        setLiveAlerts((prev) =>
+          [...result.published, ...prev].slice(0, 5),
+        );
+      }
+      reloadSla();
+    } catch (err) {
+      setSlaError(friendlyError(err));
+    } finally {
+      setSlaEvaluating(false);
+    }
+  }
+
   const run = data?.run ?? null;
   const report = data?.report ?? null;
 
@@ -112,6 +180,17 @@ export default function ReportingPage() {
           quiebres de stock y precisión de inventario.
         </p>
       </header>
+
+      <SlaAlertBanner
+        status={slaStatus ?? null}
+        liveAlert={liveAlerts[0] ?? null}
+        live={realtime.status === "open"}
+        loading={slaLoading}
+        error={slaFetchError}
+        evaluating={slaEvaluating}
+        evaluateError={slaError}
+        onEvaluate={handleEvaluateSla}
+      />
 
       <section
         aria-label="Controles del reporte"

@@ -1,0 +1,13 @@
+TRAZA DEL AGENTE — evidencia de trazabilidad
+==========================================================================================
+run_id        : nist-trace-demo
+estado        : ok
+ruta          : rag
+nodos         : receive_question → classify → retrieve → generate
+fuentes_used  : rag
+guard_events  : 0
+respuesta     : El envío estándar dentro del mismo país tarda de 3 a 5 días hábiles, con un 90 % de entregas a tiempo (documento sla-del
+traza         : docs/cybersecurity/nist-ai-security/evidence/agent-trace.json
+==========================================================================================
+Cada nodo del JSON incluye input/output resumido, duración y timestamp;
+los bloqueos del harness se guardan en `guard_events` (categoría y motivo).

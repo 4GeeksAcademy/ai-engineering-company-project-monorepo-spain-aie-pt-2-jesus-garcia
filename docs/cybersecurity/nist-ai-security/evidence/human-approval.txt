@@ -1,0 +1,51 @@
+# Confirmación humana en acciones irreversibles
+Fecha: 2026-11-17T23:20:22Z
+
+## 1. Flujo RFP completo con interrupt() por departamento (sin red)
+$ services/api/venv/bin/python scripts/rfp_e2e.py
+[Parte 1] fixture=modaviva ticket=7f9e7955-dbae-4aed-97e7-e1ac670f9e03 handoff=rfp-intake-v1
+[Parte 2] status=esperando_aprobación secciones=2
+[Parte 3] run=1 thread=rfp-7f9e7955-dbae-4aed-97e7-e1ac670f9e03:run-1 pending=['warehouse', 'reverse']
+[Parte 3] aprobado reverse → esperando_aprobación (pendientes=1)
+[Parte 3] aprobado warehouse → terminado (pendientes=0)
+[Parte 3] documento final: rfp-final-v1 EUR 2 secciones, 6509 chars
+[Parte 3] aprobado por: Ana Whitfield, Sofía Ramos
+[Traza] 20 eventos (partes=[2, 3]), arbitrajes=0
+[OK] E2E completado. Artefactos en /var/folders/j2/g5k58v2d54l9j5_gf7p8mz180000gn/T/rfp-e2e-1r9bs3o4
+
+## 2. Tests de aprobación (API)
+$ cd services/api && ./venv/bin/python -m pytest tests/test_rfp_approval_api.py -v
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/jesus/projects/geeks-academy/ai-engineering-company-project-monorepo-spain-aie-pt-2-jesus-garcia/services/api
+configfile: pyproject.toml
+plugins: langsmith-0.14.17, cov-7.1.0, platformdirs-4.14.7, anyio-4.14.2
+collected 7 items
+
+tests/test_rfp_approval_api.py .......                                   [100%]
+
+============================== 7 passed in 7.70s ===============================
+
+## 3. Puntos del código donde se exige decisión humana
+data/pipelines/rfp_approval/arbitration_graph.py:286:                    "approval_comment": (
+data/pipelines/rfp_approval/arbitration_graph.py:299:                    comment=section["approval_comment"],
+data/pipelines/rfp_approval/final_document.py:320:            f"{(section.get('approval_comment') or '—')} |"
+data/pipelines/rfp_approval/final_document.py:385:            "comment": section.get("approval_comment"),
+data/pipelines/rfp_approval/final_document.py:410:                "approval_comment": section.get("approval_comment"),
+data/pipelines/rfp_approval/contracts.py:112:            "approval_comment": item.get("approval_comment"),
+data/pipelines/rfp_approval/contracts.py:299:            "comment_required_for": ["reject", "request_changes"],
+data/pipelines/rfp_approval/contracts.py:319:        "acknowledge_provisional": bool(decision.get("acknowledge_provisional")),
+data/pipelines/rfp_approval/contracts.py:349:        if not normalized["acknowledge_provisional"]:
+data/pipelines/rfp_approval/contracts.py:352:                "aceptación (acknowledge_provisional)."
+data/pipelines/rfp_approval/approval_graph.py:25:from ..rfp_intake.sanitize import sanitize_document_text
+data/pipelines/rfp_approval/approval_graph.py:98:        decision = interrupt(packet)
+data/pipelines/rfp_approval/approval_graph.py:137:            "approval_comment": decision.get("comment") or None,
+data/pipelines/rfp_approval/approval_graph.py:190:            "approval_comment": comment,
+data/pipelines/rfp_approval/approval_graph.py:259:        feedback = sanitize_document_text(
+data/pipelines/rfp_approval/runner.py:280:            "approval_comment": section.get("approval_comment"),
+data/pipelines/rfp_approval/runner.py:308:            "approval_comment": None,
+
+## 4. Memoria del agente: sin aprobación humana no se persiste
+279:def test_approval_writes_entry_and_audit(session):
+339:def test_rejection_leaves_memory_unchanged(session):
+426:def test_pending_proposal_expires_without_answer(session):

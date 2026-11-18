@@ -13,10 +13,13 @@ AUTH_TTL = 5  # segundos
 AUTH_PREFIX = "auth:"
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
-):
-    token = credentials.credentials
+def authenticate_token(token: str) -> dict:
+    """Valida un JWT y devuelve el usuario seguro (HTTP y WebSocket).
+
+    Se comparte con el handshake WebSocket, donde no existe una cabecera
+    ``Authorization`` limpia: el token llega por query string o primer frame.
+    """
+
     payload = decode_token(token)
     if payload is None:
         raise HTTPException(
@@ -56,6 +59,12 @@ def get_current_user(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="User not found",
     )
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+):
+    return authenticate_token(credentials.credentials)
 
 
 def invalidate_user_cache(user_id: str) -> None:

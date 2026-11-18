@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from models import (
     AuthMeResponse,
@@ -12,6 +12,7 @@ from models import (
     ResetPasswordRequest,
     TokenResponse,
 )
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import create_token, decode_token
 from app.core.dependencies import get_current_user
 from app.email_service import send_password_reset_email
@@ -29,14 +30,28 @@ router = APIRouter(prefix="/api", tags=["auth"])
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(payload: LoginRequest):
+def login(payload: LoginRequest, request: Request):
+    enforce_rate_limit(
+        request,
+        bucket="auth:login",
+        limit=10,
+        window_seconds=60,
+        identifier=payload.email,
+    )
     user = authenticate(payload.email, payload.password)
     token = create_token({"sub": user.id, "role": user.role.value})
     return TokenResponse(access_token=token, user=user)
 
 
 @router.post("/auth/forgot-password", status_code=202, response_model=MessageResponse)
-def forgot_password(payload: ForgotPasswordRequest):
+def forgot_password(payload: ForgotPasswordRequest, request: Request):
+    enforce_rate_limit(
+        request,
+        bucket="auth:forgot",
+        limit=5,
+        window_seconds=300,
+        identifier=payload.email,
+    )
     token = issue_password_reset_token(payload.email)
     if token is not None:
         try:
@@ -47,7 +62,13 @@ def forgot_password(payload: ForgotPasswordRequest):
 
 
 @router.post("/auth/reset-password", response_model=MessageResponse)
-def reset_password(payload: ResetPasswordRequest):
+def reset_password(payload: ResetPasswordRequest, request: Request):
+    enforce_rate_limit(
+        request,
+        bucket="auth:reset",
+        limit=10,
+        window_seconds=300,
+    )
     payload_data = decode_token(payload.token)
     if payload_data is None or payload_data.get("type") != "password_reset":
         raise HTTPException(status_code=400, detail="Invalid or expired token")
@@ -65,8 +86,16 @@ def reset_password(payload: ResetPasswordRequest):
 @router.post("/auth/change-password", response_model=MessageResponse)
 def change_password_route(
     payload: ChangePasswordRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
 ):
+    enforce_rate_limit(
+        request,
+        bucket="auth:change-password",
+        limit=10,
+        window_seconds=300,
+        identifier=str(current_user.get("id") or ""),
+    )
     change_password(current_user["id"], payload.current_password, payload.new_password)
     return {"message": "Password updated successfully"}
 

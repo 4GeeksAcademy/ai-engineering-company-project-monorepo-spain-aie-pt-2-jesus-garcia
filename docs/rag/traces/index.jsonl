@@ -1,0 +1,2 @@
+{"run_id": "ticket-tool-demo", "thread_id": "ticket-tool-demo", "question": "¿En qué estado está el ticket 1?", "status": "ok", "finished_at": "2026-11-13T17:12:34.624+00:00", "trace_file": "ticket-tool-demo.json"}
+{"run_id": "rag-policy-demo", "thread_id": "rag-policy-demo", "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?", "status": "ok", "finished_at": "2026-11-13T17:12:37.747+00:00", "trace_file": "rag-policy-demo.json"}

@@ -1,29 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 interface LoaderProps {
   onComplete?: () => void;
+  /**
+   * Cómo abandona la pantalla el overlay al terminar la animación:
+   * - "auto": se desvanece y desaparece (por defecto).
+   * - "hold": se queda opaco hasta que el componente se desmonta, para tapar
+   *   la pantalla mientras la navegación al destino está en curso.
+   */
+  exit?: "auto" | "hold";
 }
 
-export function Loader({ onComplete }: LoaderProps) {
-  const [phase, setPhase] = useState<"reveal" | "fade" | "done">("reveal");
+const REVEAL_MS = 800;
+const FADE_MS = 500;
+// Red de seguridad: si la navegación nunca llega a completarse, no dejamos al
+// usuario atrapado detrás del overlay.
+const HOLD_TIMEOUT_MS = 6000;
+
+type Phase = "reveal" | "fade" | "hold" | "done";
+
+export function Loader({ onComplete, exit = "auto" }: LoaderProps) {
+  const hold = exit === "hold";
+  const [phase, setPhase] = useState<Phase>("reveal");
+  const completed = useRef(false);
+
+  // Al terminar la cortinilla del logo pasamos a la siguiente fase: seguir
+  // tapando la pantalla ("hold") o desvanecernos ("fade").
+  useEffect(() => {
+    const timer = setTimeout(() => setPhase(hold ? "hold" : "fade"), REVEAL_MS);
+    return () => clearTimeout(timer);
+  }, [hold]);
+
+  // Desvanecimiento y salida final, tanto en modo "auto" como cuando salta la
+  // red de seguridad del modo "hold".
+  useEffect(() => {
+    if (phase !== "fade") return;
+    const timer = setTimeout(() => setPhase("done"), FADE_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
 
   useEffect(() => {
-    const revealTimer = setTimeout(() => setPhase("fade"), 800);
-    const fadeTimer = setTimeout(() => setPhase("done"), 1300);
-
-    return () => {
-      clearTimeout(revealTimer);
-      clearTimeout(fadeTimer);
-    };
-  }, []);
+    if (!hold || phase !== "hold") return;
+    const timer = setTimeout(() => setPhase("fade"), HOLD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [hold, phase]);
 
   useEffect(() => {
-    if (phase === "done" && onComplete) {
-      onComplete();
-    }
+    if (completed.current) return;
+    if (phase !== "hold" && phase !== "done") return;
+    completed.current = true;
+    onComplete?.();
   }, [phase, onComplete]);
 
   if (phase === "done") return null;

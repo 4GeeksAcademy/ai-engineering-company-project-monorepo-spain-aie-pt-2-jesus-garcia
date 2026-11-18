@@ -431,6 +431,55 @@ export interface PipelineRunTriggerResponse {
   status: string;
 }
 
+// --- Umbral de negocio: SLA de entrega por país -----------------------------
+
+export interface SlaRecipient {
+  name: string;
+  role: string;
+}
+
+export interface SlaCountryStatus {
+  country: string;
+  warehouse: string;
+  on_time_pct: number | null;
+  total_shipments: number;
+  on_time_shipments: number;
+  breached: boolean;
+  recipients: SlaRecipient[];
+}
+
+export interface SlaStatus {
+  week_start: string;
+  threshold_pct: number;
+  breached: boolean;
+  countries: SlaCountryStatus[];
+  computed_at: string | null;
+}
+
+export interface SlaAlert {
+  alert_id: string;
+  metric: string;
+  country: string;
+  warehouse: string | null;
+  week_start: string;
+  threshold_pct: number;
+  on_time_pct: number | null;
+  total_shipments: number;
+  on_time_shipments: number;
+  breached: boolean;
+  recipients: SlaRecipient[];
+  detected_at: string | null;
+}
+
+export interface SlaEvaluationResponse {
+  status: SlaStatus;
+  published: SlaAlert[];
+}
+
+export interface KnowledgeQueryResponse {
+  answer: string;
+}
+
 export interface WeeklyPerformanceTotals {
   inboundUnits: number;
   outboundOrders: number;

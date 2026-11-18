@@ -1,0 +1,79 @@
+{
+  "company": "trackflow",
+  "collection": "trackflow_knowledge",
+  "k": 3,
+  "queries": [
+    {
+      "id": "sla-standard",
+      "question": "¿Cuál es el SLA de un envío estándar dentro del mismo país?",
+      "expected_source_document": "sla-delivery",
+      "expected_text_contains": "3 a 5 días hábiles"
+    },
+    {
+      "id": "sla-express",
+      "question": "¿Qué plazo tiene un envío express y dónde está disponible?",
+      "expected_source_document": "sla-delivery",
+      "expected_text_contains": "24 a 48 horas"
+    },
+    {
+      "id": "sla-compensation",
+      "question": "¿Qué compensación aplica si un país no alcanza el 90% de entregas a tiempo dos meses seguidos?",
+      "expected_source_document": "sla-delivery",
+      "expected_text_contains": "5% sobre la tarifa mensual"
+    },
+    {
+      "id": "sla-peak-demand",
+      "question": "¿Se garantiza el SLA durante Black Friday o las Rebajas de enero?",
+      "expected_source_document": "sla-delivery",
+      "expected_text_contains": "no garantiza SLA"
+    },
+    {
+      "id": "returns-window",
+      "question": "¿Cuál es la ventana de devolución estándar?",
+      "expected_source_document": "returns-policy",
+      "expected_text_contains": "30 días desde la entrega"
+    },
+    {
+      "id": "returns-international",
+      "question": "¿Cómo se gestionan las devoluciones internacionales?",
+      "expected_source_document": "returns-policy",
+      "expected_text_contains": "requieren gestión manual"
+    },
+    {
+      "id": "returns-cost",
+      "question": "¿Quién asume el coste del envío de vuelta en una devolución?",
+      "expected_source_document": "returns-policy",
+      "expected_text_contains": "el costo del envío de vuelta lo asume la marca"
+    },
+    {
+      "id": "carrier-us-heavy",
+      "question": "¿Qué transportista conviene para paquetes pesados de más de 5 kg en Estados Unidos?",
+      "expected_source_document": "carrier-coverage",
+      "expected_text_contains": "mayores a 5 kg"
+    },
+    {
+      "id": "carrier-aragon-rural",
+      "question": "¿Qué transportista cubre mejor las zonas rurales de Aragón?",
+      "expected_source_document": "carrier-coverage",
+      "expected_text_contains": "zonas rurales de Aragón"
+    },
+    {
+      "id": "storage-pricing",
+      "question": "¿Cuánto cuesta almacenar un metro cúbico al mes en Los Ángeles y Zaragoza?",
+      "expected_source_document": "storage-pricing",
+      "expected_text_contains": "18 USD por metro cúbico"
+    },
+    {
+      "id": "storage-long-term",
+      "question": "¿Qué tarifa aplica al inventario con más de 180 días sin movimiento?",
+      "expected_source_document": "storage-pricing",
+      "expected_text_contains": "150%"
+    },
+    {
+      "id": "storage-discount",
+      "question": "¿Puede un account manager ofrecer un descuento de almacenamiento?",
+      "expected_source_document": "storage-pricing",
+      "expected_text_contains": "Miguel Torres"
+    }
+  ]
+}

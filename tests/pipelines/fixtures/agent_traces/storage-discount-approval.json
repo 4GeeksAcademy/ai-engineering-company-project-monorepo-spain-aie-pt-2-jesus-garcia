@@ -1,0 +1,148 @@
+{
+  "run_id": "storage-discount-approval",
+  "thread_id": "storage-discount-approval",
+  "question": "¿Quién aprueba un descuento de almacenamiento?",
+  "status": "ok",
+  "answer": "Según el documento *storage-pricing*, sección *Tarifas de Almacenamiento*, cualquier descuento de almacenamiento debe ser aprobado por **Miguel Torres**. Un account manager no puede ofrecer descuentos de almacenamiento por su cuenta.",
+  "error": null,
+  "started_at": "2026-11-13T16:18:58.566+00:00",
+  "finished_at": "2026-11-13T16:19:00.579+00:00",
+  "duration_ms": 2012.73,
+  "node_order": [
+    "receive_question",
+    "retrieve",
+    "generate"
+  ],
+  "events": [
+    {
+      "seq": 0,
+      "node": "receive_question",
+      "at": "2026-11-13T16:18:58.571+00:00",
+      "elapsed_ms": 5.09,
+      "checkpoint_id": "1f1df7de-e377-66ea-8001-7e2baa748ad5",
+      "next_nodes": [
+        "retrieve"
+      ],
+      "output": {
+        "question": "¿Quién aprueba un descuento de almacenamiento?",
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 1,
+      "node": "retrieve",
+      "at": "2026-11-13T16:18:59.192+00:00",
+      "elapsed_ms": 620.66,
+      "checkpoint_id": "1f1df7de-e962-68de-8002-acf072f66e94",
+      "next_nodes": [
+        "generate"
+      ],
+      "output": {
+        "context_count": 2,
+        "sources": [
+          {
+            "source_document": "storage-pricing",
+            "section": "Tarifas de Almacenamiento",
+            "chunk_index": 2,
+            "text": "Clientes con más de 50 metros cúbicos de volumen promedio mensual pueden negociar una tarifa preferencial, pero esa negociación siempre debe pasar por Miguel Torres — un account manager no puede ofrecer descuentos de almacenamiento por su cuenta."
+          },
+          {
+            "source_document": "storage-pricing",
+            "section": "Tarifas de Almacenamiento",
+            "chunk_index": 0,
+            "text": "TrackFlow cobra almacenamiento a las marcas cliente según volumen ocupado, no según número de unidades:\n\n- Tarifa estándar: 18 USD por metro cúbico al mes (Los Ángeles) o 16 EUR por metro cúbico al mes (Zaragoza).\n- Los primeros 30 días de cualquier producto nuevo en inventario no generan cargo de almacenamiento (periodo de gracia).\n- Inventario con más de 180 días sin movimiento (sin ventas ni salidas) paga una tarifa de \"inventario de larga duración\" del 150% sobre la tarifa estándar, a partir del día 181."
+          }
+        ],
+        "status": "ok",
+        "error": null
+      }
+    },
+    {
+      "seq": 2,
+      "node": "generate",
+      "at": "2026-11-13T16:19:00.577+00:00",
+      "elapsed_ms": 1385.23,
+      "checkpoint_id": "1f1df7de-f697-6978-8003-71568c6e95bf",
+      "next_nodes": [],
+      "output": {
+        "answer": "Según el documento *storage-pricing*, sección *Tarifas de Almacenamiento*, cualquier descuento de almacenamiento debe ser aprobado por **Miguel Torres**. Un account manager no puede ofrecer descuentos de almacenamiento por su cuenta.",
+        "status": "ok",
+        "error": null
+      }
+    }
+  ],
+  "checkpoints": [
+    {
+      "step": 0,
+      "checkpoint_id": "1f1df7de-e377-66ea-8001-7e2baa748ad5",
+      "next_nodes": [
+        "retrieve"
+      ],
+      "values": {
+        "question": "¿Quién aprueba un descuento de almacenamiento?",
+        "status": "ok",
+        "error": null,
+        "run_id": "storage-discount-approval"
+      },
+      "created_at": "2026-11-13T16:18:58.571422+00:00"
+    },
+    {
+      "step": 1,
+      "checkpoint_id": "1f1df7de-e962-68de-8002-acf072f66e94",
+      "next_nodes": [
+        "generate"
+      ],
+      "values": {
+        "question": "¿Quién aprueba un descuento de almacenamiento?",
+        "context_count": 2,
+        "sources": [
+          {
+            "source_document": "storage-pricing",
+            "section": "Tarifas de Almacenamiento",
+            "chunk_index": 2,
+            "text": "Clientes con más de 50 metros cúbicos de volumen promedio mensual pueden negociar una tarifa preferencial, pero esa negociación siempre debe pasar por Miguel Torres — un account manager no puede ofrecer descuentos de almacenamiento por su cuenta."
+          },
+          {
+            "source_document": "storage-pricing",
+            "section": "Tarifas de Almacenamiento",
+            "chunk_index": 0,
+            "text": "TrackFlow cobra almacenamiento a las marcas cliente según volumen ocupado, no según número de unidades:\n\n- Tarifa estándar: 18 USD por metro cúbico al mes (Los Ángeles) o 16 EUR por metro cúbico al mes (Zaragoza).\n- Los primeros 30 días de cualquier producto nuevo en inventario no generan cargo de almacenamiento (periodo de gracia).\n- Inventario con más de 180 días sin movimiento (sin ventas ni salidas) paga una tarifa de \"inventario de larga duración\" del 150% sobre la tarifa estándar, a partir del día 181."
+          }
+        ],
+        "status": "ok",
+        "error": null,
+        "run_id": "storage-discount-approval"
+      },
+      "created_at": "2026-11-13T16:18:59.192010+00:00"
+    },
+    {
+      "step": 2,
+      "checkpoint_id": "1f1df7de-f697-6978-8003-71568c6e95bf",
+      "next_nodes": [],
+      "values": {
+        "question": "¿Quién aprueba un descuento de almacenamiento?",
+        "context_count": 2,
+        "sources": [
+          {
+            "source_document": "storage-pricing",
+            "section": "Tarifas de Almacenamiento",
+            "chunk_index": 2,
+            "text": "Clientes con más de 50 metros cúbicos de volumen promedio mensual pueden negociar una tarifa preferencial, pero esa negociación siempre debe pasar por Miguel Torres — un account manager no puede ofrecer descuentos de almacenamiento por su cuenta."
+          },
+          {
+            "source_document": "storage-pricing",
+            "section": "Tarifas de Almacenamiento",
+            "chunk_index": 0,
+            "text": "TrackFlow cobra almacenamiento a las marcas cliente según volumen ocupado, no según número de unidades:\n\n- Tarifa estándar: 18 USD por metro cúbico al mes (Los Ángeles) o 16 EUR por metro cúbico al mes (Zaragoza).\n- Los primeros 30 días de cualquier producto nuevo en inventario no generan cargo de almacenamiento (periodo de gracia).\n- Inventario con más de 180 días sin movimiento (sin ventas ni salidas) paga una tarifa de \"inventario de larga duración\" del 150% sobre la tarifa estándar, a partir del día 181."
+          }
+        ],
+        "answer": "Según el documento *storage-pricing*, sección *Tarifas de Almacenamiento*, cualquier descuento de almacenamiento debe ser aprobado por **Miguel Torres**. Un account manager no puede ofrecer descuentos de almacenamiento por su cuenta.",
+        "status": "ok",
+        "error": null,
+        "run_id": "storage-discount-approval"
+      },
+      "created_at": "2026-11-13T16:19:00.576873+00:00"
+    }
+  ]
+}

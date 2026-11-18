@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader } from "@/components/Loader";
 import { ApiRequestError } from "@/lib/api";
@@ -35,7 +35,16 @@ export function RegisterForm() {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [animationDone, setAnimationDone] = useState(false);
+
+  // Igual que en el login: el loader se mantiene tapando la pantalla hasta que
+  // la navegación al dashboard se completa.
+  useEffect(() => {
+    if (authenticated && animationDone) {
+      router.replace("/");
+    }
+  }, [authenticated, animationDone, router]);
 
   function getFieldError(field: string): string | undefined {
     return fieldErrors.find((fe) => fe.field === field)?.message;
@@ -53,10 +62,12 @@ export function RegisterForm() {
 
     setLoading(true);
     setShowLoader(true);
+    setAuthenticated(false);
+    setAnimationDone(false);
 
     try {
       await register(email, password);
-      setSuccess(true);
+      setAuthenticated(true);
     } catch (err) {
       setShowLoader(false);
       setLoading(false);
@@ -78,12 +89,7 @@ export function RegisterForm() {
   return (
     <>
       {showLoader && (
-        <Loader
-          onComplete={() => {
-            setShowLoader(false);
-            if (success) router.push("/");
-          }}
-        />
+        <Loader exit="hold" onComplete={() => setAnimationDone(true)} />
       )}
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div>
